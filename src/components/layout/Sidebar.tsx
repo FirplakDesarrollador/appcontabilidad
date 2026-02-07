@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { PieChart, FileCheck, FileText, LogOut } from "lucide-react";
+import { PieChart, FileCheck, FileText, LogOut, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
@@ -28,6 +28,7 @@ export function Sidebar() {
         { name: "Dashboard", icon: PieChart, path: "/" },
         { name: "Aprobación de facturas", icon: FileCheck, path: "/aprobacion-facturas" },
         { name: "Aprobación de documento soporte", icon: FileText, path: "/aprobacion-documentos" },
+        { name: "Cargue de TRM en SAP", icon: RefreshCw, path: "/cargue-trm" },
     ];
 
     return (
@@ -47,8 +48,8 @@ export function Sidebar() {
                             key={item.path}
                             href={item.path}
                             className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 ${isActive
-                                    ? "bg-white text-[#254153] shadow-lg font-semibold"
-                                    : "text-gray-300 hover:bg-white/10 hover:text-white"
+                                ? "bg-white text-[#254153] shadow-lg font-semibold"
+                                : "text-gray-300 hover:bg-white/10 hover:text-white"
                                 }`}
                         >
                             <item.icon className={`h-5 w-5 ${isActive ? "text-[#254153]" : "text-gray-400"}`} />
