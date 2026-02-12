@@ -29,6 +29,7 @@ export function Sidebar() {
         { name: "Aprobación de facturas", icon: FileCheck, path: "/aprobacion-facturas" },
         { name: "Aprobación de documento soporte", icon: FileText, path: "/aprobacion-documentos" },
         { name: "Cargue de TRM en SAP", icon: RefreshCw, path: "/cargue-trm" },
+        { name: "Revisión de factura DIAN", icon: FileCheck, path: "/revision-factura-dian" },
     ];
 
     return (
