@@ -27,3 +27,18 @@ export interface RegistroFactura {
     notificar_reasignacion: boolean | null;
     notificacionContabilidadEnviada: string | null;
 }
+
+export interface FacturaPendiente {
+    ID: number;
+    "Tipo_de_documento": string | null;
+    "CUFE/CUDE": string | null;
+    Folio: string | null;
+    Prefijo: string | null;
+    "Fecha_Emision": string | null;
+    "Fecha_Recepcion": string | null;
+    "NIT_Emisor": string | null;
+    "Nombre_Emisor": string | null;
+    IVA: string | null;
+    INC: string | null;
+    Total: string | null;
+}

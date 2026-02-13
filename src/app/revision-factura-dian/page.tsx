@@ -1,16 +1,26 @@
 "use client";
 
 import { Sidebar } from "@/components/layout/Sidebar";
-import { ArrowLeft, RefreshCw, AlertCircle, Search } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertCircle, Search, CheckSquare, Square, Save, Loader2, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { RegistroFactura } from "@/types";
+import { RegistroFactura, FacturaPendiente } from "@/types";
+import { ExcelUploadModal } from "@/components/modals/ExcelUploadModal";
+import { Button } from "@/components/ui/Button";
 
 export default function RevisionFacturaDianPage() {
     const [facturas, setFacturas] = useState<RegistroFactura[]>([]);
+    const [facturasPendientes, setFacturasPendientes] = useState<FacturaPendiente[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingPendientes, setLoadingPendientes] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [showSavedList, setShowSavedList] = useState(true);
+    const [saveSuccess, setSaveSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+    const [comparisonResult, setComparisonResult] = useState<{ headers: string[], data: any[][] } | null>(null);
+    const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
     const [filters, setFilters] = useState({
         CreadoStart: "",
         CreadoEnd: "",
@@ -30,11 +40,10 @@ export default function RevisionFacturaDianPage() {
             const { data, error } = await supabase
                 .from("Registro_Facturas")
                 .select("*")
-                .order("ID", { ascending: false }) // Or we can organize by "Creado" if it's a timestamp
-                .limit(200); // Increased limit for range filtering
+                .order("ID", { ascending: false })
+                .limit(200);
 
             if (error) throw error;
-
             setFacturas(data || []);
         } catch (err: any) {
             console.error("Error fetching facturas:", err);
@@ -44,48 +53,160 @@ export default function RevisionFacturaDianPage() {
         }
     };
 
+    const fetchFacturasPendientes = async () => {
+        setLoadingPendientes(true);
+        try {
+            const { data, error } = await supabase
+                .from("Facturas pendientes")
+                .select("*")
+                .order("ID", { ascending: false });
+
+            if (error) throw error;
+            setFacturasPendientes(data || []);
+        } catch (err: any) {
+            console.error("Error fetching facturas pendientes:", err);
+        } finally {
+            setLoadingPendientes(false);
+        }
+    };
+
     useEffect(() => {
         fetchFacturas();
+        fetchFacturasPendientes();
     }, []);
 
-    const filteredFacturas = useMemo(() => {
-        let sorted = [...facturas].sort((a, b) => {
-            const dateA = a.Creado ? new Date(a.Creado).getTime() : 0;
-            const dateB = b.Creado ? new Date(b.Creado).getTime() : 0;
-            return dateB - dateA;
-        });
+    const filteredResults = useMemo(() => {
+        if (!comparisonResult) return [];
 
-        return sorted.filter((f) => {
-            const createdDate = f.Creado ? new Date(f.Creado).getTime() : null;
-            const approvedDate = f.FechaAprobacion ? new Date(f.FechaAprobacion).getTime() : null;
-
-            const startCreado = filters.CreadoStart ? new Date(filters.CreadoStart).getTime() : null;
-            const endCreado = filters.CreadoEnd ? new Date(filters.CreadoEnd).getTime() : null;
-
-            const startFecha = filters.FechaStart ? new Date(filters.FechaStart).getTime() : null;
-            const endFecha = filters.FechaEnd ? new Date(filters.FechaEnd).getTime() : null;
-
-            const matchesCreadoRange = (!startCreado || (createdDate && createdDate >= startCreado)) &&
-                (!endCreado || (createdDate && createdDate <= endCreado + 86400000)); // Add one day to include the end date
-
-            const matchesFechaRange = (!startFecha || (approvedDate && approvedDate >= startFecha)) &&
-                (!endFecha || (approvedDate && approvedDate <= endFecha + 86400000));
+        return comparisonResult.data.filter((row) => {
+            // Find column indices based on headers
+            const headersLower = comparisonResult.headers.map(h => h.toLowerCase());
+            const proveedorIdx = headersLower.indexOf("proveedor");
+            const nitIdx = headersLower.indexOf("nit");
+            const nroFacturaIdx = headersLower.indexOf("factura") !== -1 ? headersLower.indexOf("factura") : headersLower.indexOf("nro. factura");
+            const valorIdx = headersLower.indexOf("valor total");
 
             return (
-                matchesCreadoRange &&
-                matchesFechaRange &&
-                (f.Proveedor?.toLowerCase().includes(filters.Proveedor.toLowerCase()) ?? true) &&
-                (f.Nit?.toLowerCase().includes(filters.Nit.toLowerCase()) ?? true) &&
-                (f.Nro_Factura?.toLowerCase().includes(filters.Nro_Factura.toLowerCase()) ?? true) &&
-                (f["Valor total"]?.toLowerCase().includes(filters["Valor total"].toLowerCase()) ?? true) &&
-                (f.Gestion_Contabilidad?.toLowerCase().includes(filters.Gestion_Contabilidad.toLowerCase()) ?? true)
+                (proveedorIdx === -1 || String(row[proveedorIdx] || "").toLowerCase().includes(filters.Proveedor.toLowerCase())) &&
+                (nitIdx === -1 || String(row[nitIdx] || "").toLowerCase().includes(filters.Nit.toLowerCase())) &&
+                (nroFacturaIdx === -1 || String(row[nroFacturaIdx] || "").toLowerCase().includes(filters.Nro_Factura.toLowerCase())) &&
+                (valorIdx === -1 || String(row[valorIdx] || "").toLowerCase().includes(filters["Valor total"].toLowerCase()))
             );
         });
-    }, [facturas, filters]);
+    }, [comparisonResult, filters]);
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFilters(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleExcelConfirmed = (headers: string[], data: any[][]) => {
+        setComparisonResult({ headers, data });
+        setSelectedRows(new Set()); // Reset selection on new data
+        setSaveSuccess(false);
+    };
+
+    const toggleRow = (index: number) => {
+        const newSelected = new Set(selectedRows);
+        if (newSelected.has(index)) {
+            newSelected.delete(index);
+        } else {
+            newSelected.add(index);
+        }
+        setSelectedRows(newSelected);
+    };
+
+    const toggleAll = () => {
+        if (selectedRows.size === filteredResults.length && filteredResults.length > 0) {
+            setSelectedRows(new Set());
+        } else {
+            setSelectedRows(new Set(filteredResults.map((_, i) => i)));
+        }
+    };
+
+    const handleSaveSelected = async () => {
+        if (!comparisonResult || selectedRows.size === 0) return;
+
+        setIsSaving(true);
+        setError(null);
+        setSaveSuccess(false);
+
+        try {
+            const headersLower = comparisonResult.headers.map(h => h.toLowerCase().trim());
+
+            // Map indices using robust name matching
+            const mapIdx = (names: string[]) => {
+                for (const name of names) {
+                    const idx = headersLower.indexOf(name.toLowerCase());
+                    if (idx !== -1) return idx;
+                }
+                return -1;
+            };
+
+            const tipoDocIdx = mapIdx(["tipo de documento", "tipo_documento", "documento"]);
+            const cufeIdx = mapIdx(["cufe/cude", "cufe", "cude", "uuid"]);
+            const folioIdx = mapIdx(["folio", "nro. factura", "nro_factura"]);
+            const prefijoIdx = mapIdx(["prefijo"]);
+            const fechaEmisionIdx = mapIdx(["fecha emisin", "fecha emision", "fecha emisión", "fecha_emision"]);
+            const fechaRecepcionIdx = mapIdx(["fecha recepcin", "fecha recepcion", "fecha recepción", "fecha_recepcion"]);
+            const nitEmisorIdx = mapIdx(["nit emisor", "nit_emisor", "nit emi", "nit"]);
+            const nombreEmisorIdx = mapIdx(["nombre emisor", "nombre_emisor", "adquiriente", "proveedor"]);
+            const ivaIdx = mapIdx(["iva", "impuesto"]);
+            const incIdx = mapIdx(["inc"]);
+            const totalIdx = mapIdx(["total", "valor total", "valor_total", "valor"]);
+
+            const selectedData = Array.from(selectedRows).map(index => {
+                const row = filteredResults[index];
+                // Use a proper timestamp + random for the ID (must be unique)
+                // Use a proper timestamp + random for the ID (must be unique)
+                const uniqueId = BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000));
+
+                return {
+                    ID: Number(uniqueId % BigInt(9007199254740991)), // Cap at MAX_SAFE_INTEGER for JS compatibility
+                    "Tipo_de_documento": tipoDocIdx !== -1 ? String(row[tipoDocIdx] || "") : null,
+                    "CUFE/CUDE": cufeIdx !== -1 ? String(row[cufeIdx] || "") : null,
+                    "Folio": folioIdx !== -1 ? String(row[folioIdx] || "") : null,
+                    "Prefijo": prefijoIdx !== -1 ? String(row[prefijoIdx] || "") : null,
+                    "Fecha_Emision": fechaEmisionIdx !== -1 ? String(row[fechaEmisionIdx] || "") : null,
+                    "Fecha_Recepcion": fechaRecepcionIdx !== -1 ? String(row[fechaRecepcionIdx] || "") : null,
+                    "NIT_Emisor": nitEmisorIdx !== -1 ? String(row[nitEmisorIdx] || "") : null,
+                    "Nombre_Emisor": nombreEmisorIdx !== -1 ? String(row[nombreEmisorIdx] || "") : null,
+                    "IVA": ivaIdx !== -1 ? String(row[ivaIdx] || "") : null,
+                    "INC": incIdx !== -1 ? String(row[incIdx] || "") : null,
+                    "Total": totalIdx !== -1 ? String(row[totalIdx] || "") : null,
+                };
+            });
+
+            const { error: insertError } = await supabase
+                .from("Facturas pendientes")
+                .insert(selectedData);
+
+            if (insertError) throw insertError;
+
+            setSaveSuccess(true);
+
+            // Remove saved rows from both selection and the data
+            const savedRowIndicesInFiltered = Array.from(selectedRows);
+            const savedRowsData = savedRowIndicesInFiltered.map(idx => filteredResults[idx]);
+
+            // Filter out these rows from the original comparisonResult.data
+            const remainingData = comparisonResult.data.filter(row =>
+                !savedRowsData.some(savedRow => JSON.stringify(savedRow) === JSON.stringify(row))
+            );
+
+            setComparisonResult({ ...comparisonResult, data: remainingData });
+            setSelectedRows(new Set());
+            fetchFacturasPendientes(); // Refresh the saved list
+
+            // Clear success message after 5 seconds
+            setTimeout(() => setSaveSuccess(false), 5000);
+
+        } catch (err: any) {
+            console.error("Error saving selected facturas:", err);
+            setError(err.message || "Error al guardar las facturas seleccionadas.");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
@@ -93,7 +214,7 @@ export default function RevisionFacturaDianPage() {
             <Sidebar />
 
             <main className="flex-1 md:ml-64 p-8 overflow-y-auto">
-                <div className="max-w-7xl mx-auto space-y-8">
+                <div className="max-w-7xl mx-auto space-y-6">
                     {/* Header */}
                     <div className="flex flex-col gap-4">
                         <Link
@@ -106,14 +227,19 @@ export default function RevisionFacturaDianPage() {
                         <div className="flex items-center justify-between">
                             <div>
                                 <h1 className="text-3xl font-bold text-[#254153]">Revisión de factura DIAN</h1>
-                                <p className="text-gray-500 mt-1">Gestión y revisión de facturas electrónicas enviados a la DIAN.</p>
+                                <p className="text-gray-500 mt-1">Gestiona las facturas pendientes y compara nuevos archivos Excel.</p>
                             </div>
                             <div className="flex items-center gap-3">
-                                <span className="text-sm text-gray-400">{filteredFacturas.length} registros encontrados</span>
                                 <button
-                                    onClick={fetchFacturas}
-                                    disabled={loading}
-                                    className="p-2 bg-white rounded-lg shadow-sm hover:shadow-md transition-all text-[#254153] disabled:opacity-50"
+                                    onClick={() => setShowSavedList(!showSavedList)}
+                                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm ${showSavedList ? 'bg-[#254153] text-white' : 'bg-white text-[#254153] border border-gray-100'}`}
+                                >
+                                    {showSavedList ? 'Ocultar Guardados' : `Ver Guardados (${facturasPendientes.length})`}
+                                </button>
+                                <button
+                                    onClick={() => setIsUploadModalOpen(true)}
+                                    className="p-2 bg-white rounded-lg shadow-sm hover:shadow-md transition-all text-[#254153]"
+                                    title="Cargar Documento Excel"
                                 >
                                     <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
                                 </button>
@@ -121,175 +247,195 @@ export default function RevisionFacturaDianPage() {
                         </div>
                     </div>
 
+                    {/* Saved Facturas List */}
+                    {showSavedList && facturasPendientes.length > 0 && (
+                        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500">
+                            <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
+                                <h2 className="text-lg font-bold text-[#254153] flex items-center gap-2">
+                                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                                    Facturas Guardadas en el Sistema
+                                </h2>
+                                <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{facturasPendientes.length} registros</span>
+                            </div>
+                            <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-white text-gray-400 font-medium border-b border-gray-100 sticky top-0">
+                                        <tr>
+                                            <th className="px-6 py-3">Factura / Folio</th>
+                                            <th className="px-6 py-3">Emisor</th>
+                                            <th className="px-6 py-3">NIT</th>
+                                            <th className="px-6 py-3">Fecha Emisión</th>
+                                            <th className="px-6 py-3 text-right">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50">
+                                        {facturasPendientes.map((factura) => (
+                                            <tr key={factura.ID} className="hover:bg-gray-50/30 transition-colors">
+                                                <td className="px-6 py-3 font-medium text-[#254153]">
+                                                    {factura.Prefijo}{factura.Folio}
+                                                </td>
+                                                <td className="px-6 py-3 text-gray-500">{factura.Nombre_Emisor}</td>
+                                                <td className="px-6 py-3 text-gray-500">{factura.NIT_Emisor}</td>
+                                                <td className="px-6 py-3 text-gray-500">{factura.Fecha_Emision}</td>
+                                                <td className="px-6 py-3 text-right font-bold text-[#254153]">
+                                                    ${Number(factura.Total).toLocaleString('es-CO')}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {saveSuccess && (
+                        <div className="bg-green-50 border border-green-100 rounded-2xl p-4 flex items-center gap-3 text-green-700 animate-in fade-in slide-in-from-top-2 duration-300">
+                            <CheckCircle2 className="h-5 w-5" />
+                            <p className="font-medium">Facturas guardadas exitosamente en "Facturas pendientes".</p>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center gap-3 text-red-700 animate-in fade-in slide-in-from-top-2 duration-300">
+                            <AlertCircle className="h-5 w-5" />
+                            <p className="font-medium">{error}</p>
+                        </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-4">
+                        <div className="flex items-center gap-4">
+                            <h2 className="text-xl font-bold text-[#254153]">Resultados de Comparación</h2>
+                            {comparisonResult && (
+                                <button
+                                    onClick={() => {
+                                        setComparisonResult(null);
+                                        setSelectedRows(new Set());
+                                        setSaveSuccess(false);
+                                    }}
+                                    className="text-red-500 text-xs font-semibold hover:underline"
+                                >
+                                    Limpiar Resultados
+                                </button>
+                            )}
+                        </div>
+                        {comparisonResult && (
+                            <div className="flex items-center gap-3">
+                                {selectedRows.size > 0 && (
+                                    <Button
+                                        onClick={handleSaveSelected}
+                                        disabled={isSaving}
+                                        className="bg-green-600 hover:bg-green-700 text-white gap-2 shadow-lg shadow-green-900/10"
+                                    >
+                                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                        Guardar Seleccionados ({selectedRows.size})
+                                    </Button>
+                                )}
+                                <span className="text-sm text-gray-400">{filteredResults.length} facturas faltantes</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <ExcelUploadModal
+                        isOpen={isUploadModalOpen}
+                        onClose={() => setIsUploadModalOpen(false)}
+                        existingInvoices={facturas}
+                        onConfirm={handleExcelConfirmed}
+                    />
+
                     {/* Content Section */}
-                    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-                        {loading && facturas.length === 0 ? (
-                            <div className="p-12 flex justify-center">
-                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#254153]"></div>
-                            </div>
-                        ) : error ? (
-                            <div className="p-12 flex flex-col items-center gap-4 text-red-500">
-                                <AlertCircle className="h-12 w-12" />
-                                <p>{error}</p>
-                                <button onClick={fetchFacturas} className="text-sm underline">Reintentar</button>
-                            </div>
-                        ) : facturas.length === 0 ? (
-                            <div className="p-12 text-center text-gray-500">
-                                No se encontraron facturas.
+                    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden min-h-[300px]">
+                        {!comparisonResult ? (
+                            <div className="p-20 flex flex-col items-center justify-center text-center gap-6 animate-in fade-in duration-700">
+                                <div className="p-6 bg-[#254153]/5 rounded-3xl">
+                                    <RefreshCw className="h-12 w-12 text-[#254153] opacity-20" />
+                                </div>
+                                <div className="max-w-md">
+                                    <h3 className="text-xl font-bold text-[#254153] mb-2">Sin datos para comparar</h3>
+                                    <p className="text-gray-500">
+                                        Haz clic en el botón de actualización arriba para cargar un documento Excel y compararlo con el sistema.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setIsUploadModalOpen(true)}
+                                    className="bg-[#254153] text-white px-8 py-3 rounded-xl font-semibold hover:bg-[#1a2e3b] transition-all shadow-lg shadow-blue-900/10"
+                                >
+                                    Cargar Excel ahora
+                                </button>
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
                                         <tr>
-                                            <th className="px-6 py-4">
-                                                <div className="flex flex-col gap-2 min-w-[150px]">
-                                                    <span>Creado</span>
-                                                    <div className="flex flex-col gap-1">
-                                                        <input
-                                                            type="date"
-                                                            name="CreadoStart"
-                                                            value={filters.CreadoStart}
-                                                            onChange={handleFilterChange}
-                                                            className="w-full px-2 py-1 text-[10px] border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
-                                                        />
-                                                        <input
-                                                            type="date"
-                                                            name="CreadoEnd"
-                                                            value={filters.CreadoEnd}
-                                                            onChange={handleFilterChange}
-                                                            className="w-full px-2 py-1 text-[10px] border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
-                                                        />
+                                            <th className="px-6 py-4 w-10">
+                                                <button
+                                                    onClick={toggleAll}
+                                                    className="p-1 hover:bg-gray-200 rounded transition-colors"
+                                                >
+                                                    {selectedRows.size === filteredResults.length && filteredResults.length > 0 ? (
+                                                        <CheckSquare className="h-4 w-4 text-[#254153]" />
+                                                    ) : (
+                                                        <Square className="h-4 w-4 text-gray-400" />
+                                                    )}
+                                                </button>
+                                            </th>
+                                            {comparisonResult.headers.map((header, i) => (
+                                                <th key={i} className="px-6 py-4">
+                                                    <div className="flex flex-col gap-2 min-w-[120px]">
+                                                        <span>{header}</span>
+                                                        {["Proveedor", "NIT", "Factura", "Nro. Factura", "Valor Total"].includes(header) && (
+                                                            <div className="relative">
+                                                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+                                                                <input
+                                                                    type="text"
+                                                                    name={header === "Factura" || header === "Nro. Factura" ? "Nro_Factura" : header}
+                                                                    value={filters[header === "Factura" || header === "Nro. Factura" ? "Nro_Factura" : header as keyof typeof filters] || ""}
+                                                                    onChange={handleFilterChange}
+                                                                    placeholder="Filtrar..."
+                                                                    className="w-full pl-7 pr-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
+                                                                />
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4">
-                                                <div className="flex flex-col gap-2">
-                                                    <span>Proveedor</span>
-                                                    <div className="relative">
-                                                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
-                                                        <input
-                                                            type="text"
-                                                            name="Proveedor"
-                                                            value={filters.Proveedor}
-                                                            onChange={handleFilterChange}
-                                                            placeholder="Filtrar..."
-                                                            className="w-full pl-7 pr-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4">
-                                                <div className="flex flex-col gap-2">
-                                                    <span>NIT</span>
-                                                    <div className="relative">
-                                                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
-                                                        <input
-                                                            type="text"
-                                                            name="Nit"
-                                                            value={filters.Nit}
-                                                            onChange={handleFilterChange}
-                                                            placeholder="Filtrar..."
-                                                            className="w-full pl-7 pr-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4">
-                                                <div className="flex flex-col gap-2">
-                                                    <span>Nro. Factura</span>
-                                                    <div className="relative">
-                                                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
-                                                        <input
-                                                            type="text"
-                                                            name="Nro_Factura"
-                                                            value={filters.Nro_Factura}
-                                                            onChange={handleFilterChange}
-                                                            placeholder="Filtrar..."
-                                                            className="w-full pl-7 pr-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4">
-                                                <div className="flex flex-col gap-2">
-                                                    <span>Valor Total</span>
-                                                    <div className="relative">
-                                                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
-                                                        <input
-                                                            type="text"
-                                                            name="Valor total"
-                                                            value={filters["Valor total"]}
-                                                            onChange={handleFilterChange}
-                                                            placeholder="Filtrar..."
-                                                            className="w-full pl-7 pr-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4">
-                                                <div className="flex flex-col gap-2 min-w-[150px]">
-                                                    <span>Fecha Aprobación</span>
-                                                    <div className="flex flex-col gap-1">
-                                                        <input
-                                                            type="date"
-                                                            name="FechaStart"
-                                                            value={filters.FechaStart}
-                                                            onChange={handleFilterChange}
-                                                            className="w-full px-2 py-1 text-[10px] border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
-                                                        />
-                                                        <input
-                                                            type="date"
-                                                            name="FechaEnd"
-                                                            value={filters.FechaEnd}
-                                                            onChange={handleFilterChange}
-                                                            className="w-full px-2 py-1 text-[10px] border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4">
-                                                <div className="flex flex-col gap-2">
-                                                    <span>Estado Contabilidad</span>
-                                                    <select
-                                                        name="Gestion_Contabilidad"
-                                                        value={filters.Gestion_Contabilidad}
-                                                        onChange={handleFilterChange}
-                                                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
-                                                    >
-                                                        <option value="">Todos</option>
-                                                        <option value="Aprobado">Aprobado</option>
-                                                        <option value="Rechazado">Rechazado</option>
-                                                        <option value="Pendiente">Pendiente</option>
-                                                    </select>
-                                                </div>
-                                            </th>
+                                                </th>
+                                            ))}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
-                                        {filteredFacturas.map((factura) => (
-                                            <tr key={factura.ID} className="hover:bg-gray-50/50 transition-colors">
-                                                <td className="px-6 py-4 text-gray-500">{factura.Creado}</td>
-                                                <td className="px-6 py-4 font-medium text-[#254153]">{factura.Proveedor}</td>
-                                                <td className="px-6 py-4 text-gray-500">{factura.Nit}</td>
-                                                <td className="px-6 py-4">{factura.Nro_Factura}</td>
-                                                <td className="px-6 py-4 font-medium">{factura["Valor total"]}</td>
-                                                <td className="px-6 py-4 text-gray-500">{factura.FechaAprobacion}</td>
+                                        {filteredResults.map((row, rowIndex) => (
+                                            <tr key={rowIndex} className={`hover:bg-gray-50/50 transition-colors ${selectedRows.has(rowIndex) ? 'bg-[#254153]/5' : ''}`}>
                                                 <td className="px-6 py-4">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${factura.Gestion_Contabilidad === 'Aprobado'
-                                                        ? 'bg-green-100 text-green-800'
-                                                        : factura.Gestion_Contabilidad === 'Rechazado'
-                                                            ? 'bg-red-100 text-red-800'
-                                                            : 'bg-yellow-100 text-yellow-800'
-                                                        }`}>
-                                                        {factura.Gestion_Contabilidad || 'Pendiente'}
-                                                    </span>
+                                                    <button
+                                                        onClick={() => toggleRow(rowIndex)}
+                                                        className="p-1 hover:bg-gray-200 rounded transition-colors"
+                                                    >
+                                                        {selectedRows.has(rowIndex) ? (
+                                                            <CheckSquare className="h-4 w-4 text-[#254153]" />
+                                                        ) : (
+                                                            <Square className="h-4 w-4 text-gray-400" />
+                                                        )}
+                                                    </button>
                                                 </td>
+                                                {comparisonResult.headers.map((header, colIndex) => {
+                                                    const isStatusCol = header === "Estado en Sistema";
+                                                    const value = row[colIndex]?.toString() || "";
+                                                    return (
+                                                        <td key={colIndex} className="px-6 py-4 text-gray-500 whitespace-nowrap">
+                                                            {isStatusCol ? (
+                                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-100">
+                                                                    {value}
+                                                                </span>
+                                                            ) : (
+                                                                value
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })}
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
-                                {filteredFacturas.length === 0 && (
+                                {filteredResults.length === 0 && (
                                     <div className="p-12 text-center text-gray-500">
                                         No hay registros que coincidan con los filtros.
                                     </div>
