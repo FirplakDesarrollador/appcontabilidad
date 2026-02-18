@@ -21,6 +21,10 @@ export async function POST(request: Request) {
         const cleanValue = (val: string | undefined) => (val || '').trim().replace(/^["'](.*)["']$/, '$1');
         const url = cleanValue(process.env.SAP_CURRENCY_RATE_URL);
 
+        console.log('--- SAP GET CURRENCY RATE ---');
+        console.log('URL:', url);
+        console.log('SessionId:', sessionId);
+
         if (!url) {
             return NextResponse.json({ error: 'SAP_CURRENCY_RATE_URL is not defined' }, { status: 500 });
         }

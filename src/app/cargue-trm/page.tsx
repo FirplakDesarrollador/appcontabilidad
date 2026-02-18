@@ -41,10 +41,20 @@ export default function CargueTrmPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId: sid }),
             });
-            const data = await response.json();
+
+            // Handle if the response is a raw number (not strict JSON)
+            const text = await response.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                // If parsing fails, use the raw text if it's a number
+                data = text;
+            }
+
             // SAP Returns a raw number or an object depending on the version
-            if (typeof data === 'number') {
-                setSapTrm(data);
+            if (typeof data === 'number' || !isNaN(parseFloat(data))) {
+                setSapTrm(parseFloat(data));
             } else if (data && typeof data === 'object') {
                 // If it's the raw value from Service Layer
                 const val = parseFloat(data.value || data.Rate || data.toString());
@@ -61,19 +71,33 @@ export default function CargueTrmPage() {
         setIsSapLoading(true);
         setSapError(null);
         try {
+            console.log('Iniciando autenticación con SAP B1...');
             const response = await fetch('/api/sap-login', { method: 'POST' });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.details?.error?.message?.value || errData.error || 'Error de conexión con SAP');
+            }
+
             const data = await response.json();
+
             if (data.SessionId) {
-                setSessionId(data.SessionId);
-                setTimeLeft((data.SessionTimeout || 30) * 60);
-                // Important: Trigger fetching the current rate immediately
-                fetchSapTrm(data.SessionId);
+                const sid = data.SessionId;
+                console.log('%c SAP SESSION ID OBTENIDO ', 'background: #254153; color: white; font-weight: bold;', sid);
+
+                setSessionId(sid);
+                // Set countdown timer: use SAP timeout or default to 30 minutes
+                const timeoutMinutes = data.SessionTimeout || 30;
+                setTimeLeft(timeoutMinutes * 60);
+
+                // Immediately fetch the current TRM from SAP using the new token
+                fetchSapTrm(sid);
             } else {
-                setSapError(data.message || data.error || 'SAP Login failed');
+                setSapError('SAP no devolvió un ID de sesión válido.');
             }
         } catch (error: any) {
-            console.error('Failed to login to SAP:', error);
-            setSapError(error.message || 'Connection failed');
+            console.error('Fallo en el login de SAP:', error);
+            setSapError(error.message || 'Error de comunicación con el servidor');
         } finally {
             setIsSapLoading(false);
         }
@@ -204,7 +228,7 @@ export default function CargueTrmPage() {
                                 </div>
 
                                 {/* SAP Session Info Box */}
-                                <div className="bg-white border-2 border-[#254153]/20 rounded-2xl p-4 shadow-md min-w-[320px] w-full md:w-fit animate-in fade-in slide-in-from-top-4 duration-500">
+                                <div className="bg-white border-2 border-[#254153]/20 rounded-2xl p-4 shadow-md min-w-[320px] w-full md:w-fit transition-all duration-500">
                                     <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
                                         <div className="flex items-center gap-2">
                                             <div className={`h-3 w-3 rounded-full ${sessionId ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : sapError ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]' : 'bg-amber-400 animate-pulse'}`} />
@@ -215,42 +239,62 @@ export default function CargueTrmPage() {
 
                                     {sessionId ? (
                                         <div className="space-y-3">
-                                            <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-100">
-                                                <p className="text-[9px] text-gray-400 uppercase font-black mb-1">Sesión Activa:</p>
-                                                <p className="text-xs font-mono font-bold text-[#254153] break-all">
+                                            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 relative group/sid">
+                                                <p className="text-[9px] text-gray-400 uppercase font-bold mb-1 tracking-widest flex justify-between">
+                                                    TOKEN (SessionId):
+                                                    <span className="text-[8px] text-green-600">ACTIVO</span>
+                                                </p>
+                                                <p className="text-xs font-mono font-black text-[#254153] break-all">
                                                     {sessionId}
                                                 </p>
+                                                <div className="absolute top-2 right-2 opacity-0 group-hover/sid:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={() => navigator.clipboard.writeText(sessionId)}
+                                                        className="p-1 hover:bg-gray-200 rounded text-[8px] font-black uppercase text-gray-500"
+                                                    >
+                                                        Copiar
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <div className="flex items-center justify-between px-1">
-                                                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tight">Expira en:</span>
-                                                <span className={`text-sm font-mono font-black ${timeLeft < 300 ? 'text-red-500 animate-pulse' : 'text-[#254153]'}`}>
-                                                    {formatTime(timeLeft)}
-                                                </span>
+                                            <div className="flex items-center justify-between px-2 py-2 bg-[#254153]/5 rounded-lg border border-[#254153]/10">
+                                                <div className="flex flex-col">
+                                                    <span className="text-[9px] text-gray-400 font-black uppercase tracking-tight">Expira en (30 min):</span>
+                                                    <div className="flex items-center gap-1">
+                                                        <span className={`text-lg font-mono font-black ${timeLeft < 300 ? 'text-red-500 animate-pulse' : 'text-[#254153]'}`}>
+                                                            {formatTime(timeLeft)}
+                                                        </span>
+                                                        <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={fetchSapSession}
+                                                    className="p-2 hover:bg-[#254153]/10 rounded-full transition-colors"
+                                                    title="Renovar Token"
+                                                >
+                                                    <RefreshCw className="h-4 w-4 text-[#254153]" />
+                                                </button>
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className={`${sapError ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'} p-3 rounded-xl border`}>
-                                            <div className="flex items-start gap-2">
-                                                <AlertCircle className={`h-4 w-4 ${sapError ? 'text-red-500' : 'text-amber-500'} mt-0.5 flex-shrink-0`} />
-                                                <div className="overflow-hidden">
-                                                    <p className={`text-xs font-bold ${sapError ? 'text-red-700' : 'text-amber-700'} mb-1`}>
-                                                        {isSapLoading ? 'Iniciando conexión segura...' : sapError ? 'Fallo de autenticación' : 'Conexión pendiente'}
-                                                    </p>
-                                                    {sapError && (
-                                                        <p className="text-[10px] text-red-600/70 font-medium break-words leading-tight mb-2">
-                                                            {sapError}
-                                                        </p>
-                                                    )}
-                                                    {!isSapLoading && (
-                                                        <button
-                                                            onClick={fetchSapSession}
-                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-[10px] font-black uppercase text-[#254153] hover:bg-gray-50 transition-colors shadow-sm"
-                                                        >
-                                                            <RefreshCw className="h-3 w-3" />
-                                                            Conectar ahora
-                                                        </button>
-                                                    )}
+                                        <div className={`${sapError ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'} p-4 rounded-xl border-2 border-dashed`}>
+                                            <div className="flex items-center flex-col text-center gap-3">
+                                                <div className={`p-2 rounded-lg ${sapError ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-400'}`}>
+                                                    <RefreshCw className={`h-5 w-5 ${isSapLoading ? 'animate-spin' : ''}`} />
                                                 </div>
+                                                <div>
+                                                    <p className={`text-xs font-bold ${sapError ? 'text-red-700' : 'text-gray-500'}`}>
+                                                        {isSapLoading ? 'Estableciendo conexión...' : sapError ? 'Error en Sesión SAP' : 'Sesión Desconectada'}
+                                                    </p>
+                                                    {sapError && <p className="text-[10px] text-red-600/70 mt-1 max-w-[200px] line-clamp-2">{sapError}</p>}
+                                                </div>
+                                                {!isSapLoading && (
+                                                    <Button
+                                                        onClick={fetchSapSession}
+                                                        className="h-9 px-4 text-[10px] font-black uppercase rounded-lg shadow-sm"
+                                                    >
+                                                        Obtener Token (30 min)
+                                                    </Button>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -312,18 +356,29 @@ export default function CargueTrmPage() {
                         </div>
 
                         {/* SAP TRM Card */}
-                        <div className="bg-[#254153] rounded-3xl p-8 shadow-lg border border-[#254153]/50 flex flex-col relative overflow-hidden text-white">
-                            <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <div className="bg-[#254153] rounded-3xl p-8 shadow-lg border border-[#254153]/50 flex flex-col relative overflow-hidden text-white group">
+                            <div className="absolute top-0 right-0 p-4 opacity-10 transition-transform group-hover:rotate-45 duration-700">
                                 <RefreshCw className="h-24 w-24" />
                             </div>
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="p-2 bg-white/10 rounded-lg">
-                                    <Landmark className="h-5 w-5 text-blue-300" />
+                            <div className="flex items-center justify-between mb-6 relative z-10">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-white/10 rounded-lg">
+                                        <Landmark className="h-5 w-5 text-blue-300" />
+                                    </div>
+                                    <h2 className="text-lg font-semibold uppercase tracking-tight">TRM en SAP</h2>
                                 </div>
-                                <h2 className="text-lg font-semibold">TRM en SAP</h2>
+                                {sessionId && !isSapTrmLoading && (
+                                    <button
+                                        onClick={() => fetchSapTrm(sessionId)}
+                                        className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                                        title="Recargar desde SAP"
+                                    >
+                                        <RefreshCw className="h-4 w-4" />
+                                    </button>
+                                )}
                             </div>
 
-                            <div className="space-y-4">
+                            <div className="space-y-4 relative z-10">
                                 <div>
                                     {isSapTrmLoading ? (
                                         <div className="flex flex-col gap-2 animate-pulse">
@@ -332,15 +387,21 @@ export default function CargueTrmPage() {
                                         </div>
                                     ) : (
                                         <>
-                                            <p className="text-4xl font-bold">
-                                                {sapTrm ? formatCurrency(sapTrm.toString()) : "$0,00"}
-                                            </p>
-                                            <p className="text-blue-200/60 text-sm mt-2">Valor actual configurado</p>
+                                            <div className="flex items-baseline gap-1">
+                                                <p className="text-4xl font-black text-white">
+                                                    {sapTrm ? formatCurrency(sapTrm.toString()) : "$0,00"}
+                                                </p>
+                                                {!sapTrm && !isSapTrmLoading && sessionId && (
+                                                    <span className="text-xs text-blue-300 animate-pulse">Sin datos</span>
+                                                )}
+                                            </div>
+                                            <p className="text-blue-200/60 text-[10px] font-bold uppercase tracking-widest mt-2">{sapTrm ? 'Valor actual configurado en SAP' : 'Consultando tablas de SAP...'}</p>
                                         </>
                                     )}
                                 </div>
-                                <div className={`inline-flex items-center gap-2 px-3 py-1 ${sessionId ? 'bg-green-500/20 text-green-300' : 'bg-white/10 text-blue-200'} rounded-full text-xs font-medium`}>
-                                    {sessionId ? (isSapTrmLoading ? 'Consultando SAP...' : 'Conectado con SAP B1') : 'Recurso SAP en preparación'}
+                                <div className={`inline-flex items-center gap-2 px-3 py-1.5 ${sessionId ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-white/5 text-blue-200 border border-white/10'} rounded-full text-[10px] font-black uppercase tracking-tighter`}>
+                                    <div className={`h-1.5 w-1.5 rounded-full ${sessionId ? 'bg-green-400 animate-pulse' : 'bg-blue-300'}`} />
+                                    {sessionId ? (isSapTrmLoading ? 'Leyendo datos SAP...' : 'Canal SAP Conectado') : 'Esperando sesión SAP...'}
                                 </div>
                             </div>
                         </div>

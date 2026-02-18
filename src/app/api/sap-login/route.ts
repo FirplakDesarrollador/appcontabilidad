@@ -5,14 +5,12 @@ export async function POST() {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
     console.log('--- SAP LOGIN DEBUG ---');
-    const cleanValue = (val: string | undefined) => (val || '').trim().replace(/^["'](.*)["']$/, '$1');
+    const db = "Firplak_SA";
+    const user = "manager";
+    const pass = "2023Fir#.*";
+    const url = "https://200.7.96.194:50000/b1s/v1/Login";
 
-    const db = cleanValue(process.env.SAP_COMPANY_DB);
-    const user = cleanValue(process.env.SAP_USERNAME);
-    const pass = cleanValue(process.env.SAP_PASSWORD);
-    const url = cleanValue(process.env.SAP_API_URL);
-
-    console.log(`--- SAP LOGIN ATTEMPT ---`);
+    console.log(`--- SAP LOGIN ATTEMPT (HARDCODED) ---`);
     console.log(`DB: ${db}`);
     console.log(`User: ${user}`);
     console.log(`URL: ${url}`);
@@ -28,6 +26,7 @@ export async function POST() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'application/json',
             },
             body: JSON.stringify(body),
         });
