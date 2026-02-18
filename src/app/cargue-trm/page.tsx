@@ -204,43 +204,54 @@ export default function CargueTrmPage() {
                                 </div>
 
                                 {/* SAP Session Info Box */}
-                                <div className="bg-white border-2 border-[#254153]/20 rounded-2xl p-4 shadow-md min-w-[280px] w-full md:w-fit">
-                                    <div className="flex items-center justify-between mb-3">
+                                <div className="bg-white border-2 border-[#254153]/20 rounded-2xl p-4 shadow-md min-w-[320px] w-full md:w-fit animate-in fade-in slide-in-from-top-4 duration-500">
+                                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
                                         <div className="flex items-center gap-2">
-                                            <div className={`h-3 w-3 rounded-full ${sessionId ? 'bg-green-500 animate-pulse' : sapError ? 'bg-red-500' : 'bg-amber-400'}`} />
-                                            <span className="text-xs font-bold text-[#254153] uppercase tracking-wider">Sesión SAP B1</span>
+                                            <div className={`h-3 w-3 rounded-full ${sessionId ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : sapError ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]' : 'bg-amber-400 animate-pulse'}`} />
+                                            <span className="text-[10px] font-black text-[#254153] uppercase tracking-wider">Estado de Conexión SAP</span>
                                         </div>
                                         {isSapLoading && <RefreshCw className="h-4 w-4 animate-spin text-[#254153]" />}
                                     </div>
 
                                     {sessionId ? (
                                         <div className="space-y-3">
-                                            <div className="bg-gray-50 p-2 rounded-lg border border-gray-100 italic">
-                                                <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">ID de Sesión:</p>
+                                            <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-100">
+                                                <p className="text-[9px] text-gray-400 uppercase font-black mb-1">Sesión Activa:</p>
                                                 <p className="text-xs font-mono font-bold text-[#254153] break-all">
                                                     {sessionId}
                                                 </p>
                                             </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-[10px] text-gray-400 font-bold uppercase">Expira en:</span>
-                                                <span className={`text-sm font-mono font-black ${timeLeft < 300 ? 'text-red-500 animate-pulse' : 'text-green-600'}`}>
+                                            <div className="flex items-center justify-between px-1">
+                                                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tight">Expira en:</span>
+                                                <span className={`text-sm font-mono font-black ${timeLeft < 300 ? 'text-red-500 animate-pulse' : 'text-[#254153]'}`}>
                                                     {formatTime(timeLeft)}
                                                 </span>
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="bg-red-50 p-3 rounded-xl border border-red-100">
-                                            <p className="text-xs text-red-600 font-semibold">
-                                                {isSapLoading ? 'Iniciando sesión...' : sapError || 'Desconectado'}
-                                            </p>
-                                            {!isSapLoading && (
-                                                <button
-                                                    onClick={fetchSapSession}
-                                                    className="text-[10px] text-[#254153] font-black underline mt-2 uppercase"
-                                                >
-                                                    Intentar Conectar ahora
-                                                </button>
-                                            )}
+                                        <div className={`${sapError ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'} p-3 rounded-xl border`}>
+                                            <div className="flex items-start gap-2">
+                                                <AlertCircle className={`h-4 w-4 ${sapError ? 'text-red-500' : 'text-amber-500'} mt-0.5 flex-shrink-0`} />
+                                                <div className="overflow-hidden">
+                                                    <p className={`text-xs font-bold ${sapError ? 'text-red-700' : 'text-amber-700'} mb-1`}>
+                                                        {isSapLoading ? 'Iniciando conexión segura...' : sapError ? 'Fallo de autenticación' : 'Conexión pendiente'}
+                                                    </p>
+                                                    {sapError && (
+                                                        <p className="text-[10px] text-red-600/70 font-medium break-words leading-tight mb-2">
+                                                            {sapError}
+                                                        </p>
+                                                    )}
+                                                    {!isSapLoading && (
+                                                        <button
+                                                            onClick={fetchSapSession}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-[10px] font-black uppercase text-[#254153] hover:bg-gray-50 transition-colors shadow-sm"
+                                                        >
+                                                            <RefreshCw className="h-3 w-3" />
+                                                            Conectar ahora
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

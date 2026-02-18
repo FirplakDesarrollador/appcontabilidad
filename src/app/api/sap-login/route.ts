@@ -5,14 +5,16 @@ export async function POST() {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
     console.log('--- SAP LOGIN DEBUG ---');
-    const db = (process.env.SAP_COMPANY_DB || '').trim();
-    const user = (process.env.SAP_USERNAME || '').trim();
-    const pass = (process.env.SAP_PASSWORD || '').trim();
-    const url = (process.env.SAP_API_URL || '').trim();
+    const cleanValue = (val: string | undefined) => (val || '').trim().replace(/^["'](.*)["']$/, '$1');
 
-    console.log(`DB: ${db} (len: ${db.length})`);
-    console.log(`User: ${user} (len: ${user.length})`);
-    console.log(`Pass check: (len: ${pass.length})`);
+    const db = cleanValue(process.env.SAP_COMPANY_DB);
+    const user = cleanValue(process.env.SAP_USERNAME);
+    const pass = cleanValue(process.env.SAP_PASSWORD);
+    const url = cleanValue(process.env.SAP_API_URL);
+
+    console.log(`--- SAP LOGIN ATTEMPT ---`);
+    console.log(`DB: ${db}`);
+    console.log(`User: ${user}`);
     console.log(`URL: ${url}`);
 
     const body = {

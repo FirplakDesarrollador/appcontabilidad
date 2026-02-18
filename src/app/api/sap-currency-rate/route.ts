@@ -18,7 +18,13 @@ export async function POST(request: Request) {
         const day = String(now.getDate()).padStart(2, '0');
         const formattedDate = `${year}${month}${day}`;
 
-        const url = process.env.SAP_CURRENCY_RATE_URL!;
+        const cleanValue = (val: string | undefined) => (val || '').trim().replace(/^["'](.*)["']$/, '$1');
+        const url = cleanValue(process.env.SAP_CURRENCY_RATE_URL);
+
+        if (!url) {
+            return NextResponse.json({ error: 'SAP_CURRENCY_RATE_URL is not defined' }, { status: 500 });
+        }
+
         const body = {
             Currency: "USD",
             Date: formattedDate,
@@ -28,7 +34,7 @@ export async function POST(request: Request) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Cookie': `B1SESSION=${sessionId}; Path=/b1s/v1; Secure; HttpOnly;`,
+                'Cookie': `B1SESSION=${sessionId}`,
             },
             body: JSON.stringify(body),
         });
