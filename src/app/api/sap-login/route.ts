@@ -5,12 +5,12 @@ export async function POST() {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
     console.log('--- SAP LOGIN DEBUG ---');
-    const db = "Firplak_SA";
-    const user = "manager";
-    const pass = "2023Fir#.*";
-    const url = "https://200.7.96.194:50000/b1s/v1/Login";
+    const db = process.env.SAP_COMPANY_DB || "Firplak_SA";
+    const user = process.env.SAP_USERNAME || "manager";
+    const pass = process.env.SAP_PASSWORD || "2023Fir#.*";
+    const url = process.env.SAP_API_URL || "https://200.7.96.194:50000/b1s/v1/Login";
 
-    console.log(`--- SAP LOGIN ATTEMPT (HARDCODED) ---`);
+    console.log(`--- SAP LOGIN ATTEMPT (DYNAMIC) ---`);
     console.log(`DB: ${db}`);
     console.log(`User: ${user}`);
     console.log(`URL: ${url}`);

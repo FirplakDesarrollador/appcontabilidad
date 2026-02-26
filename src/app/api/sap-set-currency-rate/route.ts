@@ -19,7 +19,11 @@ export async function POST(request: Request) {
         const formattedDate = `${year}${month}${day}`;
 
         const cleanValue = (val: string | undefined) => (val || '').trim().replace(/^["'](.*)["']$/, '$1');
-        const url = cleanValue(process.env.SAP_SET_CURRENCY_RATE_URL);
+        let url = cleanValue(process.env.SAP_SET_CURRENCY_RATE_URL);
+
+        if (!url) {
+            url = "https://200.7.96.194:50000/b1s/v1/SBOBobService_SetCurrencyRate";
+        }
 
         if (!url) {
             return NextResponse.json({ error: 'SAP_SET_CURRENCY_RATE_URL is not defined' }, { status: 500 });
