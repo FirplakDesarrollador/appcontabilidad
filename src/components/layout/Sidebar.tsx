@@ -29,6 +29,7 @@ export function Sidebar() {
         { name: "Aprobación de facturas", icon: FileCheck, path: "/aprobacion-facturas" },
         { name: "Aprobación de documento soporte", icon: FileText, path: "/aprobacion-documentos" },
         { name: "Cargue de TRM en SAP", icon: RefreshCw, path: "/cargue-trm" },
+        { name: "Revisión de factura DIAN", icon: FileCheck, path: "/revision-factura-dian" },
     ];
 
     return (
@@ -37,7 +38,7 @@ export function Sidebar() {
                 <div className="bg-white/10 p-2 rounded-lg backdrop-blur-sm">
                     <PieChart className="h-6 w-6 text-white" />
                 </div>
-                <span className="text-xl font-bold tracking-tight">Financial<span className="font-light opacity-70">App</span></span>
+                <span className="text-xl font-bold tracking-tight">Financial App</span>
             </div>
 
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
