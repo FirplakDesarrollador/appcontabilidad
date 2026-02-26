@@ -146,7 +146,8 @@ export async function POST() {
                     "Valor total": amountValue.toString(),
                     Creado: new Date().toISOString(),
                     CUFE: detailsData.UUID || "",
-                    Gestion_Contabilidad: 'Pendiente',
+                    Gestion_Contabilidad: 'Por Aprobar',
+                    Aprobacion_Doliente: 'Por Aprobar',
                     Procesado: 'false'
                 });
 
