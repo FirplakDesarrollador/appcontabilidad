@@ -8,12 +8,33 @@ import { Bell, Search, Menu, Filter, Download, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 interface Invoice {
-    id: string;
-    invoice_number: string;
-    provider_name: string;
-    amount: number;
-    invoice_date: string;
-    status: 'approved' | 'pending' | 'rejected';
+    ID: number;
+    Nit: string | null;
+    Proveedor: string | null;
+    Nro_Factura: string | null;
+    Aprobacion_Doliente: string | null;
+    Gestion_Contabilidad: string | null;
+    Observaciones: string | null;
+    Consecutivo: string | null;
+    Responsable_de_Autorizar: string | null;
+    FechaAprobacion: string | null;
+    centro_costos: string | null;
+    "Valor total": string | null;
+    tiene_anticipo: string | null;
+    Creado: string | null;
+    "Creado por": string | null;
+    CUFE: string | null;
+    InformeRecepcion: string | null;
+    FechaProcesado: string | null;
+    DigitadoPor: string | null;
+    "Datos adjuntos": number | null;
+    tablaCostos: string | null;
+    Procesado: string | null;
+    Modificado: string | null;
+    "Modificado por": string | null;
+    fp: string | null;
+    notificar_reasignacion: boolean | null;
+    notificacionContabilidadEnviada: string | null;
 }
 
 export default function InvoicesPage() {
@@ -27,13 +48,22 @@ export default function InvoicesPage() {
 
     const fetchInvoices = async () => {
         try {
+            console.log("Fetching invoices from 'Registro_Facturas'...");
             const { data, error } = await supabase
-                .from('invoices')
+                .from('Registro_Facturas')
                 .select('*')
-                .order('created_at', { ascending: false });
+                .order('ID', { ascending: false });
 
-            if (error) throw error;
-            if (data) setInvoices(data);
+            console.log("Supabase response:", { data, error });
+
+            if (error) {
+                console.error('Supabase error:', error);
+                throw error;
+            }
+            if (data) {
+                console.log(`Fetched ${data.length} invoices.`);
+                setInvoices(data as Invoice[]);
+            }
         } catch (error) {
             console.error('Error fetching invoices:', error);
         } finally {
@@ -57,24 +87,28 @@ export default function InvoicesPage() {
             console.error('Sync error:', error);
             alert('Error de conexión con el servidor.');
         } finally {
-            setSyncing(false);
+            syncing && setSyncing(false);
         }
     };
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'approved': return 'bg-green-100 text-green-700 border-green-200';
-            case 'rejected': return 'bg-red-100 text-red-700 border-red-200';
-            default: return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-        }
+    const getStatusColor = (status: string | null) => {
+        if (!status) return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+        const s = status.toLowerCase();
+        if (s.includes('aprobado') || s.includes('procesado')) return 'bg-green-100 text-green-700 border-green-200';
+        if (s.includes('rechazado') || s.includes('anulado')) return 'bg-red-100 text-red-700 border-red-200';
+        return 'bg-blue-100 text-blue-700 border-blue-200';
     };
 
-    const getStatusLabel = (status: string) => {
-        switch (status) {
-            case 'approved': return 'Aprobada';
-            case 'rejected': return 'Rechazada';
-            default: return 'Pendiente';
-        }
+    const getStatusLabel = (status: string | null) => {
+        return status || 'Pendiente';
+    };
+
+    const formatCurrency = (value: string | null) => {
+        if (!value) return '$0.00';
+        // Remove currency symbols and format as number
+        const numericValue = parseFloat(value.replace(/[^\d.,]/g, '').replace(',', '.'));
+        if (isNaN(numericValue)) return value;
+        return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP' }).format(numericValue);
     };
 
     return (
@@ -104,7 +138,7 @@ export default function InvoicesPage() {
                     <div className="flex justify-between items-center">
                         <div>
                             <h1 className="text-3xl font-bold text-[#254153]">Gestión de Facturas</h1>
-                            <p className="text-gray-500 mt-1">Revisa y aprueba las facturas de proveedores</p>
+                            <p className="text-gray-500 mt-1">Revisa y aprueba las facturas de proveedores registrados en Registro_Facturas</p>
                         </div>
                         <div className="flex gap-2">
                             <Button
@@ -154,27 +188,29 @@ export default function InvoicesPage() {
                                     ) : invoices.length === 0 ? (
                                         <tr>
                                             <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                                                No hay facturas registradas.
+                                                No hay facturas registradas en la tabla Registro_Facturas.
                                             </td>
                                         </tr>
                                     ) : (
                                         invoices.map((invoice) => (
-                                            <tr key={invoice.id} className="hover:bg-gray-50/50 transition-colors">
+                                            <tr key={invoice.ID} className="hover:bg-gray-50/50 transition-colors">
                                                 <td className="px-6 py-4 font-medium text-[#254153]">
-                                                    {invoice.invoice_number}
-                                                </td>
-                                                <td className="px-6 py-4 text-gray-600">
-                                                    {invoice.provider_name}
-                                                </td>
-                                                <td className="px-6 py-4 text-gray-500 text-sm">
-                                                    {invoice.invoice_date}
-                                                </td>
-                                                <td className="px-6 py-4 font-semibold text-gray-900">
-                                                    ${invoice.amount?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                    {invoice.Nro_Factura || 'S/N'}
+                                                    <div className="text-[10px] text-gray-400 font-normal">ID: {invoice.ID}</div>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(invoice.status)}`}>
-                                                        {getStatusLabel(invoice.status)}
+                                                    <div className="text-sm font-medium text-gray-900">{invoice.Proveedor || 'N/A'}</div>
+                                                    <div className="text-xs text-gray-500">NIT: {invoice.Nit || 'N/A'}</div>
+                                                </td>
+                                                <td className="px-6 py-4 text-gray-500 text-sm">
+                                                    {invoice.FechaAprobacion || invoice.Creado || 'N/A'}
+                                                </td>
+                                                <td className="px-6 py-4 font-semibold text-gray-900">
+                                                    {formatCurrency(invoice["Valor total"])}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(invoice.Gestion_Contabilidad)}`}>
+                                                        {getStatusLabel(invoice.Gestion_Contabilidad)}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">

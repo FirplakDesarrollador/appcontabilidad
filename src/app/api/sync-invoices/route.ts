@@ -132,20 +132,22 @@ export async function POST() {
                 // but usually detailsData has 'Total' or similar.
                 // I'll try to map common names.
 
-                const amount = detailsData.TotalPayableAmount || item.totalAmount || 0;
+                // Insert into DB
+                const amountValue = detailsData.TotalPayableAmount || item.totalAmount || 0;
                 const provider = detailsData.AccountingSupplierParty?.Party?.PartyName?.Name || "Proveedor Desconocido";
+                const nit = detailsData.AccountingSupplierParty?.Party?.PartyTaxScheme?.CompanyID || "";
                 const date = detailsData.IssueDate || new Date().toISOString();
 
-                const { error: insertError } = await supabase.from('invoices').insert({
-                    external_id: ldf,
-                    invoice_number: ldf,
-                    provider_name: provider,
-                    amount: amount,
-                    invoice_date: date,
-                    status: 'pending',
-                    file_path_pdf: pdfPath,
-                    file_path_xml: xmlPath,
-                    metadata: detailsData // Save full details just in case
+                const { error: insertError } = await supabase.from('Registro_Facturas').insert({
+                    ID: Number(BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000)) % BigInt(9007199254740991)),
+                    Nit: nit,
+                    Proveedor: provider,
+                    Nro_Factura: ldf,
+                    "Valor total": amountValue.toString(),
+                    Creado: new Date().toISOString(),
+                    CUFE: detailsData.UUID || "",
+                    Gestion_Contabilidad: 'Pendiente',
+                    Procesado: 'false'
                 });
 
                 if (insertError) throw insertError;
