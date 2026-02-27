@@ -5,7 +5,7 @@ export async function POST(request: Request) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
     try {
-        const { sessionId, rate } = await request.json();
+        const { sessionId, rate, currency = "USD" } = await request.json();
 
         if (!sessionId || !rate) {
             return NextResponse.json({ error: 'Session ID and Rate are required' }, { status: 400 });
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
         }
 
         const body = {
-            Currency: "USD",
+            Currency: currency,
             Rate: rate.toString(),
             RateDate: formattedDate,
         };

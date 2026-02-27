@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 
-export async function POST() {
+export async function POST(request: Request) {
     // Force bypass of SSL certificate validation
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
+    const bodyRequest = await request.json().catch(() => ({}));
+
     console.log('--- SAP LOGIN DEBUG ---');
-    const db = process.env.SAP_COMPANY_DB || "Firplak_SA";
+    const db = bodyRequest.companyDB || process.env.SAP_COMPANY_DB || "Firplak_SA";
     const user = process.env.SAP_USERNAME || "manager";
     const pass = process.env.SAP_PASSWORD || "2023Fir#.*";
     const url = process.env.SAP_API_URL || "https://200.7.96.194:50000/b1s/v1/Login";

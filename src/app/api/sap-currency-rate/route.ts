@@ -5,7 +5,7 @@ export async function POST(request: Request) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
     try {
-        const { sessionId } = await request.json();
+        const { sessionId, currency = "USD" } = await request.json();
 
         if (!sessionId) {
             return NextResponse.json({ error: 'Session ID is required' }, { status: 400 });
@@ -28,13 +28,14 @@ export async function POST(request: Request) {
         console.log('--- SAP GET CURRENCY RATE ---');
         console.log('URL:', url);
         console.log('SessionId:', sessionId);
+        console.log('Currency:', currency);
 
         if (!url) {
             return NextResponse.json({ error: 'SAP_CURRENCY_RATE_URL is not defined' }, { status: 500 });
         }
 
         const body = {
-            Currency: "USD",
+            Currency: currency,
             Date: formattedDate,
         };
 
