@@ -33,10 +33,7 @@ export default function CargueTrmPage() {
 
 
     // SAP Session State for multiple DBs
-    const [sessions, setSessions] = useState<Record<string, { sessionId: string | null; timeLeft: number; error: string | null; loading: boolean; usd: number | null; eur: number | null; trmLoading: boolean }>>({
-        'Firplak_SA': { sessionId: null, timeLeft: 0, error: null, loading: false, usd: null, eur: null, trmLoading: false },
-        'DBViventta': { sessionId: null, timeLeft: 0, error: null, loading: false, usd: null, eur: null, trmLoading: false }
-    });
+    const [sessions, setSessions] = useState<Record<string, { sessionId: string | null; cookies: string | null; timeLeft: number; error: string | null; loading: boolean; usd: number | null; eur: number | null; trmLoading: boolean }>>({});
 
     const updateDBState = (db: string, newState: any) => {
         setSessions(prev => ({
@@ -45,14 +42,14 @@ export default function CargueTrmPage() {
         }));
     };
 
-    const fetchSapTrm = async (sid: string, db: string) => {
+    const fetchSapTrm = async (sid: string, db: string, cookies: string = "") => {
         updateDBState(db, { trmLoading: true });
         try {
             // Fetch USD
             const responseUsd = await fetch('/api/sap-currency-rate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId: sid, currency: 'USD' }),
+                body: JSON.stringify({ sessionId: sid, currency: 'USD', cookies }),
             });
 
             const textUsd = await responseUsd.text();
@@ -71,7 +68,7 @@ export default function CargueTrmPage() {
             const responseEur = await fetch('/api/sap-currency-rate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId: sid, currency: 'EUR' }),
+                body: JSON.stringify({ sessionId: sid, currency: 'EUR', cookies }),
             });
 
             const textEur = await responseEur.text();
@@ -113,6 +110,7 @@ export default function CargueTrmPage() {
 
             if (data.SessionId) {
                 const sid = data.SessionId;
+                const cookies = data.cookies || "";
                 console.log(`%c SAP SESSION ID OBTENIDO (${db}) `, 'background: #254153; color: white; font-weight: bold;', sid);
 
                 // Set countdown timer: use SAP timeout or default to 30 minutes
@@ -120,7 +118,9 @@ export default function CargueTrmPage() {
 
                 updateDBState(db, {
                     sessionId: sid,
-                    timeLeft: timeoutMinutes * 60
+                    cookies: cookies,
+                    timeLeft: timeoutMinutes * 60,
+                    error: null
                 });
 
                 // Immediately fetch the current TRM from SAP using the new token
@@ -180,10 +180,29 @@ export default function CargueTrmPage() {
         }
     };
 
+    const fetchDatabases = async () => {
+        try {
+            const res = await fetch('/api/config/databases');
+            const data = await res.json();
+            if (data.databases) {
+                const initialSessions: Record<string, any> = {};
+                data.databases.forEach((db: string) => {
+                    initialSessions[db] = { sessionId: null, timeLeft: 0, error: null, loading: false, usd: null, eur: null, trmLoading: false };
+                });
+                setSessions(initialSessions);
+
+                // Fetch sessions for all found DBs
+                data.databases.forEach((db: string) => fetchSapSession(db));
+            }
+        } catch (err) {
+            console.error("Failed to fetch databases config:", err);
+            setError("No se pudo cargar la configuración de bases de datos.");
+        }
+    };
+
     useEffect(() => {
         fetchTRM();
-        fetchSapSession('Firplak_SA');
-        fetchSapSession('DBViventta');
+        fetchDatabases();
     }, []);
 
     // Countdown Timer Effect
@@ -236,7 +255,7 @@ export default function CargueTrmPage() {
             const syncResults = [];
 
             for (const db of databases) {
-                const { sessionId } = sessions[db];
+                const { sessionId, cookies } = sessions[db];
                 if (!sessionId) {
                     syncResults.push({ db, success: false, message: 'Sin sesión' });
                     continue;
@@ -249,7 +268,8 @@ export default function CargueTrmPage() {
                     body: JSON.stringify({
                         sessionId,
                         rate: trmData.valor,
-                        currency: 'USD'
+                        currency: 'USD',
+                        cookies
                     }),
                 });
 
@@ -262,7 +282,8 @@ export default function CargueTrmPage() {
                         body: JSON.stringify({
                             sessionId,
                             rate: euroData.valor.toFixed(2),
-                            currency: 'EUR'
+                            currency: 'EUR',
+                            cookies
                         }),
                     });
                     if (!responseEur.ok) eurSuccess = false;
@@ -270,7 +291,7 @@ export default function CargueTrmPage() {
 
                 if (responseUsd.ok && eurSuccess) {
                     syncResults.push({ db, success: true });
-                    fetchSapTrm(sessionId, db);
+                    fetchSapTrm(sessionId, db, cookies || "");
                 } else {
                     syncResults.push({ db, success: false, message: !responseUsd.ok ? 'Error USD' : 'Error EUR' });
                 }
@@ -321,7 +342,7 @@ export default function CargueTrmPage() {
                             <div className="space-y-6">
                                 <div>
                                     <h1 className="text-3xl font-bold text-[#254153]">Cargue de TRM en SAP</h1>
-                                    <p className="text-gray-500 mt-1">Sincronización manual de tasas de cambio con SAP (Firplak y Viventta).</p>
+                                    <p className="text-gray-500 mt-1">Sincronización manual de tasas de cambio con todas las bases de datos de SAP configuradas.</p>
                                 </div>
 
                                 {/* SAP Sessions Info Boxes */}
@@ -567,7 +588,7 @@ export default function CargueTrmPage() {
                             isLoading={isSyncing}
                         >
                             <RefreshCw className={`h-5 w-5 ${isSyncing ? 'animate-spin' : ''}`} />
-                            {syncResult?.success ? '¡Sincronizado!' : 'Sincronizar en Firplak y Viventta'}
+                            {syncResult?.success ? '¡Sincronizado!' : 'Sincronizar todas las bases de datos'}
                         </Button>
 
                         {syncResult && (

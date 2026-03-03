@@ -50,8 +50,10 @@ export async function POST(request: Request) {
         }
 
         const data = await response.json();
+        const cookies = response.headers.get('set-cookie');
+
         console.log('SAP Success!');
-        return NextResponse.json(data);
+        return NextResponse.json({ ...data, cookies });
     } catch (error: any) {
         console.error('SAP Fatal Error:', error.message);
         return NextResponse.json({

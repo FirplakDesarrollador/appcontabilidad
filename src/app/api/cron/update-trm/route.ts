@@ -14,7 +14,14 @@ export async function GET(request: Request) {
         if (!usdData || usdData.length === 0) throw new Error("No USD TRM data found");
 
         const usdRate = parseFloat(usdData[0].valor);
-        const rateDate = usdData[0].vigenciadesde.split('T')[0].replace(/-/g, '');
+
+        // Use current date (today) instead of the API date to ensure SAP has a rate for the current day
+        // This covers weekends and holidays where the API date might be from a previous day.
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const rateDate = `${year}${month}${day}`;
 
         // 2. Fetch USD/EUR Cross Rate
         const crossResponse = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
@@ -23,13 +30,38 @@ export async function GET(request: Request) {
         const eurFactor = crossData.rates.EUR;
         const eurRate = usdRate / eurFactor;
 
-        console.log(`USD Rate: ${usdRate}, EUR Rate: ${eurRate.toFixed(2)} for ${rateDate}`);
+        console.log(`USD Rate: ${usdRate}, EUR Rate: ${eurRate.toFixed(2)} for ${rateDate} (Target Date)`);
 
         // 3. Define Databases to update
         const databases = [
             process.env.SAP_COMPANY_DB,
             process.env.SAP_COMPANY_DB_VIVENTTA
         ].filter(Boolean) as string[];
+
+        const fetchWithRetry = async (url: string, options: any, retries = 3, backoff = 1000) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, {
+                        ...options,
+                        headers: {
+                            ...options.headers,
+                            'Connection': 'keep-alive',
+                            'Keep-Alive': 'timeout=60, max=100'
+                        }
+                    });
+                    return response;
+                } catch (err: any) {
+                    const isNetworkError = err.name === 'TypeError' || err.code === 'UND_ERR_SOCKET' || err.message.includes('fetch failed');
+                    if (isNetworkError && i < retries - 1) {
+                        const delay = backoff * Math.pow(2, i);
+                        console.warn(`CRON Fetch Attempt ${i + 1} failed (${err.message}). Retrying in ${delay}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    throw err;
+                }
+            }
+        };
 
         const results = [];
 
@@ -38,7 +70,7 @@ export async function GET(request: Request) {
             try {
                 // Login to SAP for this specific DB
                 const loginUrl = process.env.SAP_API_URL || "https://200.7.96.194:50000/b1s/v1/Login";
-                const loginResponse = await fetch(loginUrl, {
+                const loginResponse = await fetchWithRetry(loginUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -48,45 +80,63 @@ export async function GET(request: Request) {
                     }),
                 });
 
-                if (!loginResponse.ok) throw new Error(`SAP Login failed for ${db}`);
+                if (!loginResponse || !loginResponse.ok) throw new Error(`SAP Login failed for ${db}`);
                 const loginData = await loginResponse.json();
                 const sessionId = loginData.SessionId;
 
-                // Update USD in SAP
+                // Service URLs
+                const getRateUrl = process.env.SAP_CURRENCY_RATE_URL || "https://200.7.96.194:50000/b1s/v1/SBOBobService_GetCurrencyRate";
                 const setRateUrl = process.env.SAP_SET_CURRENCY_RATE_URL || "https://200.7.96.194:50000/b1s/v1/SBOBobService_SetCurrencyRate";
 
-                const updateUsd = await fetch(setRateUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Cookie': `B1SESSION=${sessionId}`
-                    },
-                    body: JSON.stringify({
-                        Currency: "USD",
-                        Rate: usdRate.toString(),
-                        RateDate: rateDate
-                    }),
-                });
+                // Function to check and update intelligently
+                const processCurrency = async (currency: string, targetRate: number) => {
+                    try {
+                        // 1. Get current rate from SAP
+                        const getResponse = await fetchWithRetry(getRateUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Cookie': `B1SESSION=${sessionId}` },
+                            body: JSON.stringify({ Currency: currency, Date: rateDate }),
+                        });
 
-                // Update EUR in SAP
-                const updateEur = await fetch(setRateUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Cookie': `B1SESSION=${sessionId}`
-                    },
-                    body: JSON.stringify({
-                        Currency: "EUR",
-                        Rate: eurRate.toFixed(2),
-                        RateDate: rateDate
-                    }),
-                });
+                        let currentSapRate: number | null = null;
+                        if (getResponse && getResponse.ok) {
+                            const data = await getResponse.json();
+                            currentSapRate = typeof data === 'number' ? data : parseFloat(data.value || data.Rate || "0");
+                        }
+
+                        // 2. Compare and Update if different (or missing)
+                        if (currentSapRate && Math.abs(currentSapRate - targetRate) < 0.01) {
+                            console.log(`[${db}] ${currency} is already correct: ${currentSapRate}`);
+                            return true;
+                        }
+
+                        console.log(`[${db}] ${currency} mismatch! SAP: ${currentSapRate}, Official: ${targetRate}. Updating...`);
+
+                        const setResponse = await fetchWithRetry(setRateUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Cookie': `B1SESSION=${sessionId}` },
+                            body: JSON.stringify({
+                                Currency: currency,
+                                Rate: targetRate.toFixed(4),
+                                RateDate: rateDate
+                            }),
+                        });
+
+                        return !!(setResponse && setResponse.ok);
+                    } catch (err) {
+                        console.error(`Error processing ${currency} for ${db}:`, err);
+                        return false;
+                    }
+                };
+
+                const usdUpdated = await processCurrency("USD", usdRate);
+                const eurUpdated = await processCurrency("EUR", parseFloat(eurRate.toFixed(2)));
 
                 results.push({
                     db,
-                    success: updateUsd.ok && updateEur.ok,
-                    usdUpdated: updateUsd.ok,
-                    eurUpdated: updateEur.ok
+                    success: usdUpdated && eurUpdated,
+                    usdUpdated,
+                    eurUpdated
                 });
             } catch (dbError: any) {
                 console.error(`Error updating DB ${db}:`, dbError.message);
