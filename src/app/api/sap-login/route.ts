@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server';
 
-export async function POST() {
+export async function POST(request: Request) {
     // Force bypass of SSL certificate validation
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-    console.log('--- SAP LOGIN DEBUG ---');
-    const db = "Firplak_SA";
-    const user = "manager";
-    const pass = "2023Fir#.*";
-    const url = "https://200.7.96.194:50000/b1s/v1/Login";
+    const bodyRequest = await request.json().catch(() => ({}));
 
-    console.log(`--- SAP LOGIN ATTEMPT (HARDCODED) ---`);
+    console.log('--- SAP LOGIN DEBUG ---');
+    const db = bodyRequest.companyDB || process.env.SAP_COMPANY_DB || "Firplak_SA";
+    const user = process.env.SAP_USERNAME || "manager";
+    const pass = process.env.SAP_PASSWORD || "2023Fir#.*";
+    const url = process.env.SAP_API_URL || "https://200.7.96.194:50000/b1s/v1/Login";
+
+    console.log(`--- SAP LOGIN ATTEMPT (DYNAMIC) ---`);
     console.log(`DB: ${db}`);
     console.log(`User: ${user}`);
     console.log(`URL: ${url}`);
@@ -48,8 +50,10 @@ export async function POST() {
         }
 
         const data = await response.json();
+        const cookies = response.headers.get('set-cookie');
+
         console.log('SAP Success!');
-        return NextResponse.json(data);
+        return NextResponse.json({ ...data, cookies });
     } catch (error: any) {
         console.error('SAP Fatal Error:', error.message);
         return NextResponse.json({
