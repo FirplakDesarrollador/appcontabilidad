@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
+    // Check for authorization (Vercel Crons)
+    const authHeader = request.headers.get('Authorization');
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     // Force bypass of SSL certificate validation for SAP
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 

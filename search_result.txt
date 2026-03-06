@@ -1,0 +1,35 @@
+﻿node : (node:38296) 
+Warning: Setting the N
+ODE_TLS_REJECT_UNAUTHO
+RIZED environment 
+variable to '0' makes 
+TLS connections and 
+HTTPS requests 
+insecure by disabling 
+certificate 
+verification.
+En línea: 1 Carácter: 
+1
++ node 
+test-search-file.mjs 
+2>&1 | Out-File 
+-FilePath 
+search_result.txt ...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: ((node:3829   
+ 6) Wa...e verific    
+ation.:String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+(Use `node 
+--trace-warnings ...` 
+to show where the 
+warning was created)
+Searching for file: RAD  93110 ON TIME CARGO EXPRESS RP SAS OTRP501.pdf
+No file found via drive search.
