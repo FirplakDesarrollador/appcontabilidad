@@ -19,7 +19,7 @@ async function getAccessToken() {
     return response?.accessToken;
 }
 
-const getGraphClient = async () => {
+export const getGraphClient = async () => {
     const token = await getAccessToken();
     return Client.init({
         authProvider: (done) => {
@@ -127,18 +127,45 @@ export async function fetchAllSharePointItems() {
         if (!list) throw new Error('SharePoint list "Registro_de_Facturas" not found');
         const listId = list.id;
 
-        // 3. Iterative Fetch
+        // 3. Fetch the "Responsable de Autorizar" lookup list to resolve IDs to names
+        // The lookup column references the site's User Information List
+        const userMap = new Map<string, string>();
+        try {
+            // Try to get the User Information List
+            let userNextLink: string | null = `/sites/${siteId}/lists('User Information List')/items?$select=id,fields&$expand=fields($select=Title)&$top=500`;
+            while (userNextLink) {
+                const userResponse = await client.api(userNextLink).get();
+                for (const u of userResponse.value) {
+                    if (u.fields?.Title) {
+                        userMap.set(String(u.id), u.fields.Title);
+                    }
+                }
+                userNextLink = userResponse['@odata.nextLink'] ? userResponse['@odata.nextLink'].split('v1.0')[1] : null;
+            }
+            console.log(`[SharePoint] Loaded ${userMap.size} users for lookup resolution`);
+        } catch (e: any) {
+            console.warn('[SharePoint] Could not load User Information List, trying alternative approach:', e.message);
+        }
+
+        // 4. Iterative Fetch of all list items
         let allItems: any[] = [];
-        let nextLink = `/sites/${siteId}/lists/${listId}/items?expand=fields&top=500`;
+        let nextLink: string | null = `/sites/${siteId}/lists/${listId}/items?expand=fields&top=500`;
 
         console.log('Starting full SharePoint fetch...');
 
         while (nextLink) {
             const response = await client.api(nextLink).get();
-            const items = response.value.map((item: any) => ({
-                id: item.id,
-                ...item.fields
-            }));
+            const items = response.value.map((item: any) => {
+                const fields = item.fields || {};
+                const lookupId = fields.ResponsabledeAutorizarLookupId;
+                const responsableName = lookupId ? userMap.get(String(lookupId)) : null;
+
+                return {
+                    id: item.id,
+                    ...fields,
+                    Responsable_de_Autorizar: responsableName || null,
+                };
+            });
             allItems = [...allItems, ...items];
             nextLink = response['@odata.nextLink'] ? response['@odata.nextLink'].split('v1.0')[1] : null;
             console.log(`Fetched ${allItems.length} items so far...`);
