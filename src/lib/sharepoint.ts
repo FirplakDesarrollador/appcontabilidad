@@ -177,3 +177,44 @@ export async function fetchAllSharePointItems() {
         throw error;
     }
 }
+
+export async function getSharePointInvoiceById(itemId: string) {
+    try {
+        const client = await getGraphClient();
+
+        // 1. Resolve Site ID
+        const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
+        const siteId = siteResponse.id;
+
+        // 2. Find the List
+        const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
+        const list = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
+
+        if (!list) throw new Error('SharePoint list "Registro_de_Facturas" not found');
+        const listId = list.id;
+
+        // 3. Fetch specific item
+        const item = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}`)
+            .expand('fields')
+            .get();
+
+        let attachments = [];
+        if (item.fields.Attachments) {
+            try {
+                const attachmentsRes = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/attachments`).get();
+                attachments = attachmentsRes.value || [];
+            } catch (err) {
+                console.error("Error fetching attachments for item " + itemId, err);
+            }
+        }
+
+        return {
+            id: item.id,
+            ...item.fields,
+            rawAttachments: attachments
+        };
+    } catch (error) {
+        console.error(`Error fetching SharePoint item ${itemId}:`, error);
+        throw error;
+    }
+}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 interface SharePointInvoice {
@@ -144,6 +144,16 @@ export default function InvoicesPage() {
     };
 
 
+
+    const handleCopyLink = (inv: SharePointInvoice) => {
+        const url = `${window.location.origin}/externo/factura/${inv.id}`;
+        navigator.clipboard.writeText(url).then(() => {
+            alert("Enlace copiado al portapapeles");
+        }).catch(err => {
+            console.error("Error al copiar:", err);
+            alert("No se pudo copiar el enlace");
+        });
+    };
 
     const formatCurrency = (value: any) => {
         if (value === undefined || value === null || value === "") return "$ 0,00";
@@ -412,6 +422,14 @@ export default function InvoicesPage() {
                                                     </td>
                                                     <td className="px-6 py-5 text-right">
                                                         <div className="flex items-center justify-end gap-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                onClick={() => handleCopyLink(inv)}
+                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
+                                                                title="Copiar Link Público"
+                                                            >
+                                                                <Copy className="h-3.5 w-3.5" />
+                                                            </Button>
                                                             <Button
                                                                 variant="outline"
                                                                 onClick={() => setSelectedInvoice(inv)}
