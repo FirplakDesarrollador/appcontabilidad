@@ -38,7 +38,10 @@ export function Sidebar() {
                 <div className="bg-white/10 p-2 rounded-lg backdrop-blur-sm">
                     <PieChart className="h-6 w-6 text-white" />
                 </div>
-                <span className="text-xl font-bold tracking-tight">Financial App</span>
+                <div className="flex flex-col">
+                    <span className="text-xl font-bold tracking-tight leading-tight">Financial App</span>
+                    <span className="text-xs text-white/50 font-medium">version: 1.0.0</span>
+                </div>
             </div>
 
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
