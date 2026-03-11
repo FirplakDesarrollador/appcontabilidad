@@ -41,10 +41,15 @@ export default function PublicApprovalPage() {
     const [actionLoading, setActionLoading] = useState<string | null>(null); // 'Aprobado' or 'Rechazado'
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-    // Form states
     const [observaciones, setObservaciones] = useState<string>("");
     const [centroCostos, setCentroCostos] = useState<string>("");
     const [cuenta, setCuenta] = useState<string>("");
+    const [anticipo, setAnticipo] = useState<string>("");
+
+    const [sapBpLoading, setSapBpLoading] = useState(false);
+    const [sapBpFound, setSapBpFound] = useState<boolean | null>(null);
+
+
 
     const [centrosCostosList, setCentrosCostosList] = useState<any[]>([]);
     const [cuentasList, setCuentasList] = useState<any[]>([]);
@@ -78,10 +83,34 @@ export default function PublicApprovalPage() {
 
             if (data.error) throw new Error(data.error);
             setInvoice(data);
+            
+            // Check SAP BP status
+            if (data.nit) {
+                checkSapBp(data.nit);
+            }
         } catch (err: any) {
             setError(err.message || "No se pudo cargar la información de la factura");
         }
     };
+
+    const checkSapBp = async (nit: string) => {
+        try {
+            setSapBpLoading(true);
+            const res = await fetch('/api/externo/sap-check-bp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nit })
+            });
+            const data = await res.json();
+            setSapBpFound(data.found);
+        } catch (err) {
+            console.error('Error checking SAP BP:', err);
+            setSapBpFound(null);
+        } finally {
+            setSapBpLoading(false);
+        }
+    };
+
 
     const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
         try {
@@ -95,16 +124,50 @@ export default function PublicApprovalPage() {
                     observaciones,
                     centroCostos,
                     cuenta,
+                    anticipo,
                     valor: invoice?.valorTotal
+
                 })
             });
             const data = await res.json();
 
             if (data.error) throw new Error(data.error);
 
-            setSuccessMessage(`Factura ${action === 'Aprobado' ? 'aprobada' : 'rechazada'} exitosamente`);
+            if (res.ok) {
+                const actionText = action === 'Aprobado' ? 'aprobada' : 'rechazada';
+                // SharePoint Success, now try SAP Draft
+                try {
+                    const sapRes = await fetch('/api/externo/sap-draft', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            nit: invoice?.nit,
+                            total: invoice?.valorTotal,
+                            accountCode: cuenta,
+                            costCenter: centroCostos,
+                            anticipo,
+                            observations: observaciones,
+                            isApproval: action === 'Aprobado'
+                        })
+                    });
+
+                    const sapData = await sapRes.json();
+                    if (sapRes.ok) {
+                        setSuccessMessage(`Factura ${actionText} exitosamente y borrador creado en SAP (Borrador: ${sapData.draftId})`);
+                    } else {
+                        console.error('SAP Error:', sapData.error);
+                        setSuccessMessage(`Factura ${actionText} en SharePoint, pero error en SAP: ${sapData.error}`);
+                    }
+                } catch (sapErr) {
+                    console.error('SAP Fetch Error:', sapErr);
+                    setSuccessMessage(`Factura ${actionText} en SharePoint, pero falló la conexión con SAP.`);
+                }
+            } else {
+                alert(data.error || `Hubo un error al procesar la factura`);
+            }
             // Refresh data to show new status
             fetchInvoice();
+
         } catch (err: any) {
             alert(err.message || "Error al procesar la acción");
         } finally {
@@ -288,9 +351,68 @@ export default function PublicApprovalPage() {
                                 {/* Actions */}
                                 {(!invoice?.aprobacionDoliente || invoice.aprobacionDoliente === 'Pendiente' || invoice.aprobacionDoliente === 'Por Aprobar') && (
                                     <div className="space-y-8">
+                                        {/* SAP Status Header */}
+                                        <div className={`px-4 py-3 rounded-xl flex items-center gap-3 border transition-all ${
+                                            sapBpLoading ? 'bg-gray-50 border-gray-100 text-gray-500' :
+                                            sapBpFound === true ? 'bg-emerald-50 border-emerald-100 text-emerald-700' :
+                                            sapBpFound === false ? 'bg-amber-50 border-amber-100 text-amber-700' :
+                                            'bg-red-50 border-red-100 text-red-700'
+                                        }`}>
+                                            {sapBpLoading ? (
+                                                <Loader2 className="h-5 w-5 animate-spin" />
+                                            ) : sapBpFound === true ? (
+                                                <CheckCircle2 className="h-5 w-5" />
+                                            ) : sapBpFound === false ? (
+                                                <AlertCircle className="h-5 w-5" />
+                                            ) : (
+                                                <XCircle className="h-5 w-5" />
+                                            )}
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-black uppercase tracking-widest opacity-60">Status de Integración SAP</span>
+                                                <span className="text-sm font-bold">
+                                                    {sapBpLoading ? 'Verificando proveedor en SAP...' : 
+                                                     sapBpFound === true ? 'Proveedor identificado correctamente en SAP' : 
+                                                     sapBpFound === false ? 'Aviso: Proveedor no encontrado en SAP Business One' : 
+                                                     'Error al conectar con la verificación de SAP'}
+                                                </span>
+                                            </div>
+                                        </div>
+
                                         {/* Form Inputs */}
-                                        <div className="space-y-4">
+
+                                        <div className="space-y-6">
+                                            <div className="space-y-3">
+                                                <label className="text-sm font-bold text-[#254153]">¿Tiene anticipo o no la factura?</label>
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                    {[
+                                                        { id: 'con-anticipo', label: 'Con anticipo', value: 'con anticipo' },
+                                                        { id: 'sin-anticipo', label: 'Sin anticipo', value: 'sin anticipo' },
+                                                        { id: 'con-tarjeta', label: 'Compra con tarjeta', value: 'compra con tarjeta' }
+                                                    ].map((opt) => (
+                                                        <label
+                                                            key={opt.id}
+                                                            className={`flex items-center justify-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                                                                anticipo === opt.value
+                                                                    ? 'border-[#254153] bg-[#254153]/5 text-[#254153]'
+                                                                    : 'border-gray-100 bg-white text-gray-500 hover:border-gray-200'
+                                                            }`}
+                                                        >
+                                                            <input
+                                                                type="radio"
+                                                                name="anticipo"
+                                                                value={opt.value}
+                                                                checked={anticipo === opt.value}
+                                                                onChange={(e) => setAnticipo(e.target.value)}
+                                                                className="sr-only"
+                                                            />
+                                                            <span className="text-sm font-bold">{opt.label}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+
                                             <div className="space-y-2">
+
                                                 <label className="text-sm font-bold text-[#254153]">Observaciones</label>
                                                 <textarea
                                                     value={observaciones}
@@ -322,15 +444,25 @@ export default function PublicApprovalPage() {
                                                     <select
                                                         value={cuenta}
                                                         onChange={(e) => setCuenta(e.target.value)}
-                                                        className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all text-sm text-gray-700 h-12 bg-white"
-                                                        disabled={!!actionLoading}
+                                                        className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all text-sm text-gray-700 h-12 bg-white disabled:bg-gray-50 disabled:text-gray-400"
+                                                        disabled={!!actionLoading || !centroCostos}
                                                     >
+
                                                         <option value="">Selecciona una cuenta</option>
-                                                        {cuentasList.map((c: any) => (
-                                                            <option key={c.id} value={`${c.Título}`}>
-                                                                {c.Título}
-                                                            </option>
-                                                        ))}
+                                                        {(() => {
+                                                            const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === centroCostos);
+                                                            const prefix = selectedCC?.cuentas_asociadas?.toString();
+                                                            const filtered = prefix 
+                                                                ? cuentasList.filter(c => c.Título?.startsWith(prefix))
+                                                                : cuentasList;
+                                                            
+                                                            return filtered.map((c: any) => (
+                                                                <option key={c.id} value={`${c.Título}`}>
+                                                                    {c.Título}
+                                                                </option>
+                                                            ));
+                                                        })()}
+
                                                     </select>
                                                 </div>
                                             </div>
@@ -338,7 +470,6 @@ export default function PublicApprovalPage() {
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <Button
-                                                size="lg"
                                                 className="h-16 rounded-2xl bg-[#254153] hover:bg-[#1a2e3b] text-lg font-bold shadow-lg shadow-[#254153]/20 order-2 md:order-1"
                                                 disabled={!!actionLoading}
                                                 onClick={() => handleAction('Aprobado')}
@@ -351,7 +482,6 @@ export default function PublicApprovalPage() {
                                                 Aprobar Factura
                                             </Button>
                                             <Button
-                                                size="lg"
                                                 variant="outline"
                                                 className="h-16 rounded-2xl border-2 border-red-100 text-red-600 hover:bg-red-50 hover:text-red-700 text-lg font-bold order-1 md:order-2"
                                                 disabled={!!actionLoading}
@@ -361,6 +491,7 @@ export default function PublicApprovalPage() {
                                                     }
                                                 }}
                                             >
+
                                                 {actionLoading === 'Rechazado' ? (
                                                     <Loader2 className="h-6 w-6 animate-spin mr-2" />
                                                 ) : (

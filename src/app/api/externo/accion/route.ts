@@ -3,7 +3,8 @@ import { getGraphClient } from '@/lib/sharepoint';
 
 export async function POST(req: NextRequest) {
     try {
-        const { itemId, action, observaciones, centroCostos, cuenta, valor } = await req.json();
+        const { itemId, action, observaciones, centroCostos, cuenta, anticipo, valor } = await req.json();
+
 
         if (!itemId || !action) {
             return NextResponse.json({ error: 'Missing itemId or action' }, { status: 400 });
@@ -35,6 +36,11 @@ export async function POST(req: NextRequest) {
         if (observaciones) {
             updatePayload.Observaciones = observaciones;
         }
+        
+        if (anticipo) {
+            updatePayload.tiene_anticipo = anticipo;
+        }
+
 
         if (centroCostos || cuenta) {
             const centroCostosArray = [{
