@@ -7,23 +7,25 @@ export async function POST() {
         console.log('Syncing SharePoint to Supabase...');
         const spItems = await fetchAllSharePointItems();
 
-        if (!spItems || spItems.length === 0) {
-            return NextResponse.json({ success: false, error: 'No items found in SharePoint' }, { status: 404 });
-        }
-
         // Map SharePoint fields to Supabase columns
         const mappedItems = spItems.map(item => ({
-            Nit: item.Nit,
+            ID: Number(item.id),
+            sharepoint_id: String(item.id),
+            Nit: item.Nit || item.Title, // 'Title' often holds the NIT in this list
             Proveedor: item.Proveedor,
             Nro_Factura: item.Nro_Factura,
             Aprobacion_Doliente: item.Aprobacion_Doliente,
             Gestion_Contabilidad: item.Gestion_Contabilidad,
             Observaciones: item.Observaciones,
             Consecutivo: item.Consecutivo,
-            Responsable_de_Autorizar: item.Responsable_de_Autorizar,
+            // Try different possible internal names for the responsible person
+            Responsable_de_Autorizar: item.Responsable_de_Autorizar || 
+                                     item.ResponsabledeAutorizar || 
+                                     item.Responsable_x0020_de_x0020_Autor ||
+                                     item.DigitadoPor, // Fallback to DigitadoPor if nothing else
             FechaAprobacion: item.FechaAprobacion,
             centro_costos: item.centro_costos,
-            "Valor total": item["Valor total"] || item.Valor_total,
+            "Valor total": item["Valor total"] || item.Valor_total || item.Valortotal,
             tiene_anticipo: item.tiene_anticipo,
             Creado: item.Created || item.Creado,
             "Creado por": item["Creado por"] || item.Creado_por,
@@ -37,15 +39,24 @@ export async function POST() {
             Modificado: item.Modified || item.Modificado,
             "Modificado por": item["Modificado por"] || item.Modificado_por,
             fp: item.fp,
-            // Add any other relevant fields here
         }));
+
+        // Deduplicate items by Nro_Factura to avoid "ON CONFLICT DO UPDATE command cannot affect row a second time"
+        const uniqueItemsMap = new Map();
+        mappedItems.forEach(item => {
+            if (item.Nro_Factura) {
+                // Keep the latest one if there are duplicates (SharePoint ID is usually sequential)
+                uniqueItemsMap.set(item.Nro_Factura, item);
+            }
+        });
+        const deduplicatedItems = Array.from(uniqueItemsMap.values());
 
         // Upsert into Supabase in batches of 500 to avoid request limits
         const batchSize = 500;
         let totalUpserted = 0;
 
-        for (let i = 0; i < mappedItems.length; i += batchSize) {
-            const batch = mappedItems.slice(i, i + batchSize);
+        for (let i = 0; i < deduplicatedItems.length; i += batchSize) {
+            const batch = deduplicatedItems.slice(i, i + batchSize);
             const { error } = await supabase
                 .from('Registro_Facturas')
                 .upsert(batch, { onConflict: 'Nro_Factura' });

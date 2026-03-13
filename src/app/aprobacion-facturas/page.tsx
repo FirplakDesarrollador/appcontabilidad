@@ -117,17 +117,23 @@ export default function InvoicesPage() {
             let queryAprobadas = supabase.from('Registro_Facturas').select('*', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Aprobado');
             let queryRechazadas = supabase.from('Registro_Facturas').select('*', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Rechazado');
 
-            if (selectedResponsible !== 'todos') {
-                queryTodos = queryTodos.eq('Responsable_de_Autorizar', selectedResponsible);
-                queryPendientes = queryPendientes.eq('Responsable_de_Autorizar', selectedResponsible);
-                queryAprobadas = queryAprobadas.eq('Responsable_de_Autorizar', selectedResponsible);
-                queryRechazadas = queryRechazadas.eq('Responsable_de_Autorizar', selectedResponsible);
-            }
+            const applyFilters = (q: any) => {
+                let filteredQuery = q;
+                if (selectedResponsible === 'null') {
+                    filteredQuery = filteredQuery.is('Responsable_de_Autorizar', null);
+                } else if (selectedResponsible !== 'todos') {
+                    filteredQuery = filteredQuery.eq('Responsable_de_Autorizar', selectedResponsible);
+                }
+                if (debouncedSearch) {
+                    filteredQuery = filteredQuery.or(`Nro_Factura.ilike.%${debouncedSearch}%,Proveedor.ilike.%${debouncedSearch}%,Nit.ilike.%${debouncedSearch}%,Responsable_de_Autorizar.ilike.%${debouncedSearch}%`);
+                }
+                return filteredQuery;
+            };
 
-            const { count: countTodos } = await queryTodos;
-            const { count: countPendientes } = await queryPendientes;
-            const { count: countAprobadas } = await queryAprobadas;
-            const { count: countRechazadas } = await queryRechazadas;
+            const { count: countTodos } = await applyFilters(queryTodos);
+            const { count: countPendientes } = await applyFilters(queryPendientes);
+            const { count: countAprobadas } = await applyFilters(queryAprobadas);
+            const { count: countRechazadas } = await applyFilters(queryRechazadas);
             
             setCounts({
                 todos: countTodos || 0,
@@ -173,7 +179,9 @@ export default function InvoicesPage() {
                 query = query.eq('Aprobacion_Doliente', filterStatus);
             }
 
-            if (selectedResponsible !== 'todos') {
+            if (selectedResponsible === 'null') {
+                query = query.is('Responsable_de_Autorizar', null);
+            } else if (selectedResponsible !== 'todos') {
                 query = query.eq('Responsable_de_Autorizar', selectedResponsible);
             }
 
@@ -390,6 +398,7 @@ export default function InvoicesPage() {
                                         className="bg-transparent text-[11px] font-bold text-[#254153] focus:outline-none cursor-pointer min-w-[180px] appearance-none"
                                     >
                                         <option value="todos">TODOS LOS RESPONSABLES</option>
+                                        <option value="null">SIN RESPONSABLE ASIGNADO</option>
                                         {responsibles.map(resp => (
                                             <option key={resp} value={resp}>{resp?.toUpperCase()}</option>
                                         ))}
