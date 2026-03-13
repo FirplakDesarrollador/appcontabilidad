@@ -3,7 +3,7 @@ import { getGraphClient } from '@/lib/sharepoint';
 
 export async function POST(req: NextRequest) {
     try {
-        const { itemId, action, observaciones, centroCostos, cuenta, anticipo, valor } = await req.json();
+        const { itemId, action, observaciones, distribuciones, anticipo, valor } = await req.json();
 
 
         if (!itemId || !action) {
@@ -42,18 +42,20 @@ export async function POST(req: NextRequest) {
         }
 
 
-        if (centroCostos || cuenta) {
-            const centroCostosArray = [{
-                centroCosto: centroCostos || "",
-                cuenta: cuenta || "",
-                valor: valor ? String(valor) : "0"
-            }];
+        if (distribuciones && Array.isArray(distribuciones) && distribuciones.length > 0) {
+            const centroCostosArray = distribuciones.map((d: any) => ({
+                centroCosto: d.centroCostos || "",
+                cuenta: d.cuenta || "",
+                valor: d.valor ? String(d.valor) : "0"
+            }));
             updatePayload.centro_costos = JSON.stringify(centroCostosArray);
         }
 
         await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
 
         console.log(`Public update for item ${itemId} to ${action} successful`);
+
+
         return NextResponse.json({ success: true });
     } catch (error: any) {
         console.error('Error in public action API:', error);

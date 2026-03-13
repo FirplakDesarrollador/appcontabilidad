@@ -8,21 +8,22 @@ import { Client } from '@microsoft/microsoft-graph-client';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load env vars from .env.local
+// Load env vars from .env
 try {
-    const envFile = readFileSync(join(__dirname, '.env.local'), 'utf-8');
+    const envFile = readFileSync(join(__dirname, '.env'), 'utf-8');
     envFile.split('\n').forEach(line => {
         const [key, ...vals] = line.split('=');
         if (key && vals.length) process.env[key.trim()] = vals.join('=').trim();
     });
 } catch (e) {
-    console.error('Error loading .env.local:', e.message);
+    console.error('Error loading .env:', e.message);
 }
 
-const SITE_ID = 'firplaksa.sharepoint.com,41f4866c-5fec-4b36-9f08-f86c5e7566a6,2d6e04d4-34fd-49db-88fa-05b6301389e0';
+const HOST = 'firplaksa.sharepoint.com';
+const SITE_PATH = 'FPKContabilidad';
 const LIST_NAME = 'Registro_de_Facturas';
 const BUCKET = 'facturas-documentos';
-const SP_BASE = 'https://firplaksa.sharepoint.com/sites/FPKContabilidad';
+const SP_BASE = `https://${HOST}/sites/${SITE_PATH}`;
 
 const msalConfig = {
     auth: {
@@ -58,6 +59,10 @@ async function migrate() {
     const client = Client.init({
         authProvider: (done) => done(null, graphToken),
     });
+
+    console.log(`Fetching site info for /sites/${HOST}:/sites/${SITE_PATH}...`);
+    const site = await client.api(`/sites/${HOST}:/sites/${SITE_PATH}`).get();
+    const SITE_ID = site.id;
 
     console.log('Fetching list metadata to get List ID...');
     const lists = await client.api(`/sites/${SITE_ID}/lists`).get();

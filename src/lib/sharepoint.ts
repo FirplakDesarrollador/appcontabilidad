@@ -199,13 +199,12 @@ export async function getSharePointInvoiceById(itemId: string) {
             .get();
 
         let attachments = [];
-        if (item.fields.Attachments) {
-            try {
-                const attachmentsRes = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/attachments`).get();
-                attachments = attachmentsRes.value || [];
-            } catch (err) {
-                console.error("Error fetching attachments for item " + itemId, err);
-            }
+        // Try to fetch attachments regardless of the field, as it can be inconsistent
+        try {
+            const attachmentsRes = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/attachments`).get();
+            attachments = attachmentsRes.value || [];
+        } catch (err) {
+            console.error("Error fetching attachments for item " + itemId, err);
         }
 
         return {

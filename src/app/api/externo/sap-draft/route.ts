@@ -5,37 +5,74 @@ export async function POST(req: NextRequest) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
     try {
-        const { nit, total, accountCode, costCenter, anticipo, observations, isApproval } = await req.json();
+        const { nit, total, distribuciones, anticipo, observations, isApproval, sessionId: providedSessionId, cookies: providedCookies } = await req.json();
 
         if (!nit || !total) {
             return NextResponse.json({ error: 'Missing required SAP data (NIT or Total)' }, { status: 400 });
         }
 
-        // 1. SAP LOGIN
+        // 1. Fetch Helper with Retry and Keep-Alive
+        const fetchWithRetry = async (url: string, options: any, retries = 3, backoff = 1000) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, {
+                        ...options,
+                        headers: {
+                            ...options.headers,
+                            'Connection': 'keep-alive',
+                            'Keep-Alive': 'timeout=60, max=100'
+                        }
+                    });
+                    return response;
+                } catch (err: any) {
+                    const isNetworkError = err.name === 'TypeError' || err.code === 'UND_ERR_SOCKET' || err.message.includes('fetch failed');
+                    if (isNetworkError && i < retries - 1) {
+                        const delay = backoff * Math.pow(2, i);
+                        console.warn(`SAP Fetch Attempt ${i + 1} failed (${err.message}). Retrying in ${delay}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    throw err;
+                }
+            }
+            throw new Error(`Fetch failed after ${retries} retries`);
+        };
+
         const loginUrl = process.env.SAP_API_URL || "https://200.7.96.194:50000/b1s/v1/Login";
-        const loginRes = await fetch(loginUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                CompanyDB: process.env.SAP_COMPANY_DB || "Firplak_SA",
-                Password: process.env.SAP_PASSWORD || "2023Fir#.*",
-                UserName: process.env.SAP_USERNAME || "manager",
-            }),
-        });
+        let sessionId: string;
+        let cookies: string;
 
-        if (!loginRes.ok) {
-            const error = await loginRes.text();
-            console.error('SAP Login Error:', error);
-            return NextResponse.json({ error: 'Failed to authenticate with SAP', details: error }, { status: 500 });
+        // 2. SAP LOGIN — use provided session if available (like TRM flow), otherwise login fresh
+        if (providedSessionId) {
+            console.log('SAP Draft: Using pre-existing sessionId from login step.');
+            sessionId = providedSessionId;
+            cookies = providedCookies || '';
+        } else {
+            console.log('SAP Draft: No sessionId provided, logging in to SAP...');
+            const loginRes = await fetchWithRetry(loginUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    CompanyDB: process.env.SAP_COMPANY_DB || "Firplak_SA",
+                    Password: process.env.SAP_PASSWORD || "2023Fir#.*",
+                    UserName: process.env.SAP_USERNAME || "manager",
+                }),
+            });
+
+            if (!loginRes.ok) {
+                const error = await loginRes.text();
+                console.error('SAP Login Error:', error);
+                return NextResponse.json({ error: 'Failed to authenticate with SAP', details: error }, { status: 500 });
+            }
+
+            sessionId = (await loginRes.json()).SessionId;
+            cookies = loginRes.headers.get('set-cookie') || '';
         }
-
-        const sessionId = (await loginRes.json()).SessionId;
-        const cookies = loginRes.headers.get('set-cookie') || '';
 
         // 2. SEARCH BUSINESS PARTNER BY NIT (FederalTaxID)
         // NIT is stored in the 'Title' field of the SharePoint item, passed here as 'nit'
         const bpUrl = `${loginUrl.replace('/Login', '')}/BusinessPartners?$filter=FederalTaxID eq '${nit}'&$select=CardCode`;
-        const bpRes = await fetch(bpUrl, {
+        const bpRes = await fetchWithRetry(bpUrl, {
             headers: { 'Cookie': `B1SESSION=${sessionId}; ${cookies}` }
         });
 
@@ -52,26 +89,28 @@ export async function POST(req: NextRequest) {
         const cardCode = bpData.value[0].CardCode;
 
         // 3. CREATE DRAFT (oPurchaseInvoices)
-        const draftUrl = `${loginUrl.replace('/Login', '')}/Drafts`;
+        const draftUrl = process.env.SAP_DRAFTS_URL || `${loginUrl.replace('/Login', '')}/Drafts`;
         
-        // Clean account code (remove names/dashes if any, just numbers)
-        const cleanAccount = accountCode?.split(' ')[0] || '';
+        const documentLines = Array.isArray(distribuciones) && distribuciones.length > 0 
+            ? distribuciones.map((dist: any) => ({
+                ItemDescription: "FACTURA DE COMPRA", // General description
+                AccountCode: dist.cuenta?.split(' ')[0] || '', // Clean account code
+                CostingCode: dist.centroCostos?.split(' - ')[0] || '', // Extract code from "CODE - NAME",
+                LineTotal: dist.valor || "0",
+                VatGroup: "IVADC3" // Hardcoded per user screenshot earlier
+            }))
+            : [];
 
         const draftBody = {
             DocObjectCode: "oPurchaseInvoices",
+            DocType: "dDocument_Service",
             CardCode: cardCode,
             DocDate: new Date().toISOString().split('T')[0],
             Comments: `${isApproval ? '[APROBADO]' : '[RECHAZADO]'} - ${observations || ''} | Anticipo: ${anticipo || 'N/A'}`,
-            DocumentLines: [
-              {
-                AccountCode: cleanAccount,
-                CostingCode: costCenter?.split(' - ')[0] || '', // Extract code from "CODE - NAME"
-                LineTotal: total,
-              }
-            ]
+            DocumentLines: documentLines
         };
 
-        const createDraftRes = await fetch(draftUrl, {
+        const createDraftRes = await fetchWithRetry(draftUrl, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
@@ -87,6 +126,18 @@ export async function POST(req: NextRequest) {
         }
 
         const draftData = await createDraftRes.json();
+
+        // 4. SAP LOGOUT — always release the session to avoid hitting the concurrent session limit
+        try {
+            const logoutUrl = loginUrl.replace('/Login', '/Logout');
+            await fetch(logoutUrl, {
+                method: 'POST',
+                headers: { 'Cookie': `B1SESSION=${sessionId}; ${cookies}` }
+            });
+            console.log('SAP Draft: Session logged out successfully.');
+        } catch (logoutErr) {
+            console.warn('SAP Draft: Logout failed (non-critical):', logoutErr);
+        }
 
         return NextResponse.json({ 
             success: true, 

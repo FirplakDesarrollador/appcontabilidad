@@ -14,7 +14,10 @@ import {
     Building2,
     Hash,
     ChevronLeft,
-    Loader2
+    Loader2,
+    Plus,
+    Trash2,
+    Download
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -42,8 +45,7 @@ export default function PublicApprovalPage() {
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
     const [observaciones, setObservaciones] = useState<string>("");
-    const [centroCostos, setCentroCostos] = useState<string>("");
-    const [cuenta, setCuenta] = useState<string>("");
+    const [distribuciones, setDistribuciones] = useState<{ centroCostos: string; cuenta: string; valor: string }[]>([{ centroCostos: "", cuenta: "", valor: "" }]);
     const [anticipo, setAnticipo] = useState<string>("");
 
     const [sapBpLoading, setSapBpLoading] = useState(false);
@@ -84,9 +86,9 @@ export default function PublicApprovalPage() {
             if (data.error) throw new Error(data.error);
             setInvoice(data);
             
-            // Check SAP BP status
-            if (data.nit) {
-                checkSapBp(data.nit);
+            // Default first distribution to the total value of the invoice
+            if (data.valorTotal) {
+                setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
             }
         } catch (err: any) {
             setError(err.message || "No se pudo cargar la información de la factura");
@@ -114,6 +116,24 @@ export default function PublicApprovalPage() {
 
     const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
         try {
+            // Validate distributions sum equals invoice total if approved
+            if (action === 'Aprobado' && invoice?.valorTotal) {
+                const invoiceTotal = parseFloat(invoice.valorTotal);
+                const distributionsTotal = distribuciones.reduce((sum, dist) => sum + (parseFloat(dist.valor) || 0), 0);
+                
+                if (Math.abs(invoiceTotal - distributionsTotal) > 0.01) {
+                    alert(`El total distribuido (${distributionsTotal}) no coincide con el valor total de la factura (${invoiceTotal}).`);
+                    return;
+                }
+
+                // Check for empty fields
+                const hasEmpty = distribuciones.some(d => !d.centroCostos || !d.cuenta || !d.valor);
+                if (hasEmpty) {
+                    alert("Por favor, completa todos los campos de Centro de Costos, Cuenta y Valor para cada línea antes de aprobar.");
+                    return;
+                }
+            }
+
             setActionLoading(action);
             const res = await fetch('/api/externo/accion', {
                 method: 'POST',
@@ -122,11 +142,9 @@ export default function PublicApprovalPage() {
                     itemId,
                     action,
                     observaciones,
-                    centroCostos,
-                    cuenta,
+                    distribuciones, // Send the array instead of individual strings
                     anticipo,
                     valor: invoice?.valorTotal
-
                 })
             });
             const data = await res.json();
@@ -135,7 +153,7 @@ export default function PublicApprovalPage() {
 
             if (res.ok) {
                 const actionText = action === 'Aprobado' ? 'aprobada' : 'rechazada';
-                // SharePoint Success, now try SAP Draft
+                // SharePoint Success, now try SAP Draft (login + draft + logout handled in backend)
                 try {
                     const sapRes = await fetch('/api/externo/sap-draft', {
                         method: 'POST',
@@ -143,8 +161,7 @@ export default function PublicApprovalPage() {
                         body: JSON.stringify({
                             nit: invoice?.nit,
                             total: invoice?.valorTotal,
-                            accountCode: cuenta,
-                            costCenter: centroCostos,
+                            distribuciones,
                             anticipo,
                             observations: observaciones,
                             isApproval: action === 'Aprobado'
@@ -155,7 +172,7 @@ export default function PublicApprovalPage() {
                     if (sapRes.ok) {
                         setSuccessMessage(`Factura ${actionText} exitosamente y borrador creado en SAP (Borrador: ${sapData.draftId})`);
                     } else {
-                        console.error('SAP Error:', sapData.error);
+                        console.error('SAP Draft Error:', sapData.error);
                         setSuccessMessage(`Factura ${actionText} en SharePoint, pero error en SAP: ${sapData.error}`);
                     }
                 } catch (sapErr) {
@@ -237,6 +254,25 @@ export default function PublicApprovalPage() {
                                 <h1 className="text-2xl font-bold text-[#254153]">Revisión de Factura</h1>
                                 <p className="text-gray-500 text-sm">Portal externo de aprobación</p>
                             </div>
+                            {invoice?.documentInfo ? (
+                                <a
+                                    href={`/api/externo/factura/${itemId}/download?file=${encodeURIComponent(invoice.documentInfo.fileName)}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="ml-auto flex items-center gap-2 px-4 py-2 bg-[#254153]/5 border-2 border-[#254153]/10 rounded-xl text-[#254153] text-sm font-bold hover:bg-[#254153] hover:text-white transition-all shadow-sm group"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    Ver Factura {invoice?.nroFactura && `#${invoice.nroFactura}`}
+                                </a>
+                            ) : (
+                                <Button
+                                    variant="outline"
+                                    className="ml-auto flex items-center gap-2 px-4 py-2 border-2 border-[#254153]/10 rounded-xl text-[#254153] text-sm font-bold opacity-50 cursor-not-allowed"
+                                >
+                                    <FileText className="h-4 w-4" />
+                                    Ver Factura {invoice?.nroFactura && `#${invoice.nroFactura}`}
+                                </Button>
+                            )}
                         </div>
 
                         {/* Main Card */}
@@ -324,21 +360,15 @@ export default function PublicApprovalPage() {
                                                 <p className="text-sm font-bold text-[#254153] truncate">{invoice.documentInfo.fileName || "Factura Adjunta"}</p>
                                                 <p className="text-[10px] text-gray-400 font-medium italic">Archivo original de SharePoint</p>
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-2 w-full">
                                                 <a
-                                                    href={`https://firplaksa.sharepoint.com${invoice.documentInfo.serverRelativeUrl}`}
+                                                    href={`/api/externo/factura/${itemId}/download?file=${encodeURIComponent(invoice.documentInfo.fileName)}`}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
-                                                    className="h-10 px-4 flex items-center justify-center rounded-xl bg-white border border-gray-100 text-xs font-bold text-[#254153] hover:bg-gray-50 transition-all shadow-sm"
+                                                    className="w-full h-12 flex items-center justify-center rounded-2xl bg-[#254153] text-white text-sm font-bold hover:bg-[#1a2e3b] transition-all shadow-md"
                                                 >
-                                                    Ver Archivo
-                                                </a>
-                                                <a
-                                                    href={`https://firplaksa.sharepoint.com${invoice.documentInfo.serverRelativeUrl}?download=1`}
-                                                    download
-                                                    className="h-10 px-4 flex items-center justify-center rounded-xl bg-blue-600 text-white border border-transparent text-xs font-bold hover:bg-blue-700 transition-all shadow-sm shadow-blue-900/10"
-                                                >
-                                                    Descargar
+                                                    <Download className="h-5 w-5 mr-2" />
+                                                    Descargar Factura Adjunta
                                                 </a>
                                             </div>
                                         </div>
@@ -351,33 +381,6 @@ export default function PublicApprovalPage() {
                                 {/* Actions */}
                                 {(!invoice?.aprobacionDoliente || invoice.aprobacionDoliente === 'Pendiente' || invoice.aprobacionDoliente === 'Por Aprobar') && (
                                     <div className="space-y-8">
-                                        {/* SAP Status Header */}
-                                        <div className={`px-4 py-3 rounded-xl flex items-center gap-3 border transition-all ${
-                                            sapBpLoading ? 'bg-gray-50 border-gray-100 text-gray-500' :
-                                            sapBpFound === true ? 'bg-emerald-50 border-emerald-100 text-emerald-700' :
-                                            sapBpFound === false ? 'bg-amber-50 border-amber-100 text-amber-700' :
-                                            'bg-red-50 border-red-100 text-red-700'
-                                        }`}>
-                                            {sapBpLoading ? (
-                                                <Loader2 className="h-5 w-5 animate-spin" />
-                                            ) : sapBpFound === true ? (
-                                                <CheckCircle2 className="h-5 w-5" />
-                                            ) : sapBpFound === false ? (
-                                                <AlertCircle className="h-5 w-5" />
-                                            ) : (
-                                                <XCircle className="h-5 w-5" />
-                                            )}
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-black uppercase tracking-widest opacity-60">Status de Integración SAP</span>
-                                                <span className="text-sm font-bold">
-                                                    {sapBpLoading ? 'Verificando proveedor en SAP...' : 
-                                                     sapBpFound === true ? 'Proveedor identificado correctamente en SAP' : 
-                                                     sapBpFound === false ? 'Aviso: Proveedor no encontrado en SAP Business One' : 
-                                                     'Error al conectar con la verificación de SAP'}
-                                                </span>
-                                            </div>
-                                        </div>
-
                                         {/* Form Inputs */}
 
                                         <div className="space-y-6">
@@ -422,48 +425,117 @@ export default function PublicApprovalPage() {
                                                     disabled={!!actionLoading}
                                                 />
                                             </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-[#254153]">Centro de Costos</label>
-                                                    <select
-                                                        value={centroCostos}
-                                                        onChange={(e) => setCentroCostos(e.target.value)}
-                                                        className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all text-sm text-gray-700 h-12 bg-white"
+                                            <div className="space-y-4">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-sm font-bold text-[#254153]">Distribución Contable</label>
+                                                    <Button 
+                                                        variant="outline" 
+                                                        onClick={() => setDistribuciones([...distribuciones, { centroCostos: '', cuenta: '', valor: '' }])}
+                                                        className="h-8 py-0 px-3 text-xs font-bold border-gray-200 text-[#254153]"
                                                         disabled={!!actionLoading}
                                                     >
-                                                        <option value="">Selecciona un centro de costos</option>
-                                                        {centrosCostosList.map((c: any) => (
-                                                            <option key={c.id} value={`${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`}>
-                                                                {c.codigo ? `${c.codigo} - ` : ''}{c.Título}
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                                        <Plus className="h-4 w-4 mr-1" /> Agregar Fila
+                                                    </Button>
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-[#254153]">Cuenta</label>
-                                                    <select
-                                                        value={cuenta}
-                                                        onChange={(e) => setCuenta(e.target.value)}
-                                                        className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all text-sm text-gray-700 h-12 bg-white disabled:bg-gray-50 disabled:text-gray-400"
-                                                        disabled={!!actionLoading || !centroCostos}
-                                                    >
 
-                                                        <option value="">Selecciona una cuenta</option>
-                                                        {(() => {
-                                                            const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === centroCostos);
-                                                            const prefix = selectedCC?.cuentas_asociadas?.toString();
-                                                            const filtered = prefix 
-                                                                ? cuentasList.filter(c => c.Título?.startsWith(prefix))
-                                                                : cuentasList;
+                                                <div className="space-y-3">
+                                                    {distribuciones.map((distribucion, index) => (
+                                                        <div key={index} className="flex flex-col md:flex-row gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100 relative">
+                                                            {distribuciones.length > 1 && (
+                                                                <button 
+                                                                    onClick={() => setDistribuciones(distribuciones.filter((_, i) => i !== index))}
+                                                                    className="absolute -top-3 -right-3 h-8 w-8 bg-white border border-red-100 text-red-500 rounded-full flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors shadow-sm"
+                                                                    disabled={!!actionLoading}
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </button>
+                                                            )}
                                                             
-                                                            return filtered.map((c: any) => (
-                                                                <option key={c.id} value={`${c.Título}`}>
-                                                                    {c.Título}
-                                                                </option>
-                                                            ));
-                                                        })()}
+                                                            <div className="flex-1 space-y-1.5">
+                                                                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Centro Costos</label>
+                                                                <select
+                                                                    value={distribucion.centroCostos}
+                                                                    onChange={(e) => {
+                                                                        const newDist = [...distribuciones];
+                                                                        newDist[index].centroCostos = e.target.value;
+                                                                        newDist[index].cuenta = ""; // Reset cuenta on CC change
+                                                                        setDistribuciones(newDist);
+                                                                    }}
+                                                                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 font-medium outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 h-10 bg-white"
+                                                                    disabled={!!actionLoading}
+                                                                >
+                                                                    <option value="">Selecciona CC...</option>
+                                                                    {centrosCostosList.map((c: any) => (
+                                                                        <option key={c.id} value={`${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`}>
+                                                                            {c.codigo ? `${c.codigo} - ` : ''}{c.Título}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
 
-                                                    </select>
+                                                            <div className="flex-1 space-y-1.5">
+                                                                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Cuenta</label>
+                                                                <select
+                                                                    value={distribucion.cuenta}
+                                                                    onChange={(e) => {
+                                                                        const newDist = [...distribuciones];
+                                                                        newDist[index].cuenta = e.target.value;
+                                                                        setDistribuciones(newDist);
+                                                                    }}
+                                                                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 font-medium outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 h-10 bg-white disabled:bg-gray-100 disabled:text-gray-500"
+                                                                    disabled={!!actionLoading || !distribucion.centroCostos}
+                                                                >
+                                                                    <option value="">Selecciona Cuenta...</option>
+                                                                    {(() => {
+                                                                        const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === distribucion.centroCostos);
+                                                                        const prefix = selectedCC?.cuentas_asociadas?.toString();
+                                                                        const filtered = prefix 
+                                                                            ? cuentasList.filter(c => c.Título?.startsWith(prefix))
+                                                                            : cuentasList;
+                                                                        
+                                                                        return filtered.map((c: any) => (
+                                                                            <option key={c.id} value={`${c.Título}`}>
+                                                                                {c.Título}
+                                                                            </option>
+                                                                        ));
+                                                                    })()}
+                                                                </select>
+                                                            </div>
+
+                                                            <div className="w-full md:w-32 space-y-1.5">
+                                                                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Valor a Pagar</label>
+                                                                <div className="relative">
+                                                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                                        <DollarSign className="h-4 w-4 text-gray-400" />
+                                                                    </div>
+                                                                    <input
+                                                                        type="number"
+                                                                        value={distribucion.valor}
+                                                                        onChange={(e) => {
+                                                                            const newDist = [...distribuciones];
+                                                                            newDist[index].valor = e.target.value;
+                                                                            setDistribuciones(newDist);
+                                                                        }}
+                                                                        className="w-full rounded-xl border border-gray-200 pl-8 pr-3 py-2 text-sm text-gray-900 font-bold outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 h-10 bg-white"
+                                                                        disabled={!!actionLoading}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                <div className="flex justify-between items-center text-sm px-2 pt-2 border-t border-gray-100">
+                                                    <span className="font-medium text-gray-500">Total distribuido:</span>
+                                                    <span className={`font-black ${
+                                                        invoice?.valorTotal && Math.abs(parseFloat(invoice.valorTotal) - distribuciones.reduce((s,d) => s + (parseFloat(d.valor)||0), 0)) < 0.01 
+                                                        ? 'text-green-600' : 'text-red-500'
+                                                    }`}>
+                                                        {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
+                                                            .format(distribuciones.reduce((s,d) => s + (parseFloat(d.valor)||0), 0))}
+                                                        {' / '}
+                                                        {invoice?.valorTotal && new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(parseFloat(invoice.valorTotal))}
+                                                    </span>
                                                 </div>
                                             </div>
                                         </div>
