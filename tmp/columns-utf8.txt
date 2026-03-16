@@ -1,0 +1,86 @@
+List of Columns (Display Names):
+- Title (Internal Name: Title)
+- Title (Internal Name: LinkTitle)
+- Compliance Asset Id (Internal Name: ComplianceAssetId)
+- Proveedor (Internal Name: Proveedor)
+- Nro_Factura (Internal Name: Nro_Factura)
+- Aprobacion_Doliente (Internal Name: Aprobacion_Doliente)
+- Gestion_Contabilidad (Internal Name: Gestion_Contabilidad)
+- Consecutivo (Internal Name: Consecutivo)
+- Responsable de Autorizar (Internal Name: ResponsabledeAutorizar)
+- Observaciones (Internal Name: Observaciones)
+- InformeRecepcion (Internal Name: InformeRecepcion)
+- Created (Internal Name: Created)
+- Created By (Internal Name: Author)
+- ID (Internal Name: ID)
+- Color Tag (Internal Name: _ColorTag)
+- Procesado (Internal Name: Procesado)
+- Modified (Internal Name: Modified)
+- FechaProcesado (Internal Name: FechaProcesado)
+- FechaAprobacion (Internal Name: FechaAprobacion)
+- DigitadoPor (Internal Name: DigitadoPor)
+- centro_costos (Internal Name: centro_costos)
+- tiene_anticipo (Internal Name: tiene_anticipo)
+- tablaCostos (Internal Name: tablaCostos)
+- fp (Internal Name: fp)
+- notificar_reasignacion (Internal Name: notificar_reasignacion)
+- notificacionContabilidadEnviada (Internal Name: notificacionContabilidadEnviada)
+- Valor total (Internal Name: Valortotal)
+- CUFE (Internal Name: CUFE)
+- Content Type (Internal Name: ContentType)
+- Modified By (Internal Name: Editor)
+- Version (Internal Name: _UIVersionString)
+- Attachments (Internal Name: Attachments)
+- Edit (Internal Name: Edit)
+- Title (Internal Name: LinkTitleNoMenu)
+- Type (Internal Name: DocIcon)
+- Item Child Count (Internal Name: ItemChildCount)
+- Folder Child Count (Internal Name: FolderChildCount)
+- Label setting (Internal Name: _ComplianceFlags)
+- Retention label (Internal Name: _ComplianceTag)
+- Retention label Applied (Internal Name: _ComplianceTagWrittenTime)
+- Label applied by (Internal Name: _ComplianceTagUserId)
+- Item is a Record (Internal Name: _IsRecord)
+- App Created By (Internal Name: AppAuthor)
+- App Modified By (Internal Name: AppEditor)
+
+--- Real Field Keys in an Item ---
+@odata.etag
+Title
+LinkTitle
+Proveedor
+Nro_Factura
+Aprobacion_Doliente
+Gestion_Contabilidad
+Consecutivo
+ResponsabledeAutorizarLookupId
+Observaciones
+Created
+AuthorLookupId
+id
+Procesado
+Modified
+FechaProcesado
+FechaAprobacion
+DigitadoPor
+centro_costos
+tiene_anticipo
+tablaCostos
+notificar_reasignacion
+notificacionContabilidadEnviada
+Valortotal
+CUFE
+ContentType
+EditorLookupId
+_UIVersionString
+Attachments
+Edit
+LinkTitleNoMenu
+ItemChildCount
+FolderChildCount
+_ComplianceFlags
+_ComplianceTag
+_ComplianceTagWrittenTime
+_ComplianceTagUserId
+AppAuthorLookupId
+AppEditorLookupId

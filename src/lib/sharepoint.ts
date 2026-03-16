@@ -19,6 +19,13 @@ async function getAccessToken() {
     return response?.accessToken;
 }
 
+export async function getSharePointRESTToken() {
+    const response = await cca.acquireTokenByClientCredential({
+        scopes: ["https://firplaksa.sharepoint.com/.default"],
+    });
+    return response?.accessToken;
+}
+
 export const getGraphClient = async () => {
     const token = await getAccessToken();
     return Client.init({
@@ -204,16 +211,100 @@ export async function getSharePointInvoiceById(itemId: string) {
             const attachmentsRes = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/attachments`).get();
             attachments = attachmentsRes.value || [];
         } catch (err) {
-            console.error("Error fetching attachments for item " + itemId, err);
+            console.warn(`[SharePoint] Graph API attachments failed for ${itemId}, trying REST API...`);
+            try {
+                const restToken = await getSharePointRESTToken();
+                // Usamos el ID de la lista que ya resolvimos vía Graph
+                const restUrl = `https://firplaksa.sharepoint.com/sites/FPKContabilidad/_api/web/lists(guid'${listId}')/items(${itemId})/AttachmentFiles`;
+                
+                const restRes = await fetch(restUrl, {
+                    headers: {
+                        'Authorization': `Bearer ${restToken}`,
+                        'Accept': 'application/json;odata=nometadata'
+                    }
+                });
+                if (restRes.ok) {
+                    const restData = await restRes.json();
+                    // En nometadata, los resultados vienen en .value
+                    const results = restData.value || [];
+                    attachments = results.map((a: any) => ({
+                        name: a.FileName,
+                        serverRelativeUrl: a.ServerRelativeUrl
+                    }));
+                } else {
+                    console.warn(`[SharePoint] REST API attachments failed with status: ${restRes.status}`);
+                }
+            } catch (restErr) {
+                console.error("Error fetching attachments via REST for item " + itemId, restErr);
+            }
+        }
+
+        // Fallback: Si no se encontraron adjuntos vía API pero el item dice tenerlos,
+        // redirigimos al formulario estándar de SharePoint donde los adjuntos son visibles.
+        if (attachments.length === 0 && item.fields.Attachments === true) {
+            console.log(`[SharePoint] Usando DispForm como fallback para item ${itemId}`);
+            attachments.push({
+                name: 'Ver en SharePoint',
+                serverRelativeUrl: `/Lists/Registro_de_Facturas/DispForm.aspx?ID=${itemId}`,
+                isNative: true
+            });
         }
 
         return {
             id: item.id,
+            webUrl: item.webUrl,
             ...item.fields,
             rawAttachments: attachments
         };
     } catch (error) {
         console.error(`Error fetching SharePoint item ${itemId}:`, error);
         throw error;
+    }
+}
+
+export async function findExternalInvoiceDocument(nit: string, nroFactura: string, dateStr: string) {
+    try {
+        const caGraph = await cca.acquireTokenByClientCredential({
+            scopes: ['https://graph.microsoft.com/.default'],
+        });
+        const client = Client.init({
+            authProvider: (done) => done(null, caGraph!.accessToken),
+        });
+
+        // 1. Obtener Site ID de ITPowerApps
+        const site = await client.api('/sites/firplaksa.sharepoint.com:/sites/ITPowerApps').get();
+        
+        // 2. Buscar por el número de factura en el sitio
+        // El patrón es FACTURA-UBL(NIT;Nro_Factura;Fecha;...)
+        const query = `${nroFactura}`;
+        const searchRes = await client.api(`/sites/${site.id}/drive/root/search(q='${query}')`).get();
+        
+        // 3. Filtrar resultados que coincidan con el NIT y el número de factura
+        const items = searchRes.value || [];
+        // Limpiar el NIT de caracteres no numéricos para una búsqueda más robusta
+        const cleanNit = nit.replace(/[^0-9]/g, '');
+        
+        // Intentar encontrar una carpeta que contenga ambos datos
+        const match = items.find((item: any) => {
+            if (!item.folder) return false;
+            const folderName = item.name;
+            const folderNameClean = folderName.replace(/[^0-9;]/g, '');
+            // El nombre debe contener el número de factura y el NIT (limpio)
+            return folderName.includes(nroFactura) && folderName.includes(cleanNit);
+        });
+
+        if (match) {
+            // 4. Si encontramos la carpeta, buscar el PDF dentro
+            const children = await client.api(`/drives/${match.parentReference.driveId}/items/${match.id}/children`).get();
+            const pdf = children.value.find((c: any) => c.name.toLowerCase().endsWith('.pdf'));
+            if (pdf) {
+                return pdf.webUrl;
+            }
+        }
+
+        return null;
+    } catch (error) {
+        console.error('Error finding external document:', error);
+        return null;
     }
 }

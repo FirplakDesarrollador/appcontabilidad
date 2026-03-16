@@ -46,7 +46,8 @@ export async function GET(
             const attachment = invoice.rawAttachments[0];
             documentInfo = {
                 fileName: attachment.name,
-                serverRelativeUrl: `/sites/FPKContabilidad/Lists/Registro_de_Facturas/Attachments/${invoice.id}/${attachment.name}`
+                serverRelativeUrl: attachment.serverRelativeUrl || `/sites/FPKContabilidad/Lists/Registro_de_Facturas/Attachments/${invoice.id}/${attachment.name}`,
+                isNative: !!attachment.isNative
             };
         }
 

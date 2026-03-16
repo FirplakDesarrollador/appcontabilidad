@@ -348,28 +348,25 @@ export default function PublicApprovalPage() {
                                     <div className="bg-[#254153]/5 p-6 rounded-[24px] border border-[#254153]/10 mb-10 space-y-4">
                                         <div className="flex items-center justify-between">
                                             <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documento Adjunto</h4>
-                                            <span className="px-2 py-0.5 rounded bg-blue-100 text-[10px] font-bold text-blue-600 uppercase">
-                                                {invoice.documentInfo.fileName?.split('.').pop()}
-                                            </span>
+                                            {invoice.documentInfo.isNative ? (
+                                                <span className="px-2 py-0.5 rounded bg-amber-100 text-[10px] font-bold text-amber-600 uppercase">
+                                                    REQUIERE LOGIN SHAREPOINT
+                                                </span>
+                                            ) : (
+                                                <span className="px-2 py-0.5 rounded bg-blue-100 text-[10px] font-bold text-blue-600 uppercase">
+                                                    {invoice.documentInfo.fileName?.split('.').pop()}
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-4">
                                             <div className="h-12 w-12 bg-white rounded-xl flex items-center justify-center shadow-sm border border-gray-100">
                                                 <FileText className="h-6 w-6 text-blue-500" />
                                             </div>
                                             <div className="flex-1 overflow-hidden">
-                                                <p className="text-sm font-bold text-[#254153] truncate">{invoice.documentInfo.fileName || "Factura Adjunta"}</p>
-                                                <p className="text-[10px] text-gray-400 font-medium italic">Archivo original de SharePoint</p>
-                                            </div>
-                                            <div className="flex gap-2 w-full">
-                                                <a
-                                                    href={`/api/externo/factura/${itemId}/download?file=${encodeURIComponent(invoice.documentInfo.fileName)}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="w-full h-12 flex items-center justify-center rounded-2xl bg-[#254153] text-white text-sm font-bold hover:bg-[#1a2e3b] transition-all shadow-md"
-                                                >
-                                                    <Download className="h-5 w-5 mr-2" />
-                                                    Descargar Factura Adjunta
-                                                </a>
+                                                <p className="text-sm font-bold text-[#254153] truncate">{invoice.documentInfo.isNative ? "Vista previa en SharePoint" : (invoice.documentInfo.fileName || "Factura Adjunta")}</p>
+                                                <p className="text-[10px] text-gray-400 font-medium italic">
+                                                    {invoice.documentInfo.isNative ? "Usa el botón superior para ver el documento" : "Documento oficial cargado en el sistema"}
+                                                </p>
                                             </div>
                                         </div>
                                     </div>

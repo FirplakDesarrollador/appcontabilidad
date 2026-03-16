@@ -1,45 +1,42 @@
 import { NextResponse } from 'next/server';
-import * as msal from '@azure/msal-node';
-import { Client } from '@microsoft/microsoft-graph-client';
-
-const cca = new msal.ConfidentialClientApplication({
-    auth: {
-        clientId: process.env.AZURE_CLIENT_ID!,
-        authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}`,
-        clientSecret: process.env.AZURE_CLIENT_SECRET!,
-    },
-});
+import { getGraphClient } from '@/lib/sharepoint';
 
 export async function GET(req: Request) {
     try {
         const { searchParams } = new URL(req.url);
-        const itemId = searchParams.get('itemId') || '47380';
+        const itemId = searchParams.get('itemId') || '47701';
 
-        const response = await cca.acquireTokenByClientCredential({
-            scopes: ['https://graph.microsoft.com/.default'],
-        });
-        const client = Client.init({
-            authProvider: (done) => done(null, response!.accessToken!),
-        });
-
+        const client = await getGraphClient();
         const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
         const siteId = siteResponse.id;
-
+        
         const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
         const list = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
         const listId = list.id;
 
-        // Get specific item with all fields expanded
-        const item = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}`)
-            .expand('fields')
-            .get();
+        const results: any = {};
+
+        // 1. Intentar obtener el Drive de la lista
+        try {
+            results.listDrive = await client.api(`/sites/${siteId}/lists/${listId}/drive`).get();
+        } catch (e: any) {
+            results.listDrive = { error: e.message };
+        }
+
+        // 2. Intentar buscar carpetas llamadas "Attachments" en el drive raíz del sitio
+        try {
+            const rootChildren = await client.api(`/sites/${siteId}/drive/root/children`).get();
+            results.rootChildren = rootChildren.value.map((c: any) => c.name);
+        } catch (e: any) {
+            results.rootChildren = { error: e.message };
+        }
 
         return NextResponse.json({
             success: true,
             itemId,
-            allFields: item.fields,
-            fieldNames: Object.keys(item.fields),
+            results
         });
+
     } catch (error: any) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }

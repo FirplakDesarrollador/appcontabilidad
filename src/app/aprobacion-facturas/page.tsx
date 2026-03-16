@@ -364,6 +364,7 @@ export default function InvoicesPage() {
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right px-10">Valor total</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Responsable</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Estado</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Datos adjuntos</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Acciones</th>
                                     </tr>
                                 </thead>
@@ -377,6 +378,7 @@ export default function InvoicesPage() {
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-24 ml-auto" /></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-32" /></td>
                                                     <td className="px-6 py-5"><div className="h-7 bg-gray-100 rounded-full w-24" /></td>
+                                                    <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-24" /></td>
                                                     <td className="px-6 py-5 text-right"><div className="h-8 bg-gray-100 rounded-lg w-16 ml-auto" /></td>
                                                 </tr>
                                             ))
@@ -420,6 +422,22 @@ export default function InvoicesPage() {
                                                             {inv.Aprobacion_Doliente || "Pendiente"}
                                                         </span>
                                                     </td>
+                                                    <td className="px-6 py-5">
+                                                        {(inv.documentInfo || inv.Attachments) ? (
+                                                            <a
+                                                                href={`/api/sharepoint/attachment-redirect?itemId=${inv.id}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50"
+                                                                title="Ver Documento Adjunto"
+                                                            >
+                                                                <FileText className="h-3.5 w-3.5" />
+                                                                <span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span>
+                                                            </a>
+                                                        ) : (
+                                                            <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>
+                                                        )}
+                                                    </td>
                                                     <td className="px-6 py-5 text-right">
                                                         <div className="flex items-center justify-end gap-2">
                                                             <Button
@@ -437,14 +455,6 @@ export default function InvoicesPage() {
                                                                 title="Ver Detalle"
                                                             >
                                                                 <Search className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => setSelectedInvoice(inv)}
-                                                                className="h-8 px-3 text-[10px] font-bold text-blue-600 border-blue-100 hover:bg-blue-50 bg-white rounded-lg transition-all shadow-sm flex items-center gap-1.5"
-                                                            >
-                                                                <Paperclip className="h-3 w-3" />
-                                                                Enviar Factura
                                                             </Button>
                                                         </div>
                                                     </td>
@@ -536,12 +546,12 @@ export default function InvoicesPage() {
                                         </div>
 
                                         {/* Documento Adjunto */}
-                                        {selectedInvoice.documentInfo && (
+                                        {(selectedInvoice.documentInfo || selectedInvoice.Attachments) && (
                                             <div className="bg-[#254153]/5 p-6 rounded-[24px] border border-[#254153]/10 space-y-4">
                                                 <div className="flex items-center justify-between">
                                                     <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documento Adjunto</h4>
                                                     <span className="px-2 py-0.5 rounded bg-blue-100 text-[10px] font-bold text-blue-600 uppercase">
-                                                        {selectedInvoice.documentInfo.fileName?.split('.').pop()}
+                                                        {selectedInvoice.documentInfo?.fileName?.split('.').pop() || "Adjunto"}
                                                     </span>
                                                 </div>
                                                 <div className="flex items-center gap-4">
@@ -549,11 +559,11 @@ export default function InvoicesPage() {
                                                         <FileText className="h-6 w-6 text-blue-500" />
                                                     </div>
                                                     <div className="flex-1 overflow-hidden">
-                                                        <p className="text-sm font-bold text-[#254153] truncate">{selectedInvoice.documentInfo.fileName || "Factura Adjunta"}</p>
-                                                        <p className="text-[10px] text-gray-400 font-medium italic">Archivo original de SharePoint</p>
+                                                        <p className="text-sm font-bold text-[#254153] truncate">{selectedInvoice.documentInfo?.fileName || "Factura Adjunta"}</p>
+                                                        <p className="text-[10px] text-gray-400 font-medium italic">Archivo de SharePoint</p>
                                                     </div>
                                                     <a
-                                                        href={`https://firplaksa.sharepoint.com${selectedInvoice.documentInfo.serverRelativeUrl}`}
+                                                        href={`/api/sharepoint/attachment-redirect?itemId=${selectedInvoice.id}`}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="h-10 px-4 flex items-center justify-center rounded-xl bg-white border border-gray-100 text-xs font-bold text-[#254153] hover:bg-gray-50 transition-all shadow-sm"
@@ -673,11 +683,13 @@ export default function InvoicesPage() {
                                                     Actualizar Responsable
                                                 </Button>
                                             ) : (
-                                                <Button className="flex-1 h-14 rounded-2xl bg-[#254153] hover:bg-[#1a2d3a] text-white font-black text-sm shadow-xl shadow-blue-900/10">
-                                                    Enviar Factura
-                                                </Button>
+                                                <div className="flex-1" />
                                             )}
-                                            <Button variant="outline" className="h-14 rounded-2xl px-6 border-gray-100 font-bold text-gray-500 hover:bg-gray-50">
+                                            <Button 
+                                                variant="outline" 
+                                                className="h-14 rounded-2xl px-8 border-gray-100 font-bold text-gray-500 hover:bg-gray-50"
+                                                onClick={() => window.print()}
+                                            >
                                                 Imprimir
                                             </Button>
                                         </div>

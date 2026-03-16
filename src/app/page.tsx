@@ -88,6 +88,7 @@ export default function DashboardPage() {
                             <p className="text-gray-500 mt-1">Aquí tienes el resumen de hoy, 24 Enero 2026</p>
                         </div>
                         <div className="flex gap-2">
+                            <Button variant="outline" className="bg-white" onClick={() => window.location.href='/api/sharepoint/test-download'}>Descargar Prueba</Button>
                             <Button variant="outline" className="bg-white">Descargar Reporte</Button>
                             <Button>Nueva Transacción</Button>
                         </div>
