@@ -36,6 +36,16 @@ export default function InvoicesPage() {
     const [isUpdatingResponsible, setIsUpdatingResponsible] = useState(false);
     const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
 
+    // Filtros por columna
+    const [columnFilters, setColumnFilters] = useState({
+        invoice: "",
+        provider: "",
+        amount: "",
+        responsible: "",
+        status: "",
+        contabilidad: ""
+    });
+
     const fetchInvoices = async () => {
         try {
             setLoading(true);
@@ -201,10 +211,21 @@ export default function InvoicesPage() {
             inv.Nit?.toLowerCase().includes(searchTerm.toLowerCase());
 
         const matchesTab = activeTab === 'pending' ? isPending(inv) : isProcessed(inv);
-
         const matchesResponsable = selectedResponsable === "all" || inv.Responsable_de_Autorizar === selectedResponsable;
 
-        return matchesSearch && matchesTab && matchesResponsable;
+        // Filtros por columna (Excel-style)
+        const matchesColInvoice = !columnFilters.invoice || inv.Nro_Factura?.toLowerCase().includes(columnFilters.invoice.toLowerCase());
+        const matchesColProvider = !columnFilters.provider || 
+            inv.Proveedor?.toLowerCase().includes(columnFilters.provider.toLowerCase()) || 
+            inv.Nit?.toLowerCase().includes(columnFilters.provider.toLowerCase());
+        const matchesColAmount = !columnFilters.amount || String(inv.Monto).includes(columnFilters.amount);
+        const matchesColResponsible = !columnFilters.responsible || inv.Responsable_de_Autorizar?.toLowerCase().includes(columnFilters.responsible.toLowerCase());
+        const matchesColStatus = !columnFilters.status || (inv.Aprobacion_Doliente || "Pendiente").toLowerCase().includes(columnFilters.status.toLowerCase());
+        const matchesColContabilidad = !columnFilters.contabilidad || (inv.Gestion_Contabilidad || "Pendiente").toLowerCase().includes(columnFilters.contabilidad.toLowerCase());
+
+        return matchesSearch && matchesTab && matchesResponsable && 
+               matchesColInvoice && matchesColProvider && matchesColAmount && 
+               matchesColResponsible && matchesColStatus && matchesColContabilidad;
     });
 
     return (
@@ -361,11 +382,70 @@ export default function InvoicesPage() {
                                     <tr className="bg-gray-50/50 border-b border-gray-100">
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Factura</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Proveedor</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right px-10">Valor total</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Valor total</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Responsable</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Estado</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">G. Contabilidad</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Datos adjuntos</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Acciones</th>
+                                    </tr>
+                                    <tr className="bg-white border-b border-gray-50">
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.invoice}
+                                                onChange={(e) => setColumnFilters({...columnFilters, invoice: e.target.value})}
+                                            />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.provider}
+                                                onChange={(e) => setColumnFilters({...columnFilters, provider: e.target.value})}
+                                            />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.amount}
+                                                onChange={(e) => setColumnFilters({...columnFilters, amount: e.target.value})}
+                                            />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.responsible}
+                                                onChange={(e) => setColumnFilters({...columnFilters, responsible: e.target.value})}
+                                            />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.status}
+                                                onChange={(e) => setColumnFilters({...columnFilters, status: e.target.value})}
+                                            />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.contabilidad}
+                                                onChange={(e) => setColumnFilters({...columnFilters, contabilidad: e.target.value})}
+                                            />
+                                        </td>
+                                        <td className="px-3 py-2" />
+                                        <td className="px-3 py-2" />
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
@@ -384,7 +464,7 @@ export default function InvoicesPage() {
                                             ))
                                         ) : filteredInvoices.length === 0 ? (
                                             <tr>
-                                                <td colSpan={6} className="px-6 py-20 text-center">
+                                                <td colSpan={8} className="px-6 py-20 text-center">
                                                     <div className="flex flex-col items-center gap-3 opacity-30">
                                                         <Search className="h-12 w-12 text-[#254153]" />
                                                         <p className="text-lg font-bold text-[#254153]">No se encontraron resultados</p>
@@ -420,6 +500,11 @@ export default function InvoicesPage() {
                                                     <td className="px-6 py-5">
                                                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(inv.Aprobacion_Doliente)}`}>
                                                             {inv.Aprobacion_Doliente || "Pendiente"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-5">
+                                                        <span className="text-[10px] font-bold text-gray-600 uppercase tracking-tight">
+                                                            {inv.Gestion_Contabilidad || "Pendiente"}
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-5">
