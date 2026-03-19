@@ -55,6 +55,7 @@ export default function PublicApprovalPage() {
 
     const [centrosCostosList, setCentrosCostosList] = useState<any[]>([]);
     const [cuentasList, setCuentasList] = useState<any[]>([]);
+    const [downloadLoading, setDownloadLoading] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -64,6 +65,43 @@ export default function PublicApprovalPage() {
         };
         fetchData();
     }, [itemId]);
+
+    const handleDownload = async () => {
+        try {
+            setDownloadLoading(true);
+            const fileName = invoice?.documentInfo?.fileName || 'Factura';
+            const res = await fetch(`/api/externo/factura/${itemId}/download?file=${encodeURIComponent(fileName)}`);
+            
+            if (!res.ok) {
+                const data = await res.json();
+                alert(data.error || "No se ha encontrado factura en PDF");
+                return;
+            }
+
+            // Trigger download
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            // Aseguramos que el nombre termine en .pdf
+            let downloadName = fileName;
+            if (!downloadName.toLowerCase().endsWith('.pdf')) {
+                downloadName = downloadName.includes('.') 
+                    ? downloadName.replace(/\.[^/.]+$/, ".pdf")
+                    : `${downloadName}.pdf`;
+            }
+            a.download = downloadName;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (err) {
+            console.error('Download error:', err);
+            alert("Error al intentar descargar la factura");
+        } finally {
+            setDownloadLoading(false);
+        }
+    };
 
     const fetchCatalogos = async () => {
         try {
@@ -254,25 +292,18 @@ export default function PublicApprovalPage() {
                                 <h1 className="text-2xl font-bold text-[#254153]">Revisión de Factura</h1>
                                 <p className="text-gray-500 text-sm">Portal externo de aprobación</p>
                             </div>
-                            {invoice?.documentInfo ? (
-                                <a
-                                    href={`/api/externo/factura/${itemId}/download?file=${encodeURIComponent(invoice.documentInfo.fileName)}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="ml-auto flex items-center gap-2 px-4 py-2 bg-[#254153]/5 border-2 border-[#254153]/10 rounded-xl text-[#254153] text-sm font-bold hover:bg-[#254153] hover:text-white transition-all shadow-sm group"
-                                >
+                            <Button
+                                onClick={handleDownload}
+                                disabled={downloadLoading}
+                                className="ml-auto flex items-center gap-2 px-4 py-2 bg-[#254153]/5 border-2 border-[#254153]/10 rounded-xl text-[#254153] text-sm font-bold hover:bg-[#254153] hover:text-white transition-all shadow-sm group"
+                            >
+                                {downloadLoading ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
                                     <FileText className="h-4 w-4" />
-                                    Ver Factura {invoice?.nroFactura && `#${invoice.nroFactura}`}
-                                </a>
-                            ) : (
-                                <Button
-                                    variant="outline"
-                                    className="ml-auto flex items-center gap-2 px-4 py-2 border-2 border-[#254153]/10 rounded-xl text-[#254153] text-sm font-bold opacity-50 cursor-not-allowed"
-                                >
-                                    <FileText className="h-4 w-4" />
-                                    Ver Factura {invoice?.nroFactura && `#${invoice.nroFactura}`}
-                                </Button>
-                            )}
+                                )}
+                                {downloadLoading ? "Buscando..." : `Ver Factura ${invoice?.nroFactura ? `#${invoice.nroFactura}` : ""}`}
+                            </Button>
                         </div>
 
                         {/* Main Card */}

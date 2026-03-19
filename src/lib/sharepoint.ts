@@ -274,34 +274,76 @@ export async function findExternalInvoiceDocument(nit: string, nroFactura: strin
         // 1. Obtener Site ID de ITPowerApps
         const site = await client.api('/sites/firplaksa.sharepoint.com:/sites/ITPowerApps').get();
         
-        // 2. Buscar por el número de factura en el sitio
-        // El patrón es FACTURA-UBL(NIT;Nro_Factura;Fecha;...)
+        // Limpiar el NIT de caracteres no numéricos
+        const cleanNitFull = nit.replace(/[^0-9]/g, '');
+        // NIT sin el último dígito (asumiendo que es el dígito de verificación si viene de un formato con guión)
+        const nitParts = nit.split('-');
+        const nitWithoutDV = nitParts[0].replace(/[^0-9]/g, '');
+        
+        // 2. Buscar por el número de factura o el NIT en el sitio
+        // Intentamos una búsqueda que combine ambos para ser más precisos
         const query = `${nroFactura}`;
+        console.log(`[SharePoint Search] Searching for "${query}" in ITPowerApps (NIT: ${nitWithoutDV})...`);
         const searchRes = await client.api(`/sites/${site.id}/drive/root/search(q='${query}')`).get();
         
         // 3. Filtrar resultados que coincidan con el NIT y el número de factura
         const items = searchRes.value || [];
-        // Limpiar el NIT de caracteres no numéricos para una búsqueda más robusta
-        const cleanNit = nit.replace(/[^0-9]/g, '');
         
-        // Intentar encontrar una carpeta que contenga ambos datos
-        const match = items.find((item: any) => {
+        // Intentar encontrar carpetas que contengan los datos con lógica más flexible
+        const matches = items.filter((item: any) => {
             if (!item.folder) return false;
             const folderName = item.name;
-            const folderNameClean = folderName.replace(/[^0-9;]/g, '');
-            // El nombre debe contener el número de factura y el NIT (limpio)
-            return folderName.includes(nroFactura) && folderName.includes(cleanNit);
+            
+            // Patrón esperado: FACTURA-UBL(NIT;NRO;...)
+            if (!folderName.includes('FACTURA-UBL(')) return false;
+            
+            // Extraer el contenido entre paréntesis
+            const contentMatch = folderName.match(/\(([^)]+)\)/);
+            if (!contentMatch) return false;
+            
+            const parts = contentMatch[1].split(';');
+            if (parts.length < 2) return false;
+            
+            const folderNit = parts[0].trim().replace(/[^0-9]/g, '');
+            const folderNro = parts[1].trim();
+            
+            // Comparar número de factura (prioridad absoluta según el usuario)
+            const nroMatches = folderNro === nroFactura;
+            
+            if (nroMatches) {
+                console.log(`[SharePoint Search] Potential match by NRO: ${folderName}`);
+                // Si el NIT también coincide, es un "Perfect Match"
+                const nitMatches = folderNit === cleanNitFull || folderNit === nitWithoutDV;
+                if (nitMatches) {
+                    item.isPerfectMatch = true;
+                }
+                // Si coincide el número de factura, lo dejamos pasar
+                return true; 
+            }
+            
+            return false;
         });
 
-        if (match) {
+        // Ordenar: primero los que coinciden en NIT, luego el resto
+        const bestMatch = (matches as any[]).sort((a, b) => (b.isPerfectMatch ? 1 : 0) - (a.isPerfectMatch ? 1 : 0))[0];
+
+        if (bestMatch) {
+            console.log(`[SharePoint Search] Selected match: ${bestMatch.name}`);
             // 4. Si encontramos la carpeta, buscar el PDF dentro
-            const children = await client.api(`/drives/${match.parentReference.driveId}/items/${match.id}/children`).get();
+            const children = await client.api(`/drives/${bestMatch.parentReference.driveId}/items/${bestMatch.id}/children`).get();
             const pdf = children.value.find((c: any) => c.name.toLowerCase().endsWith('.pdf'));
             if (pdf) {
-                return pdf.webUrl;
+                return {
+                    id: pdf.id,
+                    driveId: bestMatch.parentReference.driveId,
+                    fileName: pdf.name,
+                    webUrl: pdf.webUrl,
+                    downloadUrl: pdf['@microsoft.graph.downloadUrl']
+                };
             }
         }
 
+        console.warn(`[SharePoint Search] No matching folder found for Invoice ${nroFactura}`);
         return null;
     } catch (error) {
         console.error('Error finding external document:', error);
