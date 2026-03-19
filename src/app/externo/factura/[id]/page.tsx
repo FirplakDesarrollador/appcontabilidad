@@ -17,7 +17,9 @@ import {
     Loader2,
     Plus,
     Trash2,
-    Download
+    Download,
+    Eye,
+    X
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -56,6 +58,9 @@ export default function PublicApprovalPage() {
     const [centrosCostosList, setCentrosCostosList] = useState<any[]>([]);
     const [cuentasList, setCuentasList] = useState<any[]>([]);
     const [downloadLoading, setDownloadLoading] = useState(false);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -66,24 +71,27 @@ export default function PublicApprovalPage() {
         fetchData();
     }, [itemId]);
 
+    const fetchPdfBlob = async () => {
+        const fileName = invoice?.documentInfo?.fileName || 'Factura';
+        const res = await fetch(`/api/externo/factura/${itemId}/download?file=${encodeURIComponent(fileName)}`);
+        
+        if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.error || "No se ha encontrado factura en PDF");
+        }
+
+        return await res.blob();
+    };
+
     const handleDownload = async () => {
         try {
             setDownloadLoading(true);
+            const blob = await fetchPdfBlob();
             const fileName = invoice?.documentInfo?.fileName || 'Factura';
-            const res = await fetch(`/api/externo/factura/${itemId}/download?file=${encodeURIComponent(fileName)}`);
             
-            if (!res.ok) {
-                const data = await res.json();
-                alert(data.error || "No se ha encontrado factura en PDF");
-                return;
-            }
-
-            // Trigger download
-            const blob = await res.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            // Aseguramos que el nombre termine en .pdf
             let downloadName = fileName;
             if (!downloadName.toLowerCase().endsWith('.pdf')) {
                 downloadName = downloadName.includes('.') 
@@ -95,11 +103,26 @@ export default function PublicApprovalPage() {
             a.click();
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
-        } catch (err) {
+        } catch (err: any) {
             console.error('Download error:', err);
-            alert("Error al intentar descargar la factura");
+            alert(err.message || "Error al intentar descargar la factura");
         } finally {
             setDownloadLoading(false);
+        }
+    };
+
+    const handlePreview = async () => {
+        try {
+            setPreviewLoading(true);
+            const blob = await fetchPdfBlob();
+            const url = window.URL.createObjectURL(blob);
+            setPreviewUrl(url);
+            setIsPreviewOpen(true);
+        } catch (err: any) {
+            console.error('Preview error:', err);
+            alert(err.message || "Error al intentar previsualizar la factura");
+        } finally {
+            setPreviewLoading(false);
         }
     };
 
@@ -399,6 +422,19 @@ export default function PublicApprovalPage() {
                                                     {invoice.documentInfo.isNative ? "Usa el botón superior para ver el documento" : "Documento oficial cargado en el sistema"}
                                                 </p>
                                             </div>
+                                            <Button
+                                                variant="outline"
+                                                onClick={handlePreview}
+                                                disabled={previewLoading}
+                                                className="h-9 px-3 rounded-lg border-gray-200 text-[#254153] hover:bg-[#254153] hover:text-white transition-all flex items-center gap-2"
+                                            >
+                                                {previewLoading ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                ) : (
+                                                    <Eye className="h-4 w-4" />
+                                                )}
+                                                <span className="text-xs font-bold">{previewLoading ? "Cargando..." : "Vista Previa"}</span>
+                                            </Button>
                                         </div>
                                     </div>
                                 )}
@@ -619,6 +655,51 @@ export default function PublicApprovalPage() {
                                 Este enlace es de uso exclusivo para el responsable de autorizar la factura.<br />
                                 © 2026 Firplak SA - Sistema de Gestión de Facturación
                             </p>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+            
+            {/* PDF Preview Modal */}
+            <AnimatePresence>
+                {isPreviewOpen && previewUrl && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex flex-col"
+                    >
+                        <div className="flex items-center justify-between p-4 bg-[#254153] text-white">
+                            <div className="flex items-center gap-3">
+                                <FileText className="h-5 w-5" />
+                                <span className="font-bold text-sm">Vista Previa: {invoice?.documentInfo?.fileName || 'Factura'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={handleDownload}
+                                    className="bg-white/10 border-white/20 text-white hover:bg-white hover:text-[#254153] h-9 px-4 rounded-lg text-xs font-bold transition-all"
+                                >
+                                    <Download className="h-4 w-4 mr-2" /> Descargar
+                                </Button>
+                                <button 
+                                    onClick={() => {
+                                        setIsPreviewOpen(false);
+                                        // Optional: Clear URL to free memory, but might be needed if reopened
+                                        // window.URL.revokeObjectURL(previewUrl); 
+                                    }}
+                                    className="h-9 w-9 flex items-center justify-center hover:bg-white/10 rounded-lg transition-colors"
+                                >
+                                    <X className="h-6 w-6" />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 bg-gray-100 flex items-center justify-center relative">
+                            <iframe 
+                                src={previewUrl} 
+                                className="w-full h-full border-none"
+                                title="Invoice Preview"
+                            />
                         </div>
                     </motion.div>
                 )}
