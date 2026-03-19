@@ -427,9 +427,10 @@ export default function PublicApprovalPage() {
                                             {(!invoice?.aprobacionDoliente || invoice.aprobacionDoliente === 'Pendiente' || invoice.aprobacionDoliente === 'Por Aprobar') && !isEditingResponsible && (
                                                 <button 
                                                     onClick={() => setIsEditingResponsible(true)}
-                                                    className="bg-white/50 hover:bg-white px-3 py-1 rounded-lg border border-[#254153]/10 text-[10px] font-black uppercase transition-all"
+                                                    className="bg-white hover:bg-[#254153] hover:text-white px-5 py-2.5 rounded-xl border-2 border-[#254153]/10 text-xs font-black uppercase transition-all shadow-sm active:scale-95 flex items-center gap-2"
                                                 >
-                                                    Reasignar
+                                                    <User className="h-4 w-4" />
+                                                    Reasignar Factura
                                                 </button>
                                             )}
                                             <span className="opacity-60 text-xs">#{invoice?.id}</span>
