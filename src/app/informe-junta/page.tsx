@@ -103,7 +103,7 @@ export default function InformeJuntaPage() {
                                 initial={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ delay: i * 0.1 }}
-                                whileHover={{ y: -5, shadow: "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)" }}
+                                whileHover={{ y: -5, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)" }}
                                 className="group text-left bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm transition-all relative overflow-hidden flex flex-col h-full"
                             >
                                 <div className={`h-14 w-14 rounded-2xl ${report.bg} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform`}>
