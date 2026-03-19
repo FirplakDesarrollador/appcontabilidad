@@ -8,7 +8,7 @@ const supabaseAdmin = createClient(
 
 export async function GET() {
     try {
-        const BUCKET = 'facturas-documentos';
+        const BUCKET = 'Facturas';
         
         const { data: rootItems } = await supabaseAdmin.storage.from(BUCKET).list('', {
             limit: 50,
@@ -46,7 +46,9 @@ export async function GET() {
         const { data, error } = await supabaseAdmin.storage.from(BUCKET).download(filePath);
         if (error) throw error;
 
-        const response = new NextResponse(data);
+        // Use Uint8Array to be safe with NextResponse
+        const buffer = await data.arrayBuffer();
+        const response = new NextResponse(new Uint8Array(buffer));
         response.headers.set('Content-Type', 'application/pdf');
         response.headers.set('Content-Disposition', `attachment; filename="${finalFileName}"`);
 

@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSharePointInvoiceById, getGraphClient } from '@/lib/sharepoint';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { getGraphClient } from '@/lib/sharepoint';
 
 export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
@@ -14,81 +8,89 @@ export async function GET(req: NextRequest) {
     if (!itemId) return new Response('ID de item faltante', { status: 400 });
 
     try {
-        // 1. Prioridad 1: Buscar en Supabase (Archivos ya migrados)
-        const { data: dbInv } = await supabase
-            .from('Registro_Facturas')
-            .select('documentos, Nit, Nro_Factura, Created')
-            .eq('ID', itemId)
-            .single();
+        console.log(`[Proxy] Starting direct SharePoint PDF fetch for Item ID: ${itemId}`);
+        const client = await getGraphClient();
 
-        if (dbInv?.documentos) {
-            let storageUrl = dbInv.documentos;
-            if (storageUrl.startsWith('[')) {
-                try {
-                    const docs = JSON.parse(storageUrl);
-                    storageUrl = docs.find((d: string) => d.toLowerCase().endsWith('.pdf')) || docs[0];
-                } catch (e) {}
-            }
+        // 1. Obtener Metadatos (Nit, Nro_Factura) desde la lista original (FPKContabilidad)
+        const siteFPK = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
+        const siteIdFPK = siteFPK.id;
+        
+        // Buscamos la lista
+        const listsRes = await client.api(`/sites/${siteIdFPK}/lists`).get();
+        const list = listsRes.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
+        if (!list) throw new Error('Lista Registro_de_Facturas no encontrada');
 
-            if (storageUrl.includes('/storage/v1/object/public/facturas-documentos/')) {
-                const storagePath = decodeURIComponent(storageUrl.split('/facturas-documentos/')[1]);
-                console.log(`[Proxy] Serving from Supabase: ${storagePath}`);
-                
-                const { data, error } = await supabase.storage.from('facturas-documentos').download(storagePath);
-                if (!error && data) {
-                    const response = new NextResponse(data);
-                    response.headers.set('Content-Type', storagePath.toLowerCase().endsWith('.xml') ? 'text/xml' : 'application/pdf');
-                    response.headers.set('Content-Disposition', `inline; filename="${storagePath.split('/').pop()}"`);
-                    return response;
-                }
-            }
+        // Obtenemos los campos del ítem
+        const itemRes = await client.api(`/sites/${siteIdFPK}/lists/${list.id}/items/${itemId}/fields`).get();
+        const nit = itemRes.Nit || '';
+        const nroFactura = itemRes.Nro_Factura || '';
+
+        if (!nit || !nroFactura) {
+            console.error(`[Proxy] Metadata missing in SP: Nit="${nit}", Nro_Factura="${nroFactura}"`);
+            // Redirigir como fallback si no hay metadatos para buscar
+            return NextResponse.redirect(`https://firplaksa.sharepoint.com/sites/FPKContabilidad/Lists/Registro_de_Facturas/DispForm.aspx?ID=${itemId}`);
         }
 
-        // 2. Prioridad 2: Buscar en tiempo real en SharePoint 'Reenvio facture' (ITPowerApps)
-        // Usamos la misma lógica que el botón de prueba pero dinamizada por el itemId
-        const nit = dbInv?.Nit || '';
-        const nroFactura = dbInv?.Nro_Factura || '';
-        const fecha = dbInv?.Created ? dbInv.Created.split('T')[0] : '';
+        console.log(`[Proxy] Found Metadata: Factura=${nroFactura}, NIT=${nit}`);
 
-        if (nit && nroFactura) {
-            console.log(`[Proxy] Searching SharePoint for Factura: ${nroFactura}, NIT: ${nit}`);
-            const client = await getGraphClient();
-            const site = await client.api('/sites/firplaksa.sharepoint.com:/sites/ITPowerApps').get();
-            const siteId = site.id;
+        // 2. Buscar en ITPowerApps -> Reenvio facture
+        const siteIT = await client.api('/sites/firplaksa.sharepoint.com:/sites/ITPowerApps').get();
+        const siteIdIT = siteIT.id;
 
-            // Búsqueda profunda en la carpeta de reenvío
-            const cleanNit = nit.replace(/[^0-9]/g, '');
-            const query = nroFactura;
-            const searchRes = await client.api(`/sites/${siteId}/drive/root:/Reenvio facture:/search(q='${query}')`).get();
+        const cleanNit = nit.replace(/[^0-9]/g, '');
+        const simpleNro = nroFactura.replace(/^0+/, ''); // Quitar ceros a la izquierda
+        
+        console.log(`[Proxy] Searching IT PowerApps for carpeta con: "${simpleNro}"`);
+        
+        // Buscamos ítems que coincidan con el número de factura
+        const searchRes = await client.api(`/sites/${siteIdIT}/drive/root:/Reenvio facture:/search(q='${simpleNro}')`).get();
+        
+        // Filtramos por la nomenclatura exacta: FACTURA-UBL(NIT;NRO;...
+        const match = (searchRes.value || []).find((f: any) => {
+            if (!f.folder) return false;
+            const name = f.name.toUpperCase();
+            return name.includes('FACTURA-UBL') && 
+                   (name.includes(cleanNit) || name.includes(nit.toUpperCase())) && 
+                   (name.includes(`;${nroFactura};`) || name.includes(`;${simpleNro};`) || name.includes(`(${cleanNit};${simpleNro}`));
+        });
+
+        if (match) {
+            console.log(`[Proxy] Match found in IT PowerApps: ${match.name}`);
             
-            const folders = (searchRes.value || []).filter((f: any) => f.folder);
-            const match = folders.find((f: any) => f.name.includes(nroFactura) && f.name.includes(cleanNit));
+            // Listamos hijos para encontrar el PDF
+            const children = await client.api(`/drives/${match.parentReference.driveId}/items/${match.id}/children`).get();
+            const pdfFile = children.value.find((c: any) => c.name.toLowerCase().endsWith('.pdf'));
 
-            if (match) {
-                console.log(`[Proxy] Found folder in SharePoint: ${match.name}. Fetching PDF...`);
-                const children = await client.api(`/drives/${match.parentReference.driveId}/items/${match.id}/children`).get();
-                const pdf = children.value.find((c: any) => c.name.toLowerCase().endsWith('.pdf'));
-
-                if (pdf) {
-                    const content = await client.api(`/drives/${match.parentReference.driveId}/items/${pdf.id}/content`).get();
+            if (pdfFile) {
+                console.log(`[Proxy] Serving PDF: ${pdfFile.name}`);
+                const contentStream = await client.api(`/drives/${match.parentReference.driveId}/items/${pdfFile.id}/content`).get();
+                
+                let buffer: Buffer;
+                if (contentStream instanceof Buffer) {
+                    buffer = contentStream;
+                } else {
                     const chunks = [];
-                    for await (const chunk of content) chunks.push(chunk);
-                    const buffer = Buffer.concat(chunks);
-
-                    const response = new NextResponse(buffer);
-                    response.headers.set('Content-Type', 'application/pdf');
-                    response.headers.set('Content-Disposition', `inline; filename="${pdf.name}"`);
-                    return response;
+                    for await (const chunk of contentStream) chunks.push(chunk);
+                    buffer = Buffer.concat(chunks);
                 }
+
+                const response = new NextResponse(new Uint8Array(buffer));
+                response.headers.set('Content-Type', 'application/pdf');
+                response.headers.set('Content-Disposition', `inline; filename="${pdfFile.name}"`);
+                return response;
+            } else {
+                console.warn(`[Proxy] Folder found but no PDF inside: ${match.name}`);
             }
+        } else {
+            console.warn(`[Proxy] No folder match found in IT PowerApps for ${nroFactura}`);
         }
 
-        // 3. Fallback Final: Redirigir a SharePoint si falla el proxy
+        // 3. Fallback Final: Si nada funciona, redirigir al formulario de SharePoint
         const baseUrl = 'https://firplaksa.sharepoint.com/sites/FPKContabilidad';
         return NextResponse.redirect(`${baseUrl}/Lists/Registro_de_Facturas/DispForm.aspx?ID=${itemId}`);
 
     } catch (error: any) {
         console.error('[Proxy Error]:', error.message);
-        return new Response(`Error: ${error.message}`, { status: 500 });
+        return new Response(`Error al recuperar el PDF desde SharePoint: ${error.message}`, { status: 500 });
     }
 }
