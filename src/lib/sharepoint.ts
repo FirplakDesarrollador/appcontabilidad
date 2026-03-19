@@ -253,10 +253,27 @@ export async function getSharePointInvoiceById(itemId: string) {
             });
         }
 
+        // 4. Resolve Responsable de Autorizar if it's a lookup
+        const fields = item.fields || {};
+        const lookupId = fields.ResponsabledeAutorizarLookupId || fields.Responsable_de_AutorizarLookupId;
+        let responsableName = null;
+
+        if (lookupId) {
+            try {
+                const userRes = await client.api(`/sites/${siteId}/lists('User Information List')/items/${lookupId}`)
+                    .expand('fields($select=Title)')
+                    .get();
+                responsableName = userRes.fields?.Title;
+            } catch (e) {
+                console.warn(`[SharePoint] Could not resolve lookup user ${lookupId}:`, e);
+            }
+        }
+
         return {
             id: item.id,
             webUrl: item.webUrl,
-            ...item.fields,
+            ...fields,
+            Responsable_de_Autorizar: responsableName || null,
             rawAttachments: attachments
         };
     } catch (error) {

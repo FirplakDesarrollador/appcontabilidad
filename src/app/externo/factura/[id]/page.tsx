@@ -33,6 +33,7 @@ interface InvoiceData {
     estadoFactura: string;
     aprobacionDoliente: string;
     gestionContabilidad: string;
+    responsableActual?: string;
     documentInfo?: any;
 }
 
@@ -62,6 +63,14 @@ export default function PublicApprovalPage() {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewError, setPreviewError] = useState<string | null>(null);
 
+    // Reasignment States
+    const [isEditingResponsible, setIsEditingResponsible] = useState(false);
+    const [userSearchQuery, setUserSearchQuery] = useState("");
+    const [userSearchResults, setUserSearchResults] = useState<any[]>([]);
+    const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+    const [isUpdatingResponsible, setIsUpdatingResponsible] = useState(false);
+    const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
+
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
@@ -76,6 +85,29 @@ export default function PublicApprovalPage() {
             handlePreview();
         }
     }, [invoice]);
+
+    // Search users effect
+    useEffect(() => {
+        const searchUsers = async () => {
+            if (userSearchQuery.length < 3) {
+                setUserSearchResults([]);
+                return;
+            }
+            setIsSearchingUsers(true);
+            try {
+                const res = await fetch(`/api/users/search?q=${encodeURIComponent(userSearchQuery)}`);
+                const data = await res.json();
+                setUserSearchResults(data.users || []);
+            } catch (err) {
+                console.error('Error searching users:', err);
+            } finally {
+                setIsSearchingUsers(false);
+            }
+        };
+
+        const timer = setTimeout(searchUsers, 500);
+        return () => clearTimeout(timer);
+    }, [userSearchQuery]);
 
     const fetchPdfBlob = async () => {
         const fileName = invoice?.documentInfo?.fileName || 'Factura';
@@ -259,6 +291,37 @@ export default function PublicApprovalPage() {
         }
     };
 
+    const handleUpdateResponsible = async () => {
+        if (!pendingResponsibleUser) return;
+        
+        try {
+            setIsUpdatingResponsible(true);
+            const res = await fetch('/api/sharepoint/update-responsible', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    itemId,
+                    userEmail: pendingResponsibleUser.email,
+                    userName: pendingResponsibleUser.name
+                })
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Error al actualizar responsable');
+            }
+
+            setSuccessMessage(`Factura reasignada exitosamente a ${pendingResponsibleUser.name}`);
+            setIsEditingResponsible(false);
+            setPendingResponsibleUser(null);
+            fetchInvoice();
+        } catch (err: any) {
+            alert(err.message || 'Error al reasignar responsable');
+        } finally {
+            setIsUpdatingResponsible(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-6">
@@ -360,8 +423,114 @@ export default function PublicApprovalPage() {
                                                 invoice?.aprobacionDoliente === 'Rechazado' ? 'RECHAZADA ANTERIORMENTE' :
                                                     'PENDIENTE DE TU ACCIÓN'}
                                         </div>
-                                        <span className="opacity-60 text-xs">#{invoice?.id}</span>
+                                        <div className="flex items-center gap-4">
+                                            {(!invoice?.aprobacionDoliente || invoice.aprobacionDoliente === 'Pendiente' || invoice.aprobacionDoliente === 'Por Aprobar') && !isEditingResponsible && (
+                                                <button 
+                                                    onClick={() => setIsEditingResponsible(true)}
+                                                    className="bg-white/50 hover:bg-white px-3 py-1 rounded-lg border border-[#254153]/10 text-[10px] font-black uppercase transition-all"
+                                                >
+                                                    Reasignar
+                                                </button>
+                                            )}
+                                            <span className="opacity-60 text-xs">#{invoice?.id}</span>
+                                        </div>
                                     </div>
+
+                                    {/* Reassignment Search Overlay */}
+                                    <AnimatePresence>
+                                        {isEditingResponsible && (
+                                            <motion.div
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: 'auto', opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                className="bg-[#244153] text-white overflow-hidden"
+                                            >
+                                                <div className="p-8 space-y-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <h3 className="text-sm font-black uppercase tracking-widest">Reasignar Responsable</h3>
+                                                        <button onClick={() => setIsEditingResponsible(false)} className="opacity-60 hover:opacity-100 transition-all">
+                                                            <X className="h-5 w-5" />
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div className="relative">
+                                                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                                            {isSearchingUsers ? (
+                                                                <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+                                                            ) : (
+                                                                <User className="h-4 w-4 text-white/40" />
+                                                            )}
+                                                        </div>
+                                                        <input 
+                                                            type="text"
+                                                            placeholder="Escribe el nombre del nuevo responsable..."
+                                                            className="w-full bg-white/10 border border-white/20 rounded-2xl py-3.5 pl-11 pr-4 text-sm font-bold placeholder:text-white/30 outline-none focus:bg-white/20 focus:border-white/40 transition-all"
+                                                            value={userSearchQuery}
+                                                            onChange={(e) => setUserSearchQuery(e.target.value)}
+                                                            autoFocus
+                                                        />
+                                                    </div>
+
+                                                    {userSearchResults.length > 0 && (
+                                                        <div className="bg-white/10 rounded-[20px] border border-white/10 divide-y divide-white/10 max-h-[250px] overflow-y-auto">
+                                                            {userSearchResults.map((user) => (
+                                                                <button
+                                                                    key={user.id}
+                                                                    onClick={() => {
+                                                                        setPendingResponsibleUser(user);
+                                                                        setUserSearchQuery("");
+                                                                        setUserSearchResults([]);
+                                                                    }}
+                                                                    className="w-full px-5 py-3 text-left hover:bg-white/10 transition-all flex items-center justify-between group"
+                                                                >
+                                                                    <div>
+                                                                        <p className="text-sm font-bold">{user.name}</p>
+                                                                        <p className="text-[10px] text-white/40 font-medium">{user.email}</p>
+                                                                    </div>
+                                                                    <div className="h-6 w-6 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-[#4ade80] group-hover:text-white transition-all">
+                                                                        <Plus className="h-3 w-3" />
+                                                                    </div>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {pendingResponsibleUser && (
+                                                        <motion.div 
+                                                            initial={{ opacity: 0, y: 10 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            className="bg-white/10 p-4 rounded-2xl border-2 border-[#4ade80]/40 flex items-center justify-between"
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="h-10 w-10 rounded-full bg-[#4ade80]/20 flex items-center justify-center border border-[#4ade80]/40">
+                                                                    <User className="h-5 w-5 text-[#4ade80]" />
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-xs font-black uppercase text-[#4ade80] tracking-wider mb-0.5">Nuevo Responsable</p>
+                                                                    <p className="text-sm font-bold">{pendingResponsibleUser.name}</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <button 
+                                                                    onClick={() => setPendingResponsibleUser(null)}
+                                                                    className="px-4 py-2 rounded-xl text-xs font-bold hover:bg-white/10 transition-all"
+                                                                >
+                                                                    Cancelar
+                                                                </button>
+                                                                <Button 
+                                                                    onClick={handleUpdateResponsible}
+                                                                    disabled={isUpdatingResponsible}
+                                                                    className="bg-[#4ade80] hover:bg-[#22c55e] text-[#1a2e3b] font-black text-xs px-6 rounded-xl h-10 shadow-lg shadow-[#4ade80]/20"
+                                                                >
+                                                                    {isUpdatingResponsible ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirmar Cambio"}
+                                                                </Button>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
 
                                     <div className="p-8 space-y-10">
                                         {/* Info Grid */}
@@ -395,6 +564,14 @@ export default function PublicApprovalPage() {
                                                     <span className="text-[10px] font-black uppercase tracking-wider">Factura</span>
                                                 </div>
                                                 <p className="text-base font-bold text-gray-800">{invoice?.nroFactura}</p>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center gap-2 text-gray-400 mb-1">
+                                                    <User className="h-4 w-4" />
+                                                    <span className="text-[10px] font-black uppercase tracking-wider">Responsable</span>
+                                                </div>
+                                                <p className="text-base font-bold text-gray-800">{invoice?.responsableActual || "No asignado"}</p>
                                             </div>
 
                                             <div className="space-y-1.5">

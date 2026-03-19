@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSharePointInvoiceById } from '@/lib/sharepoint';
+import { getSharePointInvoiceById, findExternalInvoiceDocument } from '@/lib/sharepoint';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,10 +21,9 @@ export async function GET(
 
         let documentInfo = null;
         
-        // Check Documento_x0020_PDF (internal name for "Documento PDF")
+        // 1. Check direct fields
         if (invoice.Documento_x0020_PDF) {
             try {
-                // Could be JSON or string URL
                 if (invoice.Documento_x0020_PDF.startsWith('{')) {
                     documentInfo = JSON.parse(invoice.Documento_x0020_PDF);
                 } else {
@@ -34,7 +33,6 @@ export async function GET(
                 documentInfo = { fileName: "Factura", serverRelativeUrl: invoice.Documento_x0020_PDF };
             }
         } 
-        // Check for SharePoint Hyperlink column "Documento adjunto" (often mapped to Documento_x0020_adjunto)
         else if (invoice.Documento_x0020_adjunto) {
             const link = invoice.Documento_x0020_adjunto;
             documentInfo = {
@@ -51,6 +49,19 @@ export async function GET(
             };
         }
 
+        // 2. Fallback: Search in ITPowerApps Site if not found
+        if (!documentInfo && invoice.Nro_Factura && nitValue !== 'N/A') {
+            const externalDoc = await findExternalInvoiceDocument(nitValue, invoice.Nro_Factura, "");
+            if (externalDoc) {
+                documentInfo = {
+                    fileName: externalDoc.fileName,
+                    serverRelativeUrl: externalDoc.webUrl,
+                    isExternal: true,
+                    downloadUrl: externalDoc.downloadUrl
+                };
+            }
+        }
+
         return NextResponse.json({
             id: invoice.id,
             proveedor: invoice.Proveedor || "N/A",
@@ -61,6 +72,7 @@ export async function GET(
             estadoFactura: invoice.Aprobacion_Doliente || "Pendiente",
             aprobacionDoliente: invoice.Aprobacion_Doliente || "Pendiente",
             gestionContabilidad: invoice.Gestion_Contabilidad || "Pendiente",
+            responsableActual: invoice.Responsable_de_Autorizar || "No asignado",
             documentInfo
         });
 
