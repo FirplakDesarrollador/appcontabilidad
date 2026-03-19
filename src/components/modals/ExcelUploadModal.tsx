@@ -11,10 +11,11 @@ interface ExcelUploadModalProps {
     isOpen: boolean;
     onClose: () => void;
     existingInvoices: RegistroFactura[];
+    allInvoiceNumbers?: Set<string>;
     onConfirm: (headers: string[], data: any[][]) => void;
 }
 
-export function ExcelUploadModal({ isOpen, onClose, existingInvoices, onConfirm }: ExcelUploadModalProps) {
+export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoiceNumbers, onConfirm }: ExcelUploadModalProps) {
     const [file, setFile] = useState<File | null>(null);
     const [previewData, setPreviewData] = useState<any[]>([]);
     const [allMissingData, setAllMissingData] = useState<any[][]>([]);
@@ -58,53 +59,133 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, onConfirm 
 
                         currentDataRows = currentDataRows.map(row => {
                             const newRow = [...row];
-                            const prefijo = String(row[prefijoIndex] || "");
-                            const folio = String(row[folioIndex] || "");
-                            // Insert at index 0
-                            newRow.splice(0, 0, `${prefijo}${folio}`);
+                            const prefijo = String(row[prefijoIndex] || "").trim();
+                            const folio = String(row[folioIndex] || "").trim();
+                            // Insert at index 0, removing any internal space between them
+                            newRow.splice(0, 0, `${prefijo}${folio}`.replace(/\s/g, ''));
                             return newRow;
                         });
                     }
 
-                    // Filter "Application response"
-                    const currentHeadersLower = currentHeaders.map(h => String(h || "").toLowerCase().trim());
-                    const tipoDocIndex = currentHeadersLower.indexOf("tipo de documento");
-                    if (tipoDocIndex !== -1) {
+                    // Define lower case headers for index searching
+                    const initialHeadersLower = currentHeaders.map(h => String(h || "").toLowerCase().trim());
+
+                    // Reorder columns: Move Emisor right after Tipo de Documento
+                    const emisorIndex = initialHeadersLower.indexOf("nombre emisor") !== -1
+                        ? initialHeadersLower.indexOf("nombre emisor")
+                        : initialHeadersLower.indexOf("emisor");
+                    const tipoDocIndex = initialHeadersLower.indexOf("tipo de documento");
+
+                    let finalProcessedData: any[][] = [];
+
+                    if (emisorIndex !== -1 && tipoDocIndex !== -1) {
+                        // Rename emisor for clarity
+                        currentHeaders[emisorIndex] = "Nombre del emisor";
+
+                        // Move emisor column in headers
+                        const [emisorHeader] = currentHeaders.splice(emisorIndex, 1);
+                        currentHeaders.splice(tipoDocIndex + 1, 0, emisorHeader);
+
+                        // Move emisor in data rows
+                        currentDataRows = currentDataRows.map(row => {
+                            const newRow = [...row];
+                            const [emisorValue] = newRow.splice(emisorIndex, 1);
+                            newRow.splice(tipoDocIndex + 1, 0, emisorValue);
+                            return newRow;
+                        });
+
+                        // Re-calculate headers lower for subsequent logic
+                        const updatedHeadersLower = currentHeaders.map(h => String(h || "").toLowerCase().trim());
+
+                        // Filter "Application response" (re-check index after move)
+                        const newTipoDocIdx = updatedHeadersLower.indexOf("tipo de documento");
                         currentDataRows = currentDataRows.filter(row =>
-                            String(row[tipoDocIndex] || "").toLowerCase().trim() !== "application response"
+                            String(row[newTipoDocIdx] || "").toLowerCase().trim() !== "application response"
                         );
+
+                        // Find "Factura" or "Nro. Factura" for comparison (re-check index)
+                        const facturaIndex = updatedHeadersLower.indexOf("factura") !== -1
+                            ? updatedHeadersLower.indexOf("factura")
+                            : updatedHeadersLower.indexOf("nro. factura") !== -1
+                                ? updatedHeadersLower.indexOf("nro. factura")
+                                : updatedHeadersLower.indexOf("nro_factura");
+
+                        const existingInvoiceNumbers = allInvoiceNumbers || new Set(
+                            existingInvoices.map(inv => String(inv.Nro_Factura || "").toLowerCase().trim())
+                        );
+
+                        // Add Status Header and Filter for "No encontrado"
+                        currentHeaders.push("Estado en Sistema");
+
+                        finalProcessedData = currentDataRows.map(row => {
+                            const newRow = [...row];
+                            let status = "Desconocido";
+                            if (facturaIndex !== -1) {
+                                const facturaNum = String(row[facturaIndex] || "").toLowerCase().trim();
+                                status = existingInvoiceNumbers.has(facturaNum) ? "Encontrado" : "No encontrado";
+                            }
+                            newRow.push(status);
+                            return newRow;
+                        }).filter(row => row[row.length - 1] === "No encontrado");
+
+                    } else {
+                        // Original logic if columns not found for reordering
+                        const tipoDocIndex = initialHeadersLower.indexOf("tipo de documento");
+                        if (tipoDocIndex !== -1) {
+                            currentDataRows = currentDataRows.filter(row =>
+                                String(row[tipoDocIndex] || "").toLowerCase().trim() !== "application response"
+                            );
+                        }
+
+                        // Find "Factura" or "Nro. Factura" for comparison
+                        const facturaIndex = initialHeadersLower.indexOf("factura") !== -1
+                            ? initialHeadersLower.indexOf("factura")
+                            : initialHeadersLower.indexOf("nro. factura") !== -1
+                                ? initialHeadersLower.indexOf("nro. factura")
+                                : initialHeadersLower.indexOf("nro_factura");
+
+                        const existingInvoiceNumbers = allInvoiceNumbers || new Set(
+                            existingInvoices.map(inv => String(inv.Nro_Factura || "").toLowerCase().trim())
+                        );
+
+                        // Add Status Header and Filter for "No encontrado"
+                        currentHeaders.push("Estado en Sistema");
+
+                        finalProcessedData = currentDataRows.map(row => {
+                            const newRow = [...row];
+                            let status = "Desconocido";
+                            if (facturaIndex !== -1) {
+                                const facturaNum = String(row[facturaIndex] || "").toLowerCase().trim();
+                                status = existingInvoiceNumbers.has(facturaNum) ? "Encontrado" : "No encontrado";
+                            }
+                            newRow.push(status);
+                            return newRow;
+                        }).filter(row => row[row.length - 1] === "No encontrado");
                     }
 
-                    // Find "Factura" or "Nro_Factura" for comparison
-                    const facturaIndex = currentHeadersLower.indexOf("factura") !== -1
-                        ? currentHeadersLower.indexOf("factura")
-                        : currentHeadersLower.indexOf("nro. factura") !== -1
-                            ? currentHeadersLower.indexOf("nro. factura")
-                            : currentHeadersLower.indexOf("nro_factura");
+                    // List of columns to exclude from the view
+                    const columnsToExclude = [
+                        "folio", "prefijo", "divisa", "forma de pago", "medio de pago",
+                        "fecha de recepcion", "fecha de recepción", "nit receptor", "nombre receptor",
+                        "ica", "timbre", "inc bolsas", "inc combustibles", "ic datos",
+                        "icl", "inpp", "ibua", "icui", "reteiva", "reterenta",
+                        "rete ica", "estado", "grupo",
+                        "ic", "in carbono", "in combustibles", "rete iva", "rete renta"
+                    ];
 
-                    const existingInvoiceNumbers = new Set(
-                        existingInvoices.map(inv => String(inv.Nro_Factura || "").toLowerCase().trim())
-                    );
+                    // Identify indices of columns to keep
+                    const keptIndices = currentHeaders
+                        .map((h, i) => columnsToExclude.includes(String(h || "").toLowerCase().trim()) ? -1 : i)
+                        .filter(i => i !== -1);
 
-                    // Add Status Header and Filter for "No encontrado"
-                    currentHeaders.push("Estado en Sistema");
+                    const finalHeaders = keptIndices.map(i => currentHeaders[i]);
+                    const finalData = finalProcessedData.map(row => keptIndices.map(i => row[i]));
 
-                    const processedData = currentDataRows.map(row => {
-                        const newRow = [...row];
-                        let status = "Desconocido";
-                        if (facturaIndex !== -1) {
-                            const facturaNum = String(row[facturaIndex] || "").toLowerCase().trim();
-                            status = existingInvoiceNumbers.has(facturaNum) ? "Encontrado" : "No encontrado";
-                        }
-                        newRow.push(status);
-                        return newRow;
-                    }).filter(row => row[row.length - 1] === "No encontrado");
+                    setHeaders(finalHeaders);
+                    setAllMissingData(finalData);
+                    setPreviewData(finalData.slice(0, 10));
 
-                    setHeaders(currentHeaders);
-                    setAllMissingData(processedData);
-                    setPreviewData(processedData.slice(0, 10));
-
-                    if (processedData.length === 0) {
+                    if (finalData.length === 0) {
                         setError("Todas las facturas del archivo ya existen en el sistema.");
                     }
                 } else {
