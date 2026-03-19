@@ -1,7 +1,7 @@
 "use client";
 
 import { Sidebar } from "@/components/layout/Sidebar";
-import { ArrowLeft, RefreshCw, AlertCircle, Search, CheckSquare, Square, Save, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertCircle, Search, CheckSquare, Square, Save, Loader2, CheckCircle2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
@@ -20,6 +20,7 @@ export default function RevisionFacturaDianPage() {
     const [error, setError] = useState<string | null>(null);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [comparisonResult, setComparisonResult] = useState<{ headers: string[], data: any[][] } | null>(null);
+    const [allInvoiceNumbers, setAllInvoiceNumbers] = useState<Set<string>>(new Set());
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
     const [filters, setFilters] = useState({
         CreadoStart: "",
@@ -37,6 +38,7 @@ export default function RevisionFacturaDianPage() {
         setLoading(true);
         setError(null);
         try {
+            // Fetch only the most recent 200 for display to keep UI snappy
             const { data, error } = await supabase
                 .from("Registro_Facturas")
                 .select("*")
@@ -45,6 +47,36 @@ export default function RevisionFacturaDianPage() {
 
             if (error) throw error;
             setFacturas(data || []);
+
+            // Also fetch all invoice numbers for accurate comparison in the modal
+            // We use a loop to bypass the default 1000 row limit
+            let allNros: any[] = [];
+            let from = 0;
+            const step = 1000;
+            let moreData = true;
+
+            while (moreData) {
+                const { data: batch, error: batchError } = await supabase
+                    .from("Registro_Facturas")
+                    .select("Nro_Factura")
+                    .range(from, from + step - 1);
+
+                if (batchError) throw batchError;
+
+                if (batch && batch.length > 0) {
+                    allNros = [...allNros, ...batch];
+                    from += step;
+                } else {
+                    moreData = false;
+                }
+
+                // Safety break to prevent infinite loops (unlikely with 4k records but good practice)
+                if (from > 50000) moreData = false;
+            }
+
+            const nroSet = new Set(allNros.map(item => String(item.Nro_Factura || "").toLowerCase().replace(/\s/g, '')) || []);
+            setAllInvoiceNumbers(nroSet);
+            console.log(`Total invoice numbers loaded for comparison: ${nroSet.size}`);
         } catch (err: any) {
             console.error("Error fetching facturas:", err);
             setError(err.message || "Error al cargar las facturas.");
@@ -145,7 +177,7 @@ export default function RevisionFacturaDianPage() {
 
             const tipoDocIdx = mapIdx(["tipo de documento", "tipo_documento", "documento"]);
             const cufeIdx = mapIdx(["cufe/cude", "cufe", "cude", "uuid"]);
-            const folioIdx = mapIdx(["folio", "nro. factura", "nro_factura"]);
+            const folioIdx = mapIdx(["folio", "nro. factura", "nro_factura", "factura"]);
             const prefijoIdx = mapIdx(["prefijo"]);
             const fechaEmisionIdx = mapIdx(["fecha emisin", "fecha emision", "fecha emisión", "fecha_emision"]);
             const fechaRecepcionIdx = mapIdx(["fecha recepcin", "fecha recepcion", "fecha recepción", "fecha_recepcion"]);
@@ -209,6 +241,36 @@ export default function RevisionFacturaDianPage() {
         }
     };
 
+    const handleDeleteComparisonRow = (rowToDelete: any[]) => {
+        if (!comparisonResult) return;
+
+        const remainingData = comparisonResult.data.filter(row =>
+            JSON.stringify(row) !== JSON.stringify(rowToDelete)
+        );
+
+        setComparisonResult({ ...comparisonResult, data: remainingData });
+        setSelectedRows(new Set());
+    };
+
+    const handleDeleteSaved = async (id: number) => {
+        if (!confirm("¿Estás seguro de que deseas eliminar esta factura guardada?")) return;
+
+        try {
+            const { error: deleteError } = await supabase
+                .from("Facturas pendientes")
+                .delete()
+                .eq("ID", id);
+
+            if (deleteError) throw deleteError;
+
+            // Update local state
+            setFacturasPendientes(prev => prev.filter(f => f.ID !== id));
+        } catch (err: any) {
+            console.error("Error deleting factura:", err);
+            setError(err.message || "Error al eliminar la factura.");
+        }
+    };
+
     return (
         <div className="flex h-screen bg-[#f8fafc]">
             <Sidebar />
@@ -257,7 +319,7 @@ export default function RevisionFacturaDianPage() {
                                 </h2>
                                 <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{facturasPendientes.length} registros</span>
                             </div>
-                            <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+                            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-white text-gray-400 font-medium border-b border-gray-100 sticky top-0">
                                         <tr>
@@ -266,6 +328,7 @@ export default function RevisionFacturaDianPage() {
                                             <th className="px-6 py-3">NIT</th>
                                             <th className="px-6 py-3">Fecha Emisión</th>
                                             <th className="px-6 py-3 text-right">Total</th>
+                                            <th className="px-6 py-3 text-center w-20">Acciones</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50">
@@ -279,6 +342,15 @@ export default function RevisionFacturaDianPage() {
                                                 <td className="px-6 py-3 text-gray-500">{factura.Fecha_Emision}</td>
                                                 <td className="px-6 py-3 text-right font-bold text-[#254153]">
                                                     ${Number(factura.Total).toLocaleString('es-CO')}
+                                                </td>
+                                                <td className="px-6 py-3 text-center">
+                                                    <button
+                                                        onClick={() => handleDeleteSaved(factura.ID)}
+                                                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Eliminar factura"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -339,6 +411,7 @@ export default function RevisionFacturaDianPage() {
                         isOpen={isUploadModalOpen}
                         onClose={() => setIsUploadModalOpen(false)}
                         existingInvoices={facturas}
+                        allInvoiceNumbers={allInvoiceNumbers}
                         onConfirm={handleExcelConfirmed}
                     />
 
@@ -363,9 +436,9 @@ export default function RevisionFacturaDianPage() {
                                 </button>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
                                 <table className="w-full text-sm text-left">
-                                    <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
+                                    <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200 sticky top-0 z-10">
                                         <tr>
                                             <th className="px-6 py-4 w-10">
                                                 <button
@@ -399,6 +472,7 @@ export default function RevisionFacturaDianPage() {
                                                     </div>
                                                 </th>
                                             ))}
+                                            <th className="px-6 py-4 text-center w-20">Acciones</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
@@ -431,6 +505,15 @@ export default function RevisionFacturaDianPage() {
                                                         </td>
                                                     );
                                                 })}
+                                                <td className="px-6 py-4 text-center">
+                                                    <button
+                                                        onClick={() => handleDeleteComparisonRow(row)}
+                                                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Quitar de la lista"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
