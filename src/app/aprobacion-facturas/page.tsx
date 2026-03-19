@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy } from "lucide-react";
@@ -36,7 +36,6 @@ export default function InvoicesPage() {
     const [isUpdatingResponsible, setIsUpdatingResponsible] = useState(false);
     const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
 
-    // Filtros por columna
     const [columnFilters, setColumnFilters] = useState({
         invoice: "",
         provider: "",
@@ -45,6 +44,33 @@ export default function InvoicesPage() {
         status: "",
         contabilidad: ""
     });
+
+    // Opciones para los filtros dropdown
+    const filterOptions = useMemo(() => {
+        const options = {
+            invoices: new Set<string>(),
+            providers: new Set<string>(),
+            responsibles: new Set<string>(),
+            statuses: new Set<string>(),
+            contabilidades: new Set<string>(),
+        };
+
+        invoices.forEach(inv => {
+            if (inv.Nro_Factura) options.invoices.add(inv.Nro_Factura);
+            if (inv.Proveedor) options.providers.add(inv.Proveedor);
+            if (inv.Responsable_de_Autorizar) options.responsibles.add(inv.Responsable_de_Autorizar);
+            if (inv.Aprobacion_Doliente) options.statuses.add(inv.Aprobacion_Doliente);
+            if (inv.Gestion_Contabilidad) options.contabilidades.add(inv.Gestion_Contabilidad);
+        });
+
+        return {
+            invoices: Array.from(options.invoices).sort(),
+            providers: Array.from(options.providers).sort(),
+            responsibles: Array.from(options.responsibles).sort(),
+            statuses: Array.from(options.statuses).sort(),
+            contabilidades: Array.from(options.contabilidades).sort(),
+        };
+    }, [invoices]);
 
     const fetchInvoices = async () => {
         try {
@@ -393,20 +419,28 @@ export default function InvoicesPage() {
                                         <td className="px-3 py-2">
                                             <input 
                                                 type="text" 
+                                                list="list-invoice"
                                                 placeholder="Filtrar..."
                                                 className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
                                                 value={columnFilters.invoice}
                                                 onChange={(e) => setColumnFilters({...columnFilters, invoice: e.target.value})}
                                             />
+                                            <datalist id="list-invoice">
+                                                {filterOptions.invoices.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
                                         </td>
                                         <td className="px-3 py-2">
                                             <input 
                                                 type="text" 
+                                                list="list-provider"
                                                 placeholder="Filtrar..."
                                                 className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
                                                 value={columnFilters.provider}
                                                 onChange={(e) => setColumnFilters({...columnFilters, provider: e.target.value})}
                                             />
+                                            <datalist id="list-provider">
+                                                {filterOptions.providers.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
                                         </td>
                                         <td className="px-3 py-2">
                                             <input 
@@ -420,29 +454,41 @@ export default function InvoicesPage() {
                                         <td className="px-3 py-2">
                                             <input 
                                                 type="text" 
+                                                list="list-responsible"
                                                 placeholder="Filtrar..."
                                                 className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
                                                 value={columnFilters.responsible}
                                                 onChange={(e) => setColumnFilters({...columnFilters, responsible: e.target.value})}
                                             />
+                                            <datalist id="list-responsible">
+                                                {filterOptions.responsibles.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
                                         </td>
                                         <td className="px-3 py-2">
                                             <input 
                                                 type="text" 
+                                                list="list-status"
                                                 placeholder="Filtrar..."
                                                 className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
                                                 value={columnFilters.status}
                                                 onChange={(e) => setColumnFilters({...columnFilters, status: e.target.value})}
                                             />
+                                            <datalist id="list-status">
+                                                {filterOptions.statuses.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
                                         </td>
                                         <td className="px-3 py-2">
                                             <input 
                                                 type="text" 
+                                                list="list-contabilidad"
                                                 placeholder="Filtrar..."
                                                 className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
                                                 value={columnFilters.contabilidad}
                                                 onChange={(e) => setColumnFilters({...columnFilters, contabilidad: e.target.value})}
                                             />
+                                            <datalist id="list-contabilidad">
+                                                {filterOptions.contabilidades.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
                                         </td>
                                         <td className="px-3 py-2" />
                                         <td className="px-3 py-2" />
