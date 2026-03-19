@@ -11,6 +11,9 @@ const msalConfig = {
 
 const cca = new msal.ConfidentialClientApplication(msalConfig);
 
+// Cache for Site IDs to avoid redundant API calls
+const siteIdCache: Record<string, string> = {};
+
 async function getAccessToken() {
     const tokenRequest = {
         scopes: ["https://graph.microsoft.com/.default"],
@@ -271,8 +274,13 @@ export async function findExternalInvoiceDocument(nit: string, nroFactura: strin
             authProvider: (done) => done(null, caGraph!.accessToken),
         });
 
-        // 1. Obtener Site ID de ITPowerApps
-        const site = await client.api('/sites/firplaksa.sharepoint.com:/sites/ITPowerApps').get();
+        // 1. Obtener Site ID de ITPowerApps (con caché)
+        let siteId = siteIdCache['ITPowerApps'];
+        if (!siteId) {
+            const site = await client.api('/sites/firplaksa.sharepoint.com:/sites/ITPowerApps').get();
+            siteId = site.id;
+            siteIdCache['ITPowerApps'] = siteId;
+        }
         
         // Limpiar el NIT de caracteres no numéricos
         const cleanNitFull = nit.replace(/[^0-9]/g, '');
@@ -284,7 +292,7 @@ export async function findExternalInvoiceDocument(nit: string, nroFactura: strin
         // Intentamos una búsqueda que combine ambos para ser más precisos
         const query = `${nroFactura}`;
         console.log(`[SharePoint Search] Searching for "${query}" in ITPowerApps (NIT: ${nitWithoutDV})...`);
-        const searchRes = await client.api(`/sites/${site.id}/drive/root/search(q='${query}')`).get();
+        const searchRes = await client.api(`/sites/${siteId}/drive/root/search(q='${query}')`).get();
         
         // 3. Filtrar resultados que coincidan con el NIT y el número de factura
         const items = searchRes.value || [];

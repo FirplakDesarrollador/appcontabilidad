@@ -288,187 +288,139 @@ export default function PublicApprovalPage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4 md:p-8">
+        <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8">
             <AnimatePresence mode="wait">
                 {successMessage ? (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        className="max-w-md w-full bg-white p-10 rounded-[32px] shadow-2xl border border-green-100 text-center"
-                    >
-                        <div className="bg-green-50 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-8">
-                            <CheckCircle2 className="h-10 w-10 text-green-500" />
-                        </div>
-                        <h2 className="text-3xl font-bold text-gray-900 mb-4">¡Listo!</h2>
-                        <p className="text-gray-600 mb-10 text-lg">{successMessage}</p>
-                        <div className="text-sm text-gray-400">
-                            Ya puedes cerrar esta pestaña
-                        </div>
-                    </motion.div>
+                    <div className="flex items-center justify-center min-h-[80vh]">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            className="max-w-md w-full bg-white p-10 rounded-[32px] shadow-2xl border border-green-100 text-center"
+                        >
+                            <div className="bg-green-50 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-8">
+                                <CheckCircle2 className="h-10 w-10 text-green-500" />
+                            </div>
+                            <h2 className="text-3xl font-bold text-gray-900 mb-4">¡Listo!</h2>
+                            <p className="text-gray-600 mb-10 text-lg">{successMessage}</p>
+                            <div className="text-sm text-gray-400">
+                                Ya puedes cerrar esta pestaña
+                            </div>
+                        </motion.div>
+                    </div>
                 ) : (
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="max-w-2xl w-full"
+                        className="max-w-[1600px] mx-auto w-full"
                     >
                         {/* Header */}
-                        <div className="flex items-center gap-3 mb-8 px-2">
-                            <div className="bg-[#254153] p-2.5 rounded-2xl">
-                                <FileText className="h-6 w-6 text-white" />
-                            </div>
-                            <div>
-                                <h1 className="text-2xl font-bold text-[#254153]">Revisión de Factura</h1>
-                                <p className="text-gray-500 text-sm">Portal externo de aprobación</p>
+                        <div className="flex flex-col md:flex-row md:items-center gap-4 mb-8 px-2">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-[#254153] p-2.5 rounded-2xl">
+                                    <FileText className="h-6 w-6 text-white" />
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-bold text-[#254153]">Revisión de Factura</h1>
+                                    <p className="text-gray-500 text-sm">Portal externo de aprobación</p>
+                                </div>
                             </div>
                             <Button
                                 onClick={handleDownload}
                                 disabled={downloadLoading}
-                                className="ml-auto flex items-center gap-2 px-4 py-2 bg-[#254153]/5 border-2 border-[#254153]/10 rounded-xl text-[#254153] text-sm font-bold hover:bg-[#254153] hover:text-white transition-all shadow-sm group"
+                                className="md:ml-auto flex items-center justify-center gap-2 px-6 py-3 bg-[#254153]/5 border-2 border-[#254153]/10 rounded-2xl text-[#254153] text-sm font-bold hover:bg-[#254153] hover:text-white transition-all shadow-sm group"
                             >
                                 {downloadLoading ? (
                                     <Loader2 className="h-4 w-4 animate-spin" />
                                 ) : (
-                                    <FileText className="h-4 w-4" />
+                                    <Download className="h-4 w-4" />
                                 )}
-                                {downloadLoading ? "Buscando..." : `Ver Factura ${invoice?.nroFactura ? `#${invoice.nroFactura}` : ""}`}
+                                {downloadLoading ? "Buscando..." : `Descargar Factura ${invoice?.nroFactura ? `#${invoice.nroFactura}` : ""}`}
                             </Button>
                         </div>
 
-                        {/* Main Card */}
-                        <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 overflow-hidden">
-                            {/* Status Banner */}
-                            <div className={`px-8 py-4 ${invoice?.aprobacionDoliente === 'Aprobado' ? 'bg-green-50 text-green-700' :
-                                invoice?.aprobacionDoliente === 'Rechazado' ? 'bg-red-50 text-red-700' :
-                                    'bg-[#254153]/5 text-[#254153]'
-                                } text-sm font-bold flex items-center justify-between`}>
-                                <div className="flex items-center gap-2">
-                                    <div className={`h-2 w-2 rounded-full ${invoice?.aprobacionDoliente === 'Aprobado' ? 'bg-green-500' :
-                                        invoice?.aprobacionDoliente === 'Rechazado' ? 'bg-red-500' :
-                                            'bg-[#254153] animate-pulse'
-                                        }`} />
-                                    {invoice?.aprobacionDoliente === 'Aprobado' ? 'APROBADA ANTERIORMENTE' :
-                                        invoice?.aprobacionDoliente === 'Rechazado' ? 'RECHAZADA ANTERIORMENTE' :
-                                            'PENDIENTE DE TU ACCIÓN'}
+                        {/* Layout Grid */}
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                            
+                            {/* Left Column: Data and Forms */}
+                            <div className="lg:col-span-5 space-y-8">
+                                {/* Main Info Card */}
+                                <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 overflow-hidden">
+                                    {/* Status Banner */}
+                                    <div className={`px-8 py-4 ${invoice?.aprobacionDoliente === 'Aprobado' ? 'bg-green-50 text-green-700' :
+                                        invoice?.aprobacionDoliente === 'Rechazado' ? 'bg-red-50 text-red-700' :
+                                            'bg-[#254153]/5 text-[#254153]'
+                                        } text-sm font-bold flex items-center justify-between`}>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`h-2 w-2 rounded-full ${invoice?.aprobacionDoliente === 'Aprobado' ? 'bg-green-500' :
+                                                invoice?.aprobacionDoliente === 'Rechazado' ? 'bg-red-500' :
+                                                    'bg-[#254153] animate-pulse'
+                                                }`} />
+                                            {invoice?.aprobacionDoliente === 'Aprobado' ? 'APROBADA ANTERIORMENTE' :
+                                                invoice?.aprobacionDoliente === 'Rechazado' ? 'RECHAZADA ANTERIORMENTE' :
+                                                    'PENDIENTE DE TU ACCIÓN'}
+                                        </div>
+                                        <span className="opacity-60 text-xs">#{invoice?.id}</span>
+                                    </div>
+
+                                    <div className="p-8 space-y-10">
+                                        {/* Info Grid */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center gap-2 text-gray-400 mb-1">
+                                                    <Building2 className="h-4 w-4" />
+                                                    <span className="text-[10px] font-black uppercase tracking-wider">Proveedor</span>
+                                                </div>
+                                                <p className="text-lg font-bold text-gray-900 leading-tight">{invoice?.proveedor}</p>
+                                                <p className="text-xs text-gray-500">NIT: {invoice?.nit}</p>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center gap-2 text-gray-400 mb-1">
+                                                    <DollarSign className="h-4 w-4" />
+                                                    <span className="text-[10px] font-black uppercase tracking-wider">Valor Total</span>
+                                                </div>
+                                                <p className="text-2xl font-black text-[#254153]">
+                                                    {invoice?.valorTotal && new Intl.NumberFormat('es-CO', {
+                                                        style: 'currency',
+                                                        currency: 'COP',
+                                                        maximumFractionDigits: 0
+                                                    }).format(parseFloat(invoice.valorTotal))}
+                                                </p>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center gap-2 text-gray-400 mb-1">
+                                                    <Hash className="h-4 w-4" />
+                                                    <span className="text-[10px] font-black uppercase tracking-wider">Factura</span>
+                                                </div>
+                                                <p className="text-base font-bold text-gray-800">{invoice?.nroFactura}</p>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center gap-2 text-gray-400 mb-1">
+                                                    <Calendar className="h-4 w-4" />
+                                                    <span className="text-[10px] font-black uppercase tracking-wider">Fecha</span>
+                                                </div>
+                                                <p className="text-base font-bold text-gray-800">
+                                                    {invoice?.fechaRegistro ? new Date(invoice.fechaRegistro).toLocaleDateString('es-CO', {
+                                                        day: 'numeric',
+                                                        month: 'short',
+                                                        year: 'numeric'
+                                                    }) : 'N/A'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <span className="opacity-60">#{invoice?.id}</span>
-                            </div>
 
-                            <div className="p-8 md:p-10">
-                                {/* Info Grid */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8 mb-12">
-                                    <div className="space-y-1.5">
-                                        <div className="flex items-center gap-2 text-gray-400 mb-1">
-                                            <Building2 className="h-4 w-4" />
-                                            <span className="text-xs font-bold uppercase tracking-wider">Proveedor</span>
-                                        </div>
-                                        <p className="text-xl font-bold text-gray-900">{invoice?.proveedor}</p>
-                                        <p className="text-sm text-gray-500">NIT: {invoice?.nit}</p>
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        <div className="flex items-center gap-2 text-gray-400 mb-1">
-                                            <DollarSign className="h-4 w-4" />
-                                            <span className="text-xs font-bold uppercase tracking-wider">Valor Total</span>
-                                        </div>
-                                        <p className="text-3xl font-black text-[#254153]">
-                                            {invoice?.valorTotal && new Intl.NumberFormat('es-CO', {
-                                                style: 'currency',
-                                                currency: 'COP',
-                                                maximumFractionDigits: 0
-                                            }).format(parseFloat(invoice.valorTotal))}
-                                        </p>
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        <div className="flex items-center gap-2 text-gray-400 mb-1">
-                                            <Hash className="h-4 w-4" />
-                                            <span className="text-xs font-bold uppercase tracking-wider">Número de Factura</span>
-                                        </div>
-                                        <p className="text-lg font-bold text-gray-800">{invoice?.nroFactura}</p>
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        <div className="flex items-center gap-2 text-gray-400 mb-1">
-                                            <Calendar className="h-4 w-4" />
-                                            <span className="text-xs font-bold uppercase tracking-wider">Fecha de Registro</span>
-                                        </div>
-                                        <p className="text-lg font-bold text-gray-800">
-                                            {invoice?.fechaRegistro ? new Date(invoice.fechaRegistro).toLocaleDateString('es-CO', {
-                                                day: 'numeric',
-                                                month: 'long',
-                                                year: 'numeric'
-                                            }) : 'N/A'}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Documento Adjunto */}
-                                {invoice?.documentInfo && (
-                                    <div className="bg-[#254153]/5 p-6 rounded-[24px] border border-[#254153]/10 mb-10 space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documento Adjunto</h4>
-                                            {invoice.documentInfo.isNative ? (
-                                                <span className="px-2 py-0.5 rounded bg-amber-100 text-[10px] font-bold text-amber-600 uppercase">
-                                                    REQUIERE LOGIN SHAREPOINT
-                                                </span>
-                                            ) : (
-                                                <span className="px-2 py-0.5 rounded bg-blue-100 text-[10px] font-bold text-blue-600 uppercase">
-                                                    {invoice.documentInfo.fileName?.split('.').pop()}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="space-y-4">
-                                            {previewLoading ? (
-                                                <div className="h-[500px] w-full bg-white rounded-xl flex flex-col items-center justify-center border border-gray-100 shadow-inner">
-                                                    <Loader2 className="h-10 w-10 text-[#254153] animate-spin mb-4" />
-                                                    <p className="text-sm font-medium text-gray-400">Cargando visualización de factura...</p>
-                                                </div>
-                                            ) : previewError ? (
-                                                <div className="p-8 bg-red-50 rounded-xl border border-red-100 text-center">
-                                                    <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-3" />
-                                                    <p className="text-sm font-bold text-red-700 mb-4">{previewError}</p>
-                                                    <Button variant="outline" onClick={handlePreview} className="text-xs">
-                                                        Reintentar carga
-                                                    </Button>
-                                                </div>
-                                            ) : previewUrl ? (
-                                                <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-white h-[600px] relative">
-                                                    <iframe 
-                                                        src={previewUrl} 
-                                                        className="w-full h-full border-none"
-                                                        title="Invoice Preview"
-                                                    />
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-4">
-                                                    <div className="h-12 w-12 bg-white rounded-xl flex items-center justify-center shadow-sm border border-gray-100">
-                                                        <FileText className="h-6 w-6 text-blue-500" />
-                                                    </div>
-                                                    <div className="flex-1 overflow-hidden">
-                                                        <p className="text-sm font-bold text-[#254153] truncate">{invoice.documentInfo.isNative ? "Vista previa en SharePoint" : (invoice.documentInfo.fileName || "Factura Adjunta")}</p>
-                                                        <p className="text-[10px] text-gray-400 font-medium italic">
-                                                            {invoice.documentInfo.isNative ? "Usa el botón superior para ver el documento" : "Documento oficial cargado en el sistema"}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Divider */}
-                                <div className="h-px bg-gray-100 w-full mb-10" />
-
-                                {/* Actions */}
-                                {(!invoice?.aprobacionDoliente || invoice.aprobacionDoliente === 'Pendiente' || invoice.aprobacionDoliente === 'Por Aprobar') && (
-                                    <div className="space-y-8">
-                                        {/* Form Inputs */}
-
-                                        <div className="space-y-6">
-                                            <div className="space-y-3">
+                                {/* Form and Actions */}
+                                <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 p-8 md:p-10">
+                                    {(!invoice?.aprobacionDoliente || invoice.aprobacionDoliente === 'Pendiente' || invoice.aprobacionDoliente === 'Por Aprobar') ? (
+                                        <div className="space-y-8">
+                                            <div className="space-y-4">
                                                 <label className="text-sm font-bold text-[#254153]">¿Tiene anticipo o no la factura?</label>
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-3 gap-3">
                                                     {[
                                                         { id: 'con-anticipo', label: 'Con anticipo', value: 'con anticipo' },
                                                         { id: 'sin-anticipo', label: 'Sin anticipo', value: 'sin anticipo' },
@@ -476,10 +428,10 @@ export default function PublicApprovalPage() {
                                                     ].map((opt) => (
                                                         <label
                                                             key={opt.id}
-                                                            className={`flex items-center justify-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                                                            className={`flex items-center justify-center p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
                                                                 anticipo === opt.value
                                                                     ? 'border-[#254153] bg-[#254153]/5 text-[#254153]'
-                                                                    : 'border-gray-100 bg-white text-gray-500 hover:border-gray-200'
+                                                                    : 'border-gray-50 bg-gray-50/30 text-gray-500 hover:border-gray-200'
                                                             }`}
                                                         >
                                                             <input
@@ -490,194 +442,265 @@ export default function PublicApprovalPage() {
                                                                 onChange={(e) => setAnticipo(e.target.value)}
                                                                 className="sr-only"
                                                             />
-                                                            <span className="text-sm font-bold">{opt.label}</span>
+                                                            <span className="text-xs font-bold text-center leading-tight">{opt.label}</span>
                                                         </label>
                                                     ))}
                                                 </div>
                                             </div>
 
-                                            <div className="space-y-2">
-
+                                            <div className="space-y-3">
                                                 <label className="text-sm font-bold text-[#254153]">Observaciones</label>
                                                 <textarea
                                                     value={observaciones}
                                                     onChange={(e) => setObservaciones(e.target.value)}
-                                                    className="w-full rounded-2xl border border-gray-200 p-4 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all resize-none h-24 text-sm text-gray-700 placeholder-gray-400"
+                                                    className="w-full rounded-2xl border border-gray-200 p-5 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all resize-none h-28 text-sm text-gray-700 placeholder-gray-400"
                                                     placeholder="Añade observaciones (opcional)..."
                                                     disabled={!!actionLoading}
                                                 />
                                             </div>
-                                            <div className="space-y-4">
+
+                                            <div className="space-y-5">
                                                 <div className="flex items-center justify-between">
                                                     <label className="text-sm font-bold text-[#254153]">Distribución Contable</label>
                                                     <Button 
                                                         variant="outline" 
                                                         onClick={() => setDistribuciones([...distribuciones, { centroCostos: '', cuenta: '', valor: '' }])}
-                                                        className="h-8 py-0 px-3 text-xs font-bold border-gray-200 text-[#254153]"
+                                                        className="h-9 py-0 px-4 text-xs font-bold border-[#254153]/10 text-[#254153] bg-[#254153]/5 hover:bg-[#254153] hover:text-white rounded-xl transition-all"
                                                         disabled={!!actionLoading}
                                                     >
                                                         <Plus className="h-4 w-4 mr-1" /> Agregar Fila
                                                     </Button>
                                                 </div>
 
-                                                <div className="space-y-3">
+                                                <div className="space-y-4">
                                                     {distribuciones.map((distribucion, index) => (
-                                                        <div key={index} className="flex flex-col md:flex-row gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-100 relative">
+                                                        <div key={index} className="space-y-3 p-5 bg-gray-50 rounded-2xl border border-gray-100 relative group transition-all hover:bg-white hover:shadow-md">
                                                             {distribuciones.length > 1 && (
                                                                 <button 
                                                                     onClick={() => setDistribuciones(distribuciones.filter((_, i) => i !== index))}
-                                                                    className="absolute -top-3 -right-3 h-8 w-8 bg-white border border-red-100 text-red-500 rounded-full flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors shadow-sm"
+                                                                    className="absolute -top-3 -right-3 h-8 w-8 bg-white border border-red-100 text-red-500 rounded-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-md z-10"
                                                                     disabled={!!actionLoading}
                                                                 >
                                                                     <Trash2 className="h-4 w-4" />
                                                                 </button>
                                                             )}
                                                             
-                                                            <div className="flex-1 space-y-1.5">
-                                                                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Centro Costos</label>
-                                                                <select
-                                                                    value={distribucion.centroCostos}
-                                                                    onChange={(e) => {
-                                                                        const newDist = [...distribuciones];
-                                                                        newDist[index].centroCostos = e.target.value;
-                                                                        newDist[index].cuenta = ""; // Reset cuenta on CC change
-                                                                        setDistribuciones(newDist);
-                                                                    }}
-                                                                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 font-medium outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 h-10 bg-white"
-                                                                    disabled={!!actionLoading}
-                                                                >
-                                                                    <option value="">Selecciona CC...</option>
-                                                                    {centrosCostosList.map((c: any) => (
-                                                                        <option key={c.id} value={`${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`}>
-                                                                            {c.codigo ? `${c.codigo} - ` : ''}{c.Título}
-                                                                        </option>
-                                                                    ))}
-                                                                </select>
-                                                            </div>
-
-                                                            <div className="flex-1 space-y-1.5">
-                                                                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Cuenta</label>
-                                                                <select
-                                                                    value={distribucion.cuenta}
-                                                                    onChange={(e) => {
-                                                                        const newDist = [...distribuciones];
-                                                                        newDist[index].cuenta = e.target.value;
-                                                                        setDistribuciones(newDist);
-                                                                    }}
-                                                                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 font-medium outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 h-10 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                                                                    disabled={!!actionLoading || !distribucion.centroCostos}
-                                                                >
-                                                                    <option value="">Selecciona Cuenta...</option>
-                                                                    {(() => {
-                                                                        const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === distribucion.centroCostos);
-                                                                        const prefix = selectedCC?.cuentas_asociadas?.toString();
-                                                                        const filtered = prefix 
-                                                                            ? cuentasList.filter(c => c.Título?.startsWith(prefix))
-                                                                            : cuentasList;
-                                                                        
-                                                                        return filtered.map((c: any) => (
-                                                                            <option key={c.id} value={`${c.Título}`}>
-                                                                                {c.Título}
-                                                                            </option>
-                                                                        ));
-                                                                    })()}
-                                                                </select>
-                                                            </div>
-
-                                                            <div className="w-full md:w-32 space-y-1.5">
-                                                                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Valor a Pagar</label>
-                                                                <div className="relative">
-                                                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                                        <DollarSign className="h-4 w-4 text-gray-400" />
-                                                                    </div>
-                                                                    <input
-                                                                        type="number"
-                                                                        value={distribucion.valor}
+                                                            <div className="grid grid-cols-1 gap-4">
+                                                                <div className="space-y-1.5">
+                                                                    <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Centro Costos</label>
+                                                                    <select
+                                                                        value={distribucion.centroCostos}
                                                                         onChange={(e) => {
                                                                             const newDist = [...distribuciones];
-                                                                            newDist[index].valor = e.target.value;
+                                                                            newDist[index].centroCostos = e.target.value;
+                                                                            newDist[index].cuenta = "";
                                                                             setDistribuciones(newDist);
                                                                         }}
-                                                                        className="w-full rounded-xl border border-gray-200 pl-8 pr-3 py-2 text-sm text-gray-900 font-bold outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 h-10 bg-white"
+                                                                        className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 font-medium outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 bg-white cursor-pointer"
                                                                         disabled={!!actionLoading}
-                                                                    />
+                                                                    >
+                                                                        <option value="">Selecciona CC...</option>
+                                                                        {centrosCostosList.map((c: any) => (
+                                                                            <option key={c.id} value={`${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`}>
+                                                                                {c.codigo ? `${c.codigo} - ` : ''}{c.Título}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                                    <div className="space-y-1.5">
+                                                                        <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Cuenta</label>
+                                                                        <select
+                                                                            value={distribucion.cuenta}
+                                                                            onChange={(e) => {
+                                                                                const newDist = [...distribuciones];
+                                                                                newDist[index].cuenta = e.target.value;
+                                                                                setDistribuciones(newDist);
+                                                                            }}
+                                                                            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 font-medium outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 bg-white disabled:bg-gray-100 disabled:text-gray-500 cursor-pointer"
+                                                                            disabled={!!actionLoading || !distribucion.centroCostos}
+                                                                        >
+                                                                            <option value="">Selecciona Cuenta...</option>
+                                                                            {(() => {
+                                                                                const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === distribucion.centroCostos);
+                                                                                const prefix = selectedCC?.cuentas_asociadas?.toString();
+                                                                                const filtered = prefix 
+                                                                                    ? cuentasList.filter(c => c.Título?.startsWith(prefix))
+                                                                                    : cuentasList;
+                                                                                
+                                                                                return filtered.map((c: any) => (
+                                                                                    <option key={c.id} value={`${c.Título}`}>
+                                                                                        {c.Título}
+                                                                                    </option>
+                                                                                ));
+                                                                            })()}
+                                                                        </select>
+                                                                    </div>
+
+                                                                    <div className="space-y-1.5">
+                                                                        <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Valor a Pagar</label>
+                                                                        <div className="relative">
+                                                                            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                                                                                <DollarSign className="h-4 w-4 text-[#254153]" />
+                                                                            </div>
+                                                                            <input
+                                                                                type="number"
+                                                                                value={distribucion.valor}
+                                                                                onChange={(e) => {
+                                                                                    const newDist = [...distribuciones];
+                                                                                    newDist[index].valor = e.target.value;
+                                                                                    setDistribuciones(newDist);
+                                                                                }}
+                                                                                className="w-full rounded-xl border border-gray-200 pl-9 pr-4 py-2.5 text-sm text-gray-900 font-bold outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 bg-white"
+                                                                                disabled={!!actionLoading}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         </div>
                                                     ))}
                                                 </div>
 
-                                                <div className="flex justify-between items-center text-sm px-2 pt-2 border-t border-gray-100">
-                                                    <span className="font-medium text-gray-500">Total distribuido:</span>
-                                                    <span className={`font-black ${
-                                                        invoice?.valorTotal && Math.abs(parseFloat(invoice.valorTotal) - distribuciones.reduce((s,d) => s + (parseFloat(d.valor)||0), 0)) < 0.01 
-                                                        ? 'text-green-600' : 'text-red-500'
-                                                    }`}>
-                                                        {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
-                                                            .format(distribuciones.reduce((s,d) => s + (parseFloat(d.valor)||0), 0))}
-                                                        {' / '}
-                                                        {invoice?.valorTotal && new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(parseFloat(invoice.valorTotal))}
-                                                    </span>
+                                                <div className="bg-[#254153]/5 p-5 rounded-2xl border border-gray-100">
+                                                    <div className="flex justify-between items-center text-sm">
+                                                        <span className="font-bold text-gray-500 uppercase text-[10px] tracking-widest">Total distribuido</span>
+                                                        <span className={`font-black text-base ${
+                                                            invoice?.valorTotal && Math.abs(parseFloat(invoice.valorTotal) - distribuciones.reduce((s,d) => s + (parseFloat(d.valor)||0), 0)) < 0.01 
+                                                            ? 'text-green-600' : 'text-red-500'
+                                                        }`}>
+                                                            {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
+                                                                .format(distribuciones.reduce((s,d) => s + (parseFloat(d.valor)||0), 0))}
+                                                            <span className="text-gray-300 font-normal mx-2.5">/</span>
+                                                            {invoice?.valorTotal && new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(parseFloat(invoice.valorTotal))}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+                                                <Button
+                                                    className="h-16 rounded-3xl bg-[#254153] hover:bg-[#1a2e3b] text-base font-black shadow-xl shadow-[#254153]/20 transition-all hover:scale-[1.02] active:scale-[0.98] order-2 sm:order-1"
+                                                    disabled={!!actionLoading}
+                                                    onClick={() => handleAction('Aprobado')}
+                                                >
+                                                    {actionLoading === 'Aprobado' ? (
+                                                        <Loader2 className="h-6 w-6 animate-spin mr-3" />
+                                                    ) : (
+                                                        <CheckCircle2 className="h-6 w-6 mr-3" />
+                                                    )}
+                                                    Aprobar Factura
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    className="h-16 rounded-3xl border-2 border-red-50 text-red-500 hover:bg-red-50 hover:border-red-100 hover:text-red-700 text-base font-black transition-all hover:scale-[1.02] active:scale-[0.98] order-1 sm:order-2"
+                                                    disabled={!!actionLoading}
+                                                    onClick={() => {
+                                                        if (confirm("¿Estás seguro que deseas rechazar esta factura?")) {
+                                                            handleAction('Rechazado');
+                                                        }
+                                                    }}
+                                                >
+                                                    {actionLoading === 'Rechazado' ? (
+                                                        <Loader2 className="h-6 w-6 animate-spin mr-3" />
+                                                    ) : (
+                                                        <XCircle className="h-6 w-6 mr-3" />
+                                                    )}
+                                                    Rechazar
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center p-10 bg-gray-50 rounded-[32px] border border-gray-100">
+                                            <div className="bg-white h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
+                                                <CheckCircle2 className="h-8 w-8 text-green-500" />
+                                            </div>
+                                            <p className="text-gray-700 font-bold mb-2">Ya Procesado</p>
+                                            <p className="text-gray-500 text-sm font-medium italic">
+                                                Esta factura ya fue gestionada y no admite más cambios desde este acceso externo.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Right Column: PDF Preview (Sticky) */}
+                            <div className="lg:col-span-7 h-full">
+                                <div className="lg:sticky lg:top-8 space-y-4">
+                                    <div className="bg-white p-4 sm:p-6 rounded-[32px] shadow-2xl border border-gray-100 overflow-hidden h-fit">
+                                        <div className="flex items-center justify-between mb-6 px-2">
+                                            <div className="flex items-center gap-3">
+                                                <div className="bg-blue-50 p-2 rounded-xl">
+                                                    <FileText className="h-5 w-5 text-blue-600" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider">Vista del Documento</h4>
+                                                    <p className="text-[10px] text-gray-400 font-bold">{invoice?.documentInfo?.fileName || "Visualización Directa"}</p>
+                                                </div>
+                                            </div>
+                                            {invoice?.documentInfo?.isNative && (
+                                                <span className="px-3 py-1 rounded-full bg-amber-50 text-[10px] font-black text-amber-600 border border-amber-100 uppercase">
+                                                    Requiere VPN/SharePoint
+                                                </span>
+                                            )}
                                         </div>
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <Button
-                                                className="h-16 rounded-2xl bg-[#254153] hover:bg-[#1a2e3b] text-lg font-bold shadow-lg shadow-[#254153]/20 order-2 md:order-1"
-                                                disabled={!!actionLoading}
-                                                onClick={() => handleAction('Aprobado')}
-                                            >
-                                                {actionLoading === 'Aprobado' ? (
-                                                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                                                ) : (
-                                                    <CheckCircle2 className="h-6 w-6 mr-2" />
-                                                )}
-                                                Aprobar Factura
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                className="h-16 rounded-2xl border-2 border-red-100 text-red-600 hover:bg-red-50 hover:text-red-700 text-lg font-bold order-1 md:order-2"
-                                                disabled={!!actionLoading}
-                                                onClick={() => {
-                                                    if (confirm("¿Estás seguro que deseas rechazar esta factura?")) {
-                                                        handleAction('Rechazado');
-                                                    }
-                                                }}
-                                            >
-
-                                                {actionLoading === 'Rechazado' ? (
-                                                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                                                ) : (
-                                                    <XCircle className="h-6 w-6 mr-2" />
-                                                )}
-                                                Rechazar
-                                            </Button>
+                                        <div className="relative min-h-[500px] lg:min-h-[750px] w-full bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden group">
+                                            {previewLoading ? (
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-10 transition-all">
+                                                    <Loader2 className="h-10 w-10 text-[#254153] animate-spin mb-4" />
+                                                    <p className="text-xs font-black text-[#254153] uppercase tracking-[2px]">Optimizando visualización...</p>
+                                                </div>
+                                            ) : previewError ? (
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-red-50/50">
+                                                    <div className="bg-white p-4 rounded-full shadow-sm mb-4">
+                                                        <AlertCircle className="h-8 w-8 text-red-500" />
+                                                    </div>
+                                                    <p className="text-sm font-black text-red-900 mb-4 px-4">{previewError}</p>
+                                                    <Button 
+                                                        onClick={handlePreview} 
+                                                        className="px-8 py-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-2xl shadow-lg transition-all"
+                                                    >
+                                                        Reintentar Carga
+                                                    </Button>
+                                                </div>
+                                            ) : previewUrl ? (
+                                                <iframe 
+                                                    src={`${previewUrl}#toolbar=0&navpanes=0&scrollbar=1`} 
+                                                    className="w-full h-[500px] lg:h-[750px] border-none shadow-inner bg-white"
+                                                    title="Invoice Preview"
+                                                />
+                                            ) : (
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl m-4">
+                                                    <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 mb-4">
+                                                        <FileText className="h-8 w-8 text-[#254153]/20" />
+                                                    </div>
+                                                    <p className="text-xs font-bold text-gray-400">Esperando archivo...</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
-                                )}
 
-                                {(invoice?.aprobacionDoliente === 'Aprobado' || invoice?.aprobacionDoliente === 'Rechazado') && (
-                                    <div className="text-center p-6 bg-gray-50 rounded-2xl border border-gray-100">
-                                        <p className="text-gray-500 font-medium italic">
-                                            Esta factura ya fue procesada el día de hoy y no admite más cambios desde este enlace.
-                                        </p>
+                                    {/* Quick Tips or Footer for Right Column */}
+                                    <div className="hidden lg:flex items-center gap-4 px-8 py-4 bg-[#254153]/5 rounded-[24px] border border-[#254153]/5">
+                                        <div className="h-2 w-2 rounded-full bg-green-500" />
+                                        <p className="text-[10px] font-bold text-[#254153] opacity-60">Visualización en tiempo real optimizada para Fibra Óptica y conexiones 4G+.</p>
                                     </div>
-                                )}
+                                </div>
                             </div>
                         </div>
 
                         {/* Footer Info */}
-                        <div className="mt-8 text-center">
-                            <p className="text-gray-400 text-xs">
+                        <div className="mt-12 text-center pb-8 border-t border-gray-100 pt-8">
+                            <p className="text-gray-400 text-[10px] font-medium leading-loose">
                                 Este enlace es de uso exclusivo para el responsable de autorizar la factura.<br />
-                                © 2026 Firplak SA - Sistema de Gestión de Facturación
+                                Soporte técnico: firplaksa.sharepoint.com | © 2026 Firplak SA - Sistema Automático de Gestión
                             </p>
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
-            
         </div>
     );
 }
