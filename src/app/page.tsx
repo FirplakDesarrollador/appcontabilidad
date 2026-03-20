@@ -89,6 +89,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="flex gap-2">
                             <Button variant="outline" className="bg-white" onClick={() => window.location.href='/api/sharepoint/test-download'}>Descargar Prueba</Button>
+                            <Button variant="outline" className="bg-white" onClick={() => window.location.href='/api/sharepoint/test-download-sp'}>Prueba Descarga SharePoint</Button>
                             <Button variant="outline" className="bg-white">Descargar Reporte</Button>
                             <Button>Nueva Transacción</Button>
                         </div>

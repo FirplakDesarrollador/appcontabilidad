@@ -26,7 +26,7 @@ const supabaseAdmin = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 );
 
-const BUCKET = 'facturas-documentos';
+const BUCKET = 'Facturas';
 const SP_BASE = 'https://firplaksa.sharepoint.com/sites/FPKContabilidad';
 const LIST_NAME = 'Registro_de_Facturas';
 

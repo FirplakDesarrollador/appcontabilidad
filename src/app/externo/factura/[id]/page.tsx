@@ -263,7 +263,8 @@ export default function PublicApprovalPage() {
                             distribuciones,
                             anticipo,
                             observations: observaciones,
-                            isApproval: action === 'Aprobado'
+                            isApproval: action === 'Aprobado',
+                            nroFactura: invoice?.nroFactura
                         })
                     });
 
