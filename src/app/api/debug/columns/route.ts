@@ -3,9 +3,7 @@ import { getGraphClient } from '@/lib/sharepoint';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-    req: NextRequest
-) {
+export async function GET(req: NextRequest) {
     try {
         const client = await getGraphClient();
 
