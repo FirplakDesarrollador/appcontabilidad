@@ -22,6 +22,8 @@ import {
     X
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+
 
 interface InvoiceData {
     id: string;
@@ -36,6 +38,30 @@ interface InvoiceData {
     responsableActual?: string;
     documentInfo?: any;
 }
+
+const parseSafeFloat = (val: any): number => {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    let s = val.toString().replace(/[^\d,. -]/g, '').trim();
+    if (!s) return 0;
+    
+    // Check if it's European format (e.g. 1.234,56)
+    const hasComma = s.includes(',');
+    const hasDot = s.includes('.');
+    
+    if (hasComma && hasDot) {
+        if (s.indexOf('.') < s.indexOf(',')) {
+            s = s.replace(/\./g, '').replace(',', '.');
+        } else {
+            s = s.replace(/,/g, '');
+        }
+    } else if (hasComma) {
+        // If there's only a comma, treat as decimal point (Spanish standard)
+        s = s.replace(',', '.');
+    }
+    const res = parseFloat(s);
+    return isNaN(res) ? 0 : res;
+};
 
 export default function PublicApprovalPage() {
     const params = useParams();
@@ -643,7 +669,12 @@ export default function PublicApprovalPage() {
                                                     <label className="text-sm font-bold text-[#254153]">Distribución Contable</label>
                                                     <Button 
                                                         variant="outline" 
-                                                        onClick={() => setDistribuciones([...distribuciones, { centroCostos: '', cuenta: '', valor: '' }])}
+                                                        onClick={() => {
+                                                            const totalInvoice = parseFloat(invoice?.valorTotal || "0");
+                                                            const currentDistTotal = distribuciones.reduce((s, d) => s + (parseFloat(d.valor) || 0), 0);
+                                                            const remaining = Math.max(0, totalInvoice - currentDistTotal);
+                                                            setDistribuciones([...distribuciones, { centroCostos: '', cuenta: '', valor: remaining > 0 ? remaining.toString() : '' }]);
+                                                        }}
                                                         className="h-9 py-0 px-4 text-xs font-bold border-[#254153]/10 text-[#254153] bg-[#254153]/5 hover:bg-[#254153] hover:text-white rounded-xl transition-all"
                                                         disabled={!!actionLoading}
                                                     >
@@ -667,54 +698,48 @@ export default function PublicApprovalPage() {
                                                             <div className="grid grid-cols-1 gap-4">
                                                                 <div className="space-y-1.5">
                                                                     <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Centro Costos</label>
-                                                                    <select
+                                                                    <SearchableSelect
+                                                                        options={centrosCostosList.map((c: any) => ({
+                                                                            value: `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`,
+                                                                            label: `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`
+                                                                        }))}
                                                                         value={distribucion.centroCostos}
-                                                                        onChange={(e) => {
+                                                                        onChange={(val) => {
                                                                             const newDist = [...distribuciones];
-                                                                            newDist[index].centroCostos = e.target.value;
+                                                                            newDist[index].centroCostos = val;
                                                                             newDist[index].cuenta = "";
                                                                             setDistribuciones(newDist);
                                                                         }}
-                                                                        className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 font-medium outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 bg-white cursor-pointer"
+                                                                        placeholder="Selecciona CC..."
                                                                         disabled={!!actionLoading}
-                                                                    >
-                                                                        <option value="">Selecciona CC...</option>
-                                                                        {centrosCostosList.map((c: any) => (
-                                                                            <option key={c.id} value={`${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`}>
-                                                                                {c.codigo ? `${c.codigo} - ` : ''}{c.Título}
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
+                                                                    />
                                                                 </div>
 
                                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                                     <div className="space-y-1.5">
                                                                         <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Cuenta</label>
-                                                                        <select
-                                                                            value={distribucion.cuenta}
-                                                                            onChange={(e) => {
-                                                                                const newDist = [...distribuciones];
-                                                                                newDist[index].cuenta = e.target.value;
-                                                                                setDistribuciones(newDist);
-                                                                            }}
-                                                                            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-900 font-medium outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 bg-white disabled:bg-gray-100 disabled:text-gray-500 cursor-pointer"
-                                                                            disabled={!!actionLoading || !distribucion.centroCostos}
-                                                                        >
-                                                                            <option value="">Selecciona Cuenta...</option>
-                                                                            {(() => {
+                                                                        <SearchableSelect
+                                                                            options={(() => {
                                                                                 const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === distribucion.centroCostos);
                                                                                 const prefix = selectedCC?.cuentas_asociadas?.toString();
                                                                                 const filtered = prefix 
                                                                                     ? cuentasList.filter(c => c.Título?.startsWith(prefix))
                                                                                     : cuentasList;
                                                                                 
-                                                                                return filtered.map((c: any) => (
-                                                                                    <option key={c.id} value={`${c.Título}`}>
-                                                                                        {c.Título}
-                                                                                    </option>
-                                                                                ));
+                                                                                return filtered.map((c: any) => ({
+                                                                                    value: c.Título,
+                                                                                    label: c.Título
+                                                                                }));
                                                                             })()}
-                                                                        </select>
+                                                                            value={distribucion.cuenta}
+                                                                            onChange={(val) => {
+                                                                                const newDist = [...distribuciones];
+                                                                                newDist[index].cuenta = val;
+                                                                                setDistribuciones(newDist);
+                                                                            }}
+                                                                            placeholder="Selecciona Cuenta..."
+                                                                            disabled={!!actionLoading || !distribucion.centroCostos}
+                                                                        />
                                                                     </div>
 
                                                                     <div className="space-y-1.5">
@@ -727,13 +752,46 @@ export default function PublicApprovalPage() {
                                                                                 type="number"
                                                                                 value={distribucion.valor}
                                                                                 onChange={(e) => {
+                                                                                    const newValue = e.target.value;
                                                                                     const newDist = [...distribuciones];
-                                                                                    newDist[index].valor = e.target.value;
+                                                                                    newDist[index].valor = newValue;
+
+                                                                                    if (newDist.length > 1) {
+                                                                                        const totalFactura = parseSafeFloat(invoice?.valorTotal);
+                                                                                        // If editing last row, maybe do nothing or balance first?
+                                                                                        // User says "en otro se ajusta", let's always balance the other(s).
+                                                                                        // Standard: Edit any, adjust LAST (if not editing last), 
+                                                                                        // or if editing last, adjust previous.
+                                                                                        const targetIndex = index === newDist.length - 1 ? 0 : newDist.length - 1;
+                                                                                        
+                                                                                        const sumOthers = newDist.reduce((acc, curr, idx) => 
+                                                                                            idx === targetIndex ? acc : acc + parseSafeFloat(curr.valor), 0
+                                                                                        );
+                                                                                        
+                                                                                        const balance = Math.max(0, totalFactura - sumOthers);
+                                                                                        newDist[targetIndex].valor = balance.toFixed(2).replace(/\.00$/, '');
+                                                                                    }
+
                                                                                     setDistribuciones(newDist);
                                                                                 }}
-                                                                                className="w-full rounded-xl border border-gray-200 pl-9 pr-4 py-2.5 text-sm text-gray-900 font-bold outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 bg-white"
+                                                                                className="w-full rounded-xl border border-gray-200 pl-9 pr-12 py-2.5 text-sm text-gray-900 font-bold outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 bg-white"
                                                                                 disabled={!!actionLoading}
                                                                             />
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    const totalInvoice = parseFloat(invoice?.valorTotal || "0");
+                                                                                    const otherDistTotal = distribuciones.reduce((s, d, i) => i === index ? s : s + (parseFloat(d.valor) || 0), 0);
+                                                                                    const remaining = Math.max(0, totalInvoice - otherDistTotal);
+                                                                                    const newDist = [...distribuciones];
+                                                                                    newDist[index].valor = remaining.toString();
+                                                                                    setDistribuciones(newDist);
+                                                                                }}
+                                                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase text-[#254153] bg-[#254153]/5 px-2 py-1 rounded-lg hover:bg-[#254153] hover:text-white transition-all"
+                                                                                disabled={!!actionLoading}
+                                                                                title="Completar el valor restante de la factura"
+                                                                            >
+                                                                                Fin
+                                                                            </button>
                                                                         </div>
                                                                     </div>
                                                                 </div>
