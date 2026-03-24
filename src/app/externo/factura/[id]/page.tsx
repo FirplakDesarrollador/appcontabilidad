@@ -76,6 +76,7 @@ export default function PublicApprovalPage() {
     const [observaciones, setObservaciones] = useState<string>("");
     const [distribuciones, setDistribuciones] = useState<{ centroCostos: string; cuenta: string; valor: string }[]>([{ centroCostos: "", cuenta: "", valor: "" }]);
     const [anticipo, setAnticipo] = useState<string>("");
+    const [editableTotal, setEditableTotal] = useState<string>("");
 
     const [sapBpLoading, setSapBpLoading] = useState(false);
     const [sapBpFound, setSapBpFound] = useState<boolean | null>(null);
@@ -213,6 +214,7 @@ export default function PublicApprovalPage() {
             
             // Default first distribution to the total value of the invoice
             if (data.valorTotal) {
+                setEditableTotal(data.valorTotal);
                 setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
             }
         } catch (err: any) {
@@ -242,12 +244,17 @@ export default function PublicApprovalPage() {
     const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
         try {
             // Validate distributions sum equals invoice total if approved
-            if (action === 'Aprobado' && invoice?.valorTotal) {
-                const invoiceTotal = parseFloat(invoice.valorTotal);
-                const distributionsTotal = distribuciones.reduce((sum, dist) => sum + (parseFloat(dist.valor) || 0), 0);
+            if (action === 'Aprobado') {
+                if (!anticipo) {
+                    alert("Por favor, responde si la factura tiene anticipo o no antes de aprobar.");
+                    return;
+                }
+
+                const invoiceTotal = parseSafeFloat(editableTotal);
+                const distributionsTotal = distribuciones.reduce((sum, dist) => sum + parseSafeFloat(dist.valor), 0);
                 
-                if (Math.abs(invoiceTotal - distributionsTotal) > 0.01) {
-                    alert(`El total distribuido (${distributionsTotal}) no coincide con el valor total de la factura (${invoiceTotal}).`);
+                if (distributionsTotal > invoiceTotal + 0.01) {
+                    alert(`El total distribuido (${distributionsTotal}) no puede ser mayor al valor total de la factura (${invoiceTotal}).`);
                     return;
                 }
 
@@ -269,7 +276,7 @@ export default function PublicApprovalPage() {
                     observaciones,
                     distribuciones, // Send the array instead of individual strings
                     anticipo,
-                    valor: invoice?.valorTotal
+                    valor: editableTotal
                 })
             });
             const data = await res.json();
@@ -285,7 +292,7 @@ export default function PublicApprovalPage() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             nit: invoice?.nit,
-                            total: invoice?.valorTotal,
+                            total: editableTotal,
                             distribuciones,
                             anticipo,
                             observations: observaciones,
@@ -577,13 +584,18 @@ export default function PublicApprovalPage() {
                                                     <DollarSign className="h-4 w-4" />
                                                     <span className="text-[10px] font-black uppercase tracking-wider">Valor Total</span>
                                                 </div>
-                                                <p className="text-2xl font-black text-[#254153]">
-                                                    {invoice?.valorTotal && new Intl.NumberFormat('es-CO', {
-                                                        style: 'currency',
-                                                        currency: 'COP',
-                                                        maximumFractionDigits: 0
-                                                    }).format(parseFloat(invoice.valorTotal))}
-                                                </p>
+                                                <div className="relative group">
+                                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                                                        <span className="text-gray-400 font-bold">$</span>
+                                                    </div>
+                                                    <input 
+                                                        type="text"
+                                                        value={editableTotal}
+                                                        onChange={(e) => setEditableTotal(e.target.value)}
+                                                        className="text-2xl font-black text-[#254153] bg-[#254153]/5 border-2 border-transparent focus:border-[#254153]/20 focus:bg-white rounded-2xl py-2 pl-8 pr-4 w-full outline-none transition-all hover:bg-[#254153]/10"
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
                                             </div>
 
                                             <div className="space-y-1.5">
@@ -757,7 +769,7 @@ export default function PublicApprovalPage() {
                                                                                     newDist[index].valor = newValue;
 
                                                                                     if (newDist.length > 1) {
-                                                                                        const totalFactura = parseSafeFloat(invoice?.valorTotal);
+                                                                                        const totalFactura = parseSafeFloat(editableTotal);
                                                                                         // If editing last row, maybe do nothing or balance first?
                                                                                         // User says "en otro se ajusta", let's always balance the other(s).
                                                                                         // Standard: Edit any, adjust LAST (if not editing last), 
@@ -779,8 +791,8 @@ export default function PublicApprovalPage() {
                                                                             />
                                                                             <button
                                                                                 onClick={() => {
-                                                                                    const totalInvoice = parseFloat(invoice?.valorTotal || "0");
-                                                                                    const otherDistTotal = distribuciones.reduce((s, d, i) => i === index ? s : s + (parseFloat(d.valor) || 0), 0);
+                                                                                    const totalInvoice = parseSafeFloat(editableTotal);
+                                                                                    const otherDistTotal = distribuciones.reduce((s, d, i) => i === index ? s : s + parseSafeFloat(d.valor), 0);
                                                                                     const remaining = Math.max(0, totalInvoice - otherDistTotal);
                                                                                     const newDist = [...distribuciones];
                                                                                     newDist[index].valor = remaining.toString();
@@ -804,13 +816,13 @@ export default function PublicApprovalPage() {
                                                     <div className="flex justify-between items-center text-sm">
                                                         <span className="font-bold text-gray-500 uppercase text-[10px] tracking-widest">Total distribuido</span>
                                                         <span className={`font-black text-base ${
-                                                            invoice?.valorTotal && Math.abs(parseFloat(invoice.valorTotal) - distribuciones.reduce((s,d) => s + (parseFloat(d.valor)||0), 0)) < 0.01 
+                                                            editableTotal && (distribuciones.reduce((s,d) => s + parseSafeFloat(d.valor), 0) <= parseSafeFloat(editableTotal) + 0.01)
                                                             ? 'text-green-600' : 'text-red-500'
                                                         }`}>
                                                             {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
-                                                                .format(distribuciones.reduce((s,d) => s + (parseFloat(d.valor)||0), 0))}
+                                                                .format(distribuciones.reduce((s,d) => s + parseSafeFloat(d.valor), 0))}
                                                             <span className="text-gray-300 font-normal mx-2.5">/</span>
-                                                            {invoice?.valorTotal && new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(parseFloat(invoice.valorTotal))}
+                                                            {editableTotal && new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(parseSafeFloat(editableTotal))}
                                                         </span>
                                                     </div>
                                                 </div>
