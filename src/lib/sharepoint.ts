@@ -71,7 +71,6 @@ export async function updateSharePointInvoiceStatus(invoiceNumber: string, actio
 
         // 4. Update the Item
         await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch({
-            Gestion_Contabilidad: action === 'Aprobado' ? 'Procesado' : 'Rechazado',
             Aprobacion_Doliente: action
         });
 
