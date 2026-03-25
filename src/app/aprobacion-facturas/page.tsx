@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, Search, Menu, Filter, Download, RefreshCw, Link as LinkIcon, Check, Copy, Database, X, FileText, User, Landmark, Calendar, Hash, DollarSign } from "lucide-react";
+import { Bell, Search, Menu, Filter, Download, RefreshCw, Link as LinkIcon, Check, Copy, Database, X, FileText, User, Landmark, Calendar, Hash, DollarSign, Settings2, ShieldCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Switch } from "@/components/ui/Switch";
 import Link from "next/link";
 
 interface Invoice {
@@ -56,6 +57,10 @@ export default function InvoicesPage() {
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [selectedResponsible, setSelectedResponsible] = useState<string>("todos");
     const [responsibles, setResponsibles] = useState<string[]>([]);
+    const [isProvidersSidebarOpen, setIsProvidersSidebarOpen] = useState(false);
+    const [providers, setProviders] = useState<any[]>([]);
+    const [providersSearch, setProvidersSearch] = useState("");
+    const [loadingProviders, setLoadingProviders] = useState(false);
     const ITEMS_PER_PAGE = 20;
 
     useEffect(() => {
@@ -69,6 +74,12 @@ export default function InvoicesPage() {
         fetchResponsibles();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [debouncedSearch, filterStatus, selectedResponsible]);
+
+    useEffect(() => {
+        if (isProvidersSidebarOpen) {
+            fetchProviders();
+        }
+    }, [isProvidersSidebarOpen]);
 
     useEffect(() => {
         if (isModalOpen && selectedInvoice) {
@@ -213,6 +224,61 @@ export default function InvoicesPage() {
         }
     };
 
+    const fetchProviders = async () => {
+        setLoadingProviders(true);
+        try {
+            const { data, error } = await supabase
+                .from('proveedores')
+                .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
+                .order('razon_social', { ascending: true });
+
+            if (error) throw error;
+            setProviders(data || []);
+        } catch (error) {
+            console.error('Error fetching providers:', error);
+        } finally {
+            setLoadingProviders(false);
+        }
+    };
+
+    const toggleProviderAutoApproval = async (id: string, currentValue: boolean) => {
+        const newValue = !currentValue;
+        
+        // Optimistic update
+        setProviders(prev => prev.map(p => p.id === id ? { ...p, aprobacion_automatica: newValue } : p));
+
+        try {
+            const { error } = await supabase
+                .from('proveedores')
+                .update({ aprobacion_automatica: newValue })
+                .eq('id', id);
+
+            if (error) throw error;
+        } catch (error) {
+            console.error('Error updating provider:', error);
+            // Revert on error
+            setProviders(prev => prev.map(p => p.id === id ? { ...p, aprobacion_automatica: currentValue } : p));
+            alert('Error al actualizar el proveedor.');
+        }
+    };
+
+    const updateProviderField = async (id: string, field: string, value: any) => {
+        // Optimistic update
+        setProviders(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+
+        try {
+            const { error } = await supabase
+                .from('proveedores')
+                .update({ [field]: value })
+                .eq('id', id);
+
+            if (error) throw error;
+        } catch (error) {
+            console.error(`Error updating provider ${field}:`, error);
+            alert('Error al guardar el cambio.');
+        }
+    };
+
     const syncInvoices = async () => {
         setSyncing(true);
         try {
@@ -313,6 +379,13 @@ export default function InvoicesPage() {
                                 className="h-10 pl-10 pr-4 rounded-full bg-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/20 w-80"
                             />
                         </div>
+                        <button 
+                            onClick={() => setIsProvidersSidebarOpen(true)}
+                            className="h-10 px-4 flex items-center gap-2 rounded-full bg-[#254153]/5 text-[#254153] hover:bg-[#254153]/10 transition-colors text-xs font-bold"
+                        >
+                            <ShieldCheck className="h-4 w-4" />
+                            <span className="hidden lg:inline">Aprobación Automática</span>
+                        </button>
                         <button className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-gray-100 relative">
                             <Bell className="h-5 w-5 text-gray-600" />
                         </button>
@@ -391,7 +464,7 @@ export default function InvoicesPage() {
                             <div className="flex items-center gap-2 px-4 h-11 rounded-2xl bg-white border border-gray-100 shadow-sm focus-within:border-[#254153]/30 transition-all group">
                                 <User className="h-4 w-4 text-[#254153]/40 group-focus-within:text-[#254153] transition-colors" />
                                 <div className="flex flex-col">
-                                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.1em] leading-none mb-0.5">Filtrar por Responsable</span>
+                                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-0.5">Filtrar por Responsable</span>
                                     <select
                                         value={selectedResponsible}
                                         onChange={(e) => setSelectedResponsible(e.target.value)}
@@ -550,7 +623,7 @@ export default function InvoicesPage() {
                                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
                                 className="bg-white rounded-[2.5rem] shadow-2xl border border-white overflow-hidden max-w-2xl w-full relative z-10"
                             >
-                                <div className="h-3 bg-gradient-to-r from-[#254153] to-[#4a6b8a]" />
+                                <div className="h-3 bg-linear-to-r from-[#254153] to-[#4a6b8a]" />
                                 <button 
                                     onClick={() => setIsModalOpen(false)}
                                     className="absolute top-6 right-6 h-10 w-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors"
@@ -642,6 +715,147 @@ export default function InvoicesPage() {
                                         </div>
                                     )}
 
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
+                {/* Providers Sidebar - Slide over */}
+                <AnimatePresence>
+                    {isProvidersSidebarOpen && (
+                        <div className="fixed inset-0 z-50 flex justify-end">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setIsProvidersSidebarOpen(false)}
+                                className="absolute inset-0 bg-[#254153]/20 backdrop-blur-sm"
+                            />
+                            <motion.div
+                                initial={{ x: "100%" }}
+                                animate={{ x: 0 }}
+                                exit={{ x: "100%" }}
+                                transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                                className="relative w-full max-w-md bg-white shadow-2xl h-full flex flex-col border-l border-gray-100"
+                            >
+                                <div className="p-6 border-b border-gray-50 flex items-center justify-between bg-white sticky top-0 z-10">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-[#254153] flex items-center gap-2">
+                                            <ShieldCheck className="h-5 w-5 text-green-600" />
+                                            Aprobación Automática
+                                        </h2>
+                                        <p className="text-xs text-gray-400 font-medium">Gestiona proveedores de confianza</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsProvidersSidebarOpen(false)}
+                                        className="h-9 w-9 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                                    >
+                                        <X className="h-5 w-5" />
+                                    </button>
+                                </div>
+
+                                <div className="p-4 border-b border-gray-50 bg-gray-50/50">
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Buscar proveedor o Nit..."
+                                            value={providersSearch}
+                                            onChange={(e) => setProvidersSearch(e.target.value)}
+                                            className="w-full h-11 pl-10 pr-4 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153]/30 transition-all font-medium"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                                    {loadingProviders ? (
+                                        Array.from({ length: 8 }).map((_, i) => (
+                                            <div key={i} className="h-20 bg-gray-50 rounded-2xl animate-pulse" />
+                                        ))
+                                    ) : (
+                                        providers
+                                            .filter(p => 
+                                                p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) || 
+                                                p.numero_identificacion?.includes(providersSearch)
+                                            )
+                                            .map((p) => (
+                                                <div 
+                                                    key={p.id}
+                                                    className={`p-4 rounded-2xl border transition-all duration-300 flex flex-col group ${
+                                                        p.aprobacion_automatica 
+                                                        ? 'bg-green-50/30 border-green-100 shadow-xs' 
+                                                        : 'bg-white border-gray-100 hover:border-gray-200 shadow-xs'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between w-full">
+                                                        <div className="flex-1 min-w-0 pr-4">
+                                                            <p className={`text-sm font-bold truncate ${p.aprobacion_automatica ? 'text-green-800' : 'text-[#254153]'}`}>
+                                                                {p.razon_social || 'S/N'}
+                                                            </p>
+                                                            <div className="flex items-center gap-2 mt-1">
+                                                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Nit: {p.numero_identificacion || 'N/A'}</span>
+                                                                {p.aprobacion_automatica && (
+                                                                    <span className="flex items-center gap-1 text-[9px] font-black text-green-600 bg-green-100 px-1.5 py-0.5 rounded-sm uppercase tracking-tighter">
+                                                                        <Check className="h-2 w-2" /> Activo
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <Switch 
+                                                            checked={!!p.aprobacion_automatica}
+                                                            onChange={() => toggleProviderAutoApproval(p.id, !!p.aprobacion_automatica)}
+                                                        />
+                                                    </div>
+
+                                                    {p.aprobacion_automatica && (
+                                                        <motion.div 
+                                                            initial={{ opacity: 0, height: 0 }}
+                                                            animate={{ opacity: 1, height: 'auto' }}
+                                                            className="mt-4 pt-4 border-t border-green-100/50 flex gap-3"
+                                                        >
+                                                            <div className="flex-1">
+                                                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Valor Ref. (COP)</label>
+                                                                <div className="relative">
+                                                                    <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-600" />
+                                                                    <input 
+                                                                        type="number"
+                                                                        defaultValue={p.valor_de_referencia || ''}
+                                                                        onBlur={(e) => updateProviderField(p.id, 'valor_de_referencia', e.target.value === '' ? null : Number(e.target.value))}
+                                                                        className="w-full h-8 pl-6 pr-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
+                                                                        placeholder="0.00"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <div className="w-24">
+                                                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">% Desv.</label>
+                                                                <input 
+                                                                    type="number"
+                                                                    defaultValue={p.porcentaje_desviacion || ''}
+                                                                    onBlur={(e) => updateProviderField(p.id, 'porcentaje_desviacion', e.target.value === '' ? null : Number(e.target.value))}
+                                                                    className="w-full h-8 px-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
+                                                                    placeholder="%"
+                                                                />
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </div>
+                                            ))
+                                    )}
+                                </div>
+
+                                <div className="p-6 bg-gray-50/50 border-t border-gray-100">
+                                    <div className="flex items-start gap-3 p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                                        <div className="mt-0.5 h-8 w-8 rounded-lg bg-green-50 flex items-center justify-center text-green-600 shrink-0">
+                                            <ShieldCheck className="h-4 w-4" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-gray-800">Control Inteligente</p>
+                                            <p className="text-[10px] text-gray-500 font-medium leading-relaxed mt-0.5">
+                                                Los proveedores activados aprobarán sus facturas automáticamente al ingresar.
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
                             </motion.div>
                         </div>
