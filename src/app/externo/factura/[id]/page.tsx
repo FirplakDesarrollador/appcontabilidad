@@ -15,6 +15,7 @@ import {
     Building2,
     Hash,
     ChevronLeft,
+    ChevronRight,
     Loader2,
     Plus,
     Trash2,
@@ -401,8 +402,19 @@ export default function PublicApprovalPage() {
                             </div>
                             <h2 className="text-3xl font-bold text-gray-900 mb-4">¡Listo!</h2>
                             <p className="text-gray-600 mb-10 text-lg">{successMessage}</p>
-                            <div className="text-sm text-gray-400">
-                                Ya puedes cerrar esta pestaña
+                            
+                            <div className="flex flex-col gap-4">
+                                <Button 
+                                    onClick={() => window.location.href = `/externo/pendientes?responsable=${encodeURIComponent(invoice?.responsableActual || "")}`}
+                                    className="w-full h-16 bg-[#254153] hover:bg-[#1a2e3b] text-white font-black text-sm rounded-2xl shadow-xl shadow-[#254153]/20 flex items-center justify-center gap-2 group transition-all"
+                                >
+                                    <span>Ver pendientes por aprobar</span>
+                                    <ChevronRight className="h-4 w-4 transform group-hover:translate-x-1 transition-all" />
+                                </Button>
+                                
+                                <div className="text-sm text-gray-400 mt-4">
+                                    Si ya no tienes más facturas por gestionar, puedes cerrar esta pestaña.
+                                </div>
                             </div>
                         </motion.div>
                     </div>
