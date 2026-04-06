@@ -29,8 +29,7 @@ export async function POST(req: NextRequest) {
 
         // 3. Update the Item
         const updatePayload: any = {
-            Aprobacion_Doliente: action,
-            Gestion_Contabilidad: action === 'Aprobado' ? 'Procesado' : 'Rechazado'
+            Aprobacion_Doliente: action
         };
 
         if (observaciones) {

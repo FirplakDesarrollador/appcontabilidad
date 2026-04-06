@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy } from "lucide-react";
@@ -35,6 +35,42 @@ export default function InvoicesPage() {
     const [isSearchingUsers, setIsSearchingUsers] = useState(false);
     const [isUpdatingResponsible, setIsUpdatingResponsible] = useState(false);
     const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
+
+    const [columnFilters, setColumnFilters] = useState({
+        invoice: "",
+        provider: "",
+        amount: "",
+        responsible: "",
+        status: "",
+        contabilidad: ""
+    });
+
+    // Opciones para los filtros dropdown
+    const filterOptions = useMemo(() => {
+        const options = {
+            invoices: new Set<string>(),
+            providers: new Set<string>(),
+            responsibles: new Set<string>(),
+            statuses: new Set<string>(),
+            contabilidades: new Set<string>(),
+        };
+
+        invoices.forEach(inv => {
+            if (inv.Nro_Factura) options.invoices.add(inv.Nro_Factura);
+            if (inv.Proveedor) options.providers.add(inv.Proveedor);
+            if (inv.Responsable_de_Autorizar) options.responsibles.add(inv.Responsable_de_Autorizar);
+            if (inv.Aprobacion_Doliente) options.statuses.add(inv.Aprobacion_Doliente);
+            if (inv.Gestion_Contabilidad) options.contabilidades.add(inv.Gestion_Contabilidad);
+        });
+
+        return {
+            invoices: Array.from(options.invoices).sort(),
+            providers: Array.from(options.providers).sort(),
+            responsibles: Array.from(options.responsibles).sort(),
+            statuses: Array.from(options.statuses).sort(),
+            contabilidades: Array.from(options.contabilidades).sort(),
+        };
+    }, [invoices]);
 
     const fetchInvoices = async () => {
         try {
@@ -201,10 +237,21 @@ export default function InvoicesPage() {
             inv.Nit?.toLowerCase().includes(searchTerm.toLowerCase());
 
         const matchesTab = activeTab === 'pending' ? isPending(inv) : isProcessed(inv);
-
         const matchesResponsable = selectedResponsable === "all" || inv.Responsable_de_Autorizar === selectedResponsable;
 
-        return matchesSearch && matchesTab && matchesResponsable;
+        // Filtros por columna (Excel-style)
+        const matchesColInvoice = !columnFilters.invoice || inv.Nro_Factura?.toLowerCase().includes(columnFilters.invoice.toLowerCase());
+        const matchesColProvider = !columnFilters.provider || 
+            inv.Proveedor?.toLowerCase().includes(columnFilters.provider.toLowerCase()) || 
+            inv.Nit?.toLowerCase().includes(columnFilters.provider.toLowerCase());
+        const matchesColAmount = !columnFilters.amount || String(inv.Monto).includes(columnFilters.amount);
+        const matchesColResponsible = !columnFilters.responsible || inv.Responsable_de_Autorizar?.toLowerCase().includes(columnFilters.responsible.toLowerCase());
+        const matchesColStatus = !columnFilters.status || (inv.Aprobacion_Doliente || "Pendiente").toLowerCase().includes(columnFilters.status.toLowerCase());
+        const matchesColContabilidad = !columnFilters.contabilidad || (inv.Gestion_Contabilidad || "Pendiente").toLowerCase().includes(columnFilters.contabilidad.toLowerCase());
+
+        return matchesSearch && matchesTab && matchesResponsable && 
+               matchesColInvoice && matchesColProvider && matchesColAmount && 
+               matchesColResponsible && matchesColStatus && matchesColContabilidad;
     });
 
     return (
@@ -361,11 +408,90 @@ export default function InvoicesPage() {
                                     <tr className="bg-gray-50/50 border-b border-gray-100">
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Factura</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Proveedor</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right px-10">Valor total</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Valor total</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Responsable</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Estado</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">G. Contabilidad</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Datos adjuntos</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Acciones</th>
+                                    </tr>
+                                    <tr className="bg-white border-b border-gray-50">
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-invoice"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.invoice}
+                                                onChange={(e) => setColumnFilters({...columnFilters, invoice: e.target.value})}
+                                            />
+                                            <datalist id="list-invoice">
+                                                {filterOptions.invoices.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-provider"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.provider}
+                                                onChange={(e) => setColumnFilters({...columnFilters, provider: e.target.value})}
+                                            />
+                                            <datalist id="list-provider">
+                                                {filterOptions.providers.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.amount}
+                                                onChange={(e) => setColumnFilters({...columnFilters, amount: e.target.value})}
+                                            />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-responsible"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.responsible}
+                                                onChange={(e) => setColumnFilters({...columnFilters, responsible: e.target.value})}
+                                            />
+                                            <datalist id="list-responsible">
+                                                {filterOptions.responsibles.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-status"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.status}
+                                                onChange={(e) => setColumnFilters({...columnFilters, status: e.target.value})}
+                                            />
+                                            <datalist id="list-status">
+                                                {filterOptions.statuses.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-contabilidad"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.contabilidad}
+                                                onChange={(e) => setColumnFilters({...columnFilters, contabilidad: e.target.value})}
+                                            />
+                                            <datalist id="list-contabilidad">
+                                                {filterOptions.contabilidades.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2" />
+                                        <td className="px-3 py-2" />
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
@@ -384,7 +510,7 @@ export default function InvoicesPage() {
                                             ))
                                         ) : filteredInvoices.length === 0 ? (
                                             <tr>
-                                                <td colSpan={6} className="px-6 py-20 text-center">
+                                                <td colSpan={8} className="px-6 py-20 text-center">
                                                     <div className="flex flex-col items-center gap-3 opacity-30">
                                                         <Search className="h-12 w-12 text-[#254153]" />
                                                         <p className="text-lg font-bold text-[#254153]">No se encontraron resultados</p>
@@ -420,6 +546,11 @@ export default function InvoicesPage() {
                                                     <td className="px-6 py-5">
                                                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(inv.Aprobacion_Doliente)}`}>
                                                             {inv.Aprobacion_Doliente || "Pendiente"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-5">
+                                                        <span className="text-[10px] font-bold text-gray-600 uppercase tracking-tight">
+                                                            {inv.Gestion_Contabilidad || "Pendiente"}
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-5">

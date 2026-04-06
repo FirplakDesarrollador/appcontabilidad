@@ -3,10 +3,7 @@ import { getGraphClient } from '@/lib/sharepoint';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-    req: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(req: NextRequest) {
     try {
         const client = await getGraphClient();
 
@@ -14,19 +11,18 @@ export async function GET(
         const siteId = siteResponse.id;
 
         const drives = await client.api(`/sites/${siteId}/drives`).get();
-        const drive = drives.value.find((d: any) => d.name === 'RECEPCIÓN FACTURAS');
+        const drive = drives.value.find((d: any) => d.name === 'Documents');
         
-        if (!drive) return NextResponse.json({ error: 'Drive RECEPCIÓN FACTURAS not found' }, { status: 404 });
-
-        // Search in this specific drive
+        // Search for TLO112664 in the whole drive
         const searchRes = await client.api(`/drives/${drive.id}/root/search(q='TLO112664')`).get();
         
         return NextResponse.json({
-            driveName: drive.name,
+            query: 'TLO112664',
             results: searchRes.value.map((i: any) => ({
                 name: i.name,
-                webUrl: i.webUrl,
-                id: i.id
+                id: i.id,
+                path: i.parentReference.path,
+                webUrl: i.webUrl
             }))
         });
 

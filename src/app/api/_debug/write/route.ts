@@ -5,12 +5,9 @@ import { join } from 'path';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-    req: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(req: NextRequest) {
     try {
-        const { id: itemId } = await params;
+        const itemId = req.nextUrl.searchParams.get('id') || '';
         const invoice = await getSharePointInvoiceById(itemId);
 
         // Write to file to avoid console truncation

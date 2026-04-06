@@ -3,28 +3,22 @@ import { getGraphClient } from '@/lib/sharepoint';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-    req: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(req: NextRequest) {
     try {
         const client = await getGraphClient();
 
         const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
         const siteId = siteResponse.id;
 
-        const drives = await client.api(`/sites/${siteId}/drives`).get();
-        const drive = drives.value.find((d: any) => d.name === 'Documents');
-        
-        // Search for TLO112664 in the whole drive
-        const searchRes = await client.api(`/drives/${drive.id}/root/search(q='TLO112664')`).get();
+        // Search for CUFE hash in the site
+        const cufe = "fa52b8a340a36f62ec7b619bde1ea73c2531bc4faf0535ab8d1be9b0dd393059f1b275386fb685adc86507cd2f27defc";
+        const searchRes = await client.api(`/sites/${siteId}/drive/root/search(q='${cufe}')`).get();
         
         return NextResponse.json({
-            query: 'TLO112664',
+            query: cufe,
             results: searchRes.value.map((i: any) => ({
                 name: i.name,
                 id: i.id,
-                path: i.parentReference.path,
                 webUrl: i.webUrl
             }))
         });

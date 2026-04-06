@@ -35,7 +35,6 @@ export async function POST(req: NextRequest) {
             .from('Registro_Facturas')
             .update({
                 Aprobacion_Doliente: action,
-                Gestion_Contabilidad: action,
                 FechaProcesado: new Date().toISOString(),
                 Procesado: 'true'
             })
