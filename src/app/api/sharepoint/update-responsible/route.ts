@@ -3,9 +3,10 @@ import { getGraphClient } from '@/lib/sharepoint';
 
 export async function POST(req: NextRequest) {
     try {
-        const { itemId, userEmail, userName } = await req.json();
+        const { itemId, userEmail, userName, listName = 'Registro_de_Facturas' } = await req.json();
 
         if (!itemId || !userEmail) {
+
             return NextResponse.json({ error: 'Missing itemId or userEmail' }, { status: 400 });
         }
 
@@ -17,10 +18,11 @@ export async function POST(req: NextRequest) {
 
         // 2. Find the List
         const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-        const list = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
+        const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
 
-        if (!list) throw new Error('SharePoint list "Registro_de_Facturas" not found');
+        if (!list) throw new Error(`SharePoint list "${listName}" not found`);
         const listId = list.id;
+
 
         // 3. Resolve User Email to SharePoint User ID
         // Direct email updates often fail to persist in some SharePoint environments.
@@ -58,7 +60,12 @@ export async function POST(req: NextRequest) {
 
         // 4. Update the Item using individual PATCH attempts with LookupId
         let updated = false;
-        const idFieldsToTry = ['ResponsabledeAutorizarLookupId', 'Responsable_de_AutorizarLookupId'];
+        const idFieldsToTry = [
+            'ResponsabledeAutorizarLookupId', 
+            'Responsable_de_AutorizarLookupId',
+            'ResponsableAprobarLookupId'
+        ];
+
 
         for (const fieldName of idFieldsToTry) {
             try {

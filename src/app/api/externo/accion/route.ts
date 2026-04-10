@@ -3,7 +3,8 @@ import { getGraphClient } from '@/lib/sharepoint';
 
 export async function POST(req: NextRequest) {
     try {
-        const { itemId, action, observaciones, distribuciones, anticipo, valor } = await req.json();
+        const { itemId, action, observaciones, distribuciones, anticipo, valor, listName = 'Registro_de_Facturas' } = await req.json();
+
 
 
         if (!itemId || !action) {
@@ -22,15 +23,22 @@ export async function POST(req: NextRequest) {
 
         // 2. Find the List
         const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-        const list = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
+        const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
 
-        if (!list) throw new Error('SharePoint list "Registro_de_Facturas" not found');
+        if (!list) throw new Error(`SharePoint list "${listName}" not found`);
         const listId = list.id;
 
+
         // 3. Update the Item
-        const updatePayload: any = {
-            Aprobacion_Doliente: action
-        };
+        const isDocSoporte = listName === 'Documento_Soporte';
+        const updatePayload: any = {};
+
+        if (isDocSoporte) {
+            updatePayload.AprobacionDoliente = action;
+        } else {
+            updatePayload.Aprobacion_Doliente = action;
+        }
+
 
         if (observaciones) {
             updatePayload.Observaciones = observaciones;

@@ -5,7 +5,8 @@ export async function POST(req: NextRequest) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
     try {
-        const { nit, total, distribuciones, anticipo, observations, isApproval, nroFactura, sessionId: providedSessionId, cookies: providedCookies } = await req.json();
+        const { nit, total, distribuciones, anticipo, observations, isApproval, nroFactura, docTypeDesc = 'FACTURA', sessionId: providedSessionId, cookies: providedCookies } = await req.json();
+
 
         // 0. Only process if it's an approval
         if (!isApproval) {
@@ -99,7 +100,8 @@ export async function POST(req: NextRequest) {
         
         const documentLines = Array.isArray(distribuciones) && distribuciones.length > 0 
             ? distribuciones.map((dist: any) => ({
-                ItemDescription: `FACTURA ${nroFactura || ''}`, // Specific description
+                ItemDescription: `${docTypeDesc} ${nroFactura || ''}`, // Specific description
+
                 AccountCode: dist.cuenta?.split(' ')[0] || '', // Clean account code
                 CostingCode: dist.centroCostos?.split(' - ')[0] || '', // Extract code from "CODE - NAME",
                 LineTotal: dist.valor || "0",
@@ -113,8 +115,9 @@ export async function POST(req: NextRequest) {
             CardCode: cardCode,
             NumAtCard: nroFactura || '', // Reference Number in SAP
             DocDate: new Date().toISOString().split('T')[0],
-            Comments: `Portal Aprobación - Factura #${nroFactura || ''} | ${observations || ''} | Anticipo: ${anticipo || 'N/A'}`,
+            Comments: `Portal Aprobación - ${docTypeDesc} #${nroFactura || ''} | ${observations || ''} | Anticipo: ${anticipo || 'N/A'}`,
             DocumentLines: documentLines
+
         };
 
         const createDraftRes = await fetchWithRetry(draftUrl, {

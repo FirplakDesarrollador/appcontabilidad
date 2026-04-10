@@ -121,7 +121,7 @@ export async function getSharePointInvoices(page: number = 1, pageSize: number =
     }
 }
 
-export async function fetchAllSharePointItems() {
+export async function fetchAllSharePointItems(listName: string = 'Registro_de_Facturas') {
     try {
         const client = await getGraphClient();
 
@@ -131,16 +131,14 @@ export async function fetchAllSharePointItems() {
 
         // 2. Find the List
         const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-        const list = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
+        const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
 
-        if (!list) throw new Error('SharePoint list "Registro_de_Facturas" not found');
+        if (!list) throw new Error(`SharePoint list "${listName}" not found`);
         const listId = list.id;
 
-        // 3. Fetch the "Responsable de Autorizar" lookup list to resolve IDs to names
-        // The lookup column references the site's User Information List
+        // 3. Fetch the "User Information List" to resolve IDs to names
         const userMap = new Map<string, string>();
         try {
-            // Try to get the User Information List
             let userNextLink: string | null = `/sites/${siteId}/lists('User Information List')/items?$select=id,fields&$expand=fields($select=Title)&$top=500`;
             while (userNextLink) {
                 const userResponse = await client.api(userNextLink).get();
@@ -153,20 +151,24 @@ export async function fetchAllSharePointItems() {
             }
             console.log(`[SharePoint] Loaded ${userMap.size} users for lookup resolution`);
         } catch (e: any) {
-            console.warn('[SharePoint] Could not load User Information List, trying alternative approach:', e.message);
+            console.warn('[SharePoint] Could not load User Information List:', e.message);
         }
 
         // 4. Iterative Fetch of all list items
         let allItems: any[] = [];
         let nextLink: string | null = `/sites/${siteId}/lists/${listId}/items?expand=fields&top=500`;
 
-        console.log('Starting full SharePoint fetch...');
+        console.log(`Starting full SharePoint fetch for list: ${listName}...`);
 
         while (nextLink) {
             const response = await client.api(nextLink).get();
             const items = response.value.map((item: any) => {
                 const fields = item.fields || {};
-                const lookupId = fields.ResponsabledeAutorizarLookupId;
+                
+                // Resolve Responsable lookup
+                // Registro_de_Facturas use: ResponsabledeAutorizarLookupId
+                // Documento_Soporte use: ResponsableAprobarLookupId
+                const lookupId = fields.ResponsabledeAutorizarLookupId || fields.ResponsableAprobarLookupId || fields.Responsable_de_AutorizarLookupId;
                 const responsableName = lookupId ? userMap.get(String(lookupId)) : null;
 
                 return {
@@ -182,12 +184,13 @@ export async function fetchAllSharePointItems() {
 
         return allItems;
     } catch (error) {
-        console.error('SharePoint full fetch error:', error);
+        console.error(`SharePoint full fetch error for ${listName}:`, error);
         throw error;
     }
 }
 
-export async function getSharePointInvoiceById(itemId: string) {
+
+export async function getSharePointItemById(itemId: string, listName: string = 'Registro_de_Facturas') {
     try {
         const client = await getGraphClient();
 
@@ -197,9 +200,9 @@ export async function getSharePointInvoiceById(itemId: string) {
 
         // 2. Find the List
         const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-        const list = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
+        const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
 
-        if (!list) throw new Error('SharePoint list "Registro_de_Facturas" not found');
+        if (!list) throw new Error(`SharePoint list "${listName}" not found`);
         const listId = list.id;
 
         // 3. Fetch specific item
@@ -207,79 +210,71 @@ export async function getSharePointInvoiceById(itemId: string) {
             .expand('fields')
             .get();
 
-        let attachments = [];
-        // Try to fetch attachments regardless of the field, as it can be inconsistent
+        let attachments: any[] = [];
         try {
-            const attachmentsRes = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/attachments`).get();
-            attachments = attachmentsRes.value || [];
-        } catch (err) {
-            console.warn(`[SharePoint] Graph API attachments failed for ${itemId}, trying REST API...`);
-            try {
-                const restToken = await getSharePointRESTToken();
-                // Usamos el ID de la lista que ya resolvimos vía Graph
-                const restUrl = `https://firplaksa.sharepoint.com/sites/FPKContabilidad/_api/web/lists(guid'${listId}')/items(${itemId})/AttachmentFiles`;
-                
-                const restRes = await fetch(restUrl, {
-                    headers: {
-                        'Authorization': `Bearer ${restToken}`,
-                        'Accept': 'application/json;odata=nometadata'
-                    }
-                });
-                if (restRes.ok) {
-                    const restData = await restRes.json();
-                    // En nometadata, los resultados vienen en .value
-                    const results = restData.value || [];
-                    attachments = results.map((a: any) => ({
-                        name: a.FileName,
-                        serverRelativeUrl: a.ServerRelativeUrl
-                    }));
-                } else {
-                    console.warn(`[SharePoint] REST API attachments failed with status: ${restRes.status}`);
+            const restToken = await getSharePointRESTToken();
+            const restUrl = `https://firplaksa.sharepoint.com/sites/FPKContabilidad/_api/web/lists(guid'${listId}')/items(${itemId})/AttachmentFiles`;
+            
+            const restRes = await fetch(restUrl, {
+                headers: {
+                    'Authorization': `Bearer ${restToken}`,
+                    'Accept': 'application/json;odata=nometadata'
                 }
-            } catch (restErr) {
-                console.error("Error fetching attachments via REST for item " + itemId, restErr);
+            });
+            if (restRes.ok) {
+                const restData = await restRes.json();
+                const results = restData.value || [];
+                attachments = results.map((a: any) => ({
+                    name: a.FileName,
+                    serverRelativeUrl: a.ServerRelativeUrl
+                }));
             }
+        } catch (restErr) {
+            console.error("Error fetching attachments via REST for item " + itemId, restErr);
         }
 
-        // Fallback: Si no se encontraron adjuntos vía API pero el item dice tenerlos,
-        // redirigimos al formulario estándar de SharePoint donde los adjuntos son visibles.
+        // Fallback for attachments link
         if (attachments.length === 0 && item.fields.Attachments === true) {
-            console.log(`[SharePoint] Usando DispForm como fallback para item ${itemId}`);
             attachments.push({
                 name: 'Ver en SharePoint',
-                serverRelativeUrl: `/Lists/Registro_de_Facturas/DispForm.aspx?ID=${itemId}`,
+                serverRelativeUrl: `/Lists/${listName}/DispForm.aspx?ID=${itemId}`,
                 isNative: true
             });
         }
 
-        // 4. Resolve Responsable de Autorizar if it's a lookup
+        // 4. Resolve Responsable lookup
         const fields = item.fields || {};
-        const lookupId = fields.ResponsabledeAutorizarLookupId || fields.Responsable_de_AutorizarLookupId;
+        const lookupId = fields.ResponsabledeAutorizarLookupId || fields.ResponsableAprobarLookupId || fields.Responsable_de_AutorizarLookupId;
         let responsableName = null;
 
         if (lookupId) {
             try {
-                const userRes = await client.api(`/sites/${siteId}/lists('User Information List')/items/${lookupId}`)
-                    .expand('fields($select=Title)')
-                    .get();
-                responsableName = userRes.fields?.Title;
+                const userRes = await client.api(`/sites/${siteId}/lists('User Information List')/items/${lookupId}`).expand('fields($select=Title)').get();
+                responsableName = userRes.fields?.Title || null;
             } catch (e) {
-                console.warn(`[SharePoint] Could not resolve lookup user ${lookupId}:`, e);
+                console.warn(`Could not resolve responsable for ID ${lookupId}`);
             }
         }
 
         return {
             id: item.id,
-            webUrl: item.webUrl,
             ...fields,
-            Responsable_de_Autorizar: responsableName || null,
+            Responsable_de_Autorizar: responsableName || fields.Responsable_de_Autorizar || null,
             rawAttachments: attachments
         };
     } catch (error) {
-        console.error(`Error fetching SharePoint item ${itemId}:`, error);
+        console.error(`Error fetching SharePoint item ${itemId} from ${listName}:`, error);
         throw error;
     }
 }
+
+export async function getSharePointInvoiceById(itemId: string) {
+    return getSharePointItemById(itemId, 'Registro_de_Facturas');
+}
+
+
+ 
+
 
 export async function findExternalInvoiceDocument(nit: string, nroFactura: string, dateStr: string) {
     try {
