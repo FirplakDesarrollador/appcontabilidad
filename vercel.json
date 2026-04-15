@@ -1,13 +1,16 @@
 {
     "crons": [
         {
-<<<<<<< HEAD
             "path": "/api/notify-teams",
             "schedule": "0 13 * * *"
-=======
+        },
+        {
             "path": "/api/cron/update-trm",
             "schedule": "0 0 * * *"
->>>>>>> c8321bfb6b96e8c6a7359125fbf6636165b9e85e
+        },
+        {
+            "path": "/api/sharepoint/sync",
+            "schedule": "0 6,18 * * *"
         }
     ]
 }
