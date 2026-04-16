@@ -214,10 +214,32 @@ export default function PublicApprovalPage() {
             if (data.error) throw new Error(data.error);
             setInvoice(data);
             
-            // Default first distribution to the total value of the invoice
+            // Default distribution from SharePoint if available, otherwise default to total
+            if (data.distribuciones) {
+                try {
+                    const parsed = typeof data.distribuciones === 'string' 
+                        ? JSON.parse(data.distribuciones) 
+                        : data.distribuciones;
+                    
+                    // Normalize field names if they come from SharePoint format
+                    const normalized = parsed.map((d: any) => ({
+                        centroCostos: d.centroCosto || d.centroCostos || "",
+                        cuenta: d.cuenta || "",
+                        valor: d.valor || "0"
+                    }));
+                    setDistribuciones(normalized);
+                } catch (e) {
+                    console.error("Error parsing distributions:", e);
+                    if (data.valorTotal) {
+                        setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
+                    }
+                }
+            } else if (data.valorTotal) {
+                setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
+            }
+
             if (data.valorTotal) {
                 setEditableTotal(data.valorTotal);
-                setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
             }
         } catch (err: any) {
             setError(err.message || "No se pudo cargar la información de la factura");
@@ -276,9 +298,11 @@ export default function PublicApprovalPage() {
                     itemId,
                     action,
                     observaciones,
-                    distribuciones, // Send the array instead of individual strings
+                    distribuciones,
                     anticipo,
-                    valor: editableTotal
+                    valor: editableTotal,
+                    nit: invoice?.nit,
+                    nroFactura: invoice?.nroFactura
                 })
             });
             const data = await res.json();
@@ -287,32 +311,15 @@ export default function PublicApprovalPage() {
 
             if (res.ok) {
                 const actionText = action === 'Aprobado' ? 'aprobada' : 'rechazada';
-                // SharePoint Success, now try SAP Draft (login + draft + logout handled in backend)
-                try {
-                    const sapRes = await fetch('/api/externo/sap-draft', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            nit: invoice?.nit,
-                            total: editableTotal,
-                            distribuciones,
-                            anticipo,
-                            observations: observaciones,
-                            isApproval: action === 'Aprobado',
-                            nroFactura: invoice?.nroFactura
-                        })
-                    });
-
-                    const sapData = await sapRes.json();
-                    if (sapRes.ok) {
-                        setSuccessMessage(`Factura ${actionText} exitosamente y borrador creado en SAP (Borrador: ${sapData.draftId})`);
+                
+                if (action === 'Aprobado' && data.sap) {
+                    if (data.sap.success) {
+                        setSuccessMessage(`Factura ${actionText} exitosamente y borrador creado en SAP (Borrador: ${data.sap.draftId})`);
                     } else {
-                        console.error('SAP Draft Error:', sapData.error);
-                        setSuccessMessage(`Factura ${actionText} en SharePoint, pero error en SAP: ${sapData.error}`);
+                        setSuccessMessage(`Factura ${actionText} en SharePoint, pero error en SAP: ${data.sap.error}`);
                     }
-                } catch (sapErr) {
-                    console.error('SAP Fetch Error:', sapErr);
-                    setSuccessMessage(`Factura ${actionText} en SharePoint, pero falló la conexión con SAP.`);
+                } else {
+                    setSuccessMessage(`La factura ha sido ${actionText} exitosamente.`);
                 }
             } else {
                 alert(data.error || `Hubo un error al procesar la factura`);

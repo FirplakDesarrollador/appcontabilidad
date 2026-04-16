@@ -183,9 +183,31 @@ export default function PublicDocumentApprovalPage() {
             const data = await res.json();
             if (data.error) throw new Error(data.error);
             setDocument(data);
+            // Default distribution from SharePoint if available, otherwise default to total
+            if (data.distribuciones) {
+                try {
+                    const parsed = typeof data.distribuciones === 'string' 
+                        ? JSON.parse(data.distribuciones) 
+                        : data.distribuciones;
+                    
+                    const normalized = parsed.map((d: any) => ({
+                        centroCostos: d.centroCosto || d.centroCostos || "",
+                        cuenta: d.cuenta || "",
+                        valor: d.valor || "0"
+                    }));
+                    setDistribuciones(normalized);
+                } catch (e) {
+                    console.error("Error parsing distributions:", e);
+                    if (data.valorTotal) {
+                        setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
+                    }
+                }
+            } else if (data.valorTotal) {
+                setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
+            }
+
             if (data.valorTotal) {
                 setEditableTotal(data.valorTotal);
-                setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
             }
         } catch (err: any) {
             setError(err.message || "No se pudo cargar la información del documento soporte");
@@ -222,6 +244,8 @@ export default function PublicDocumentApprovalPage() {
                     distribuciones,
                     anticipo,
                     valor: editableTotal,
+                    nit: document?.nit,
+                    nroFactura: document?.nroFactura,
                     listName: 'Documento_Soporte'
                 })
             });
@@ -230,26 +254,15 @@ export default function PublicDocumentApprovalPage() {
 
             if (res.ok) {
                 const actionText = action === 'Aprobado' ? 'aprobado' : 'rechazado';
-                try {
-                    const sapRes = await fetch('/api/externo/sap-draft', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            nit: document?.nit,
-                            total: editableTotal,
-                            distribuciones,
-                            anticipo,
-                            observations: observaciones,
-                            isApproval: action === 'Aprobado',
-                            nroFactura: document?.nroFactura,
-                            docTypeDesc: 'DOCUMENTO SOPORTE'
-                        })
-                    });
-                    const sapData = await sapRes.json();
-                    if (sapRes.ok) setSuccessMessage(`Documento ${actionText} exitosamente y borrador creado en SAP (#${sapData.draftId})`);
-                    else setSuccessMessage(`Documento ${actionText} en SharePoint, pero hubo un error en SAP: ${sapData.error}`);
-                } catch (sapErr) {
-                    setSuccessMessage(`Documento ${actionText} en SharePoint, pero falló la conexión con SAP.`);
+                
+                if (action === 'Aprobado' && data.sap) {
+                    if (data.sap.success) {
+                        setSuccessMessage(`Documento ${actionText} exitosamente y borrador creado en SAP (#${data.sap.draftId})`);
+                    } else {
+                        setSuccessMessage(`Documento ${actionText} en SharePoint, pero hubo un error en SAP: ${data.sap.error}`);
+                    }
+                } else {
+                    setSuccessMessage(`El documento ha sido ${actionText} exitosamente.`);
                 }
             }
             fetchDocument();

@@ -48,7 +48,8 @@ export async function GET(
             aprobacionDoliente: doc.AprobacionDoliente || "Pendiente",
             gestionContabilidad: doc.Gestion_Contabilidad || "Pendiente",
             responsableActual: doc.Responsable_de_Autorizar || "No asignado",
-            documentInfo
+            documentInfo,
+            distribuciones: doc.centro_costos || null
         });
 
     } catch (error: any) {

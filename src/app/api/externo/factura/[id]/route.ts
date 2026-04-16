@@ -73,7 +73,8 @@ export async function GET(
             aprobacionDoliente: invoice.Aprobacion_Doliente || "Pendiente",
             gestionContabilidad: invoice.Gestion_Contabilidad || "Pendiente",
             responsableActual: invoice.Responsable_de_Autorizar || "No asignado",
-            documentInfo
+            documentInfo,
+            distribuciones: invoice.centro_costos || null
         });
 
     } catch (error: any) {
