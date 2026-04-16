@@ -100,7 +100,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
         anticipo, 
         observations, 
         nroFactura, 
-        docTypeDesc = 'FACTURA' 
+        docTypeDesc = 'FACTURA',
+        itemId
     } = payload;
 
     if (!nit || !total) {
