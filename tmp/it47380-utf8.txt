@@ -1,0 +1,81 @@
+﻿=== FULL ITEM DATA (without expand) ===
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#sites('firplaksa.sharepoint.com%2C61567c23-79a5-4438-a377-2f240de3c001%2Ccbab86be-5337-4c4a-bfa5-29b6803775c3')/lists('f2b08754-807d-4b36-9f08-f86c5e7566a6')/items/$entity",
+  "@odata.etag": "\"9d829f03-9c72-446e-a988-f0946c34a508,11\"",
+  "createdDateTime": "2026-02-26T17:27:51Z",
+  "eTag": "\"9d829f03-9c72-446e-a988-f0946c34a508,11\"",
+  "id": "47380",
+  "lastModifiedDateTime": "2026-02-27T14:40:41Z",
+  "webUrl": "https://firplaksa.sharepoint.com/sites/FPKContabilidad/Lists/Registro_de_Facturas/47380_.000",
+  "createdBy": {
+    "user": {
+      "email": "analista2.desarrollo@firplak.com",
+      "id": "3693cf47-1cfd-4d38-9ac9-a84ee3377c2a",
+      "displayName": "Esteban Mu├▒oz Garc├¡a"
+    }
+  },
+  "lastModifiedBy": {
+    "application": {
+      "id": "7ab7862c-4c57-491e-8a45-d52a7e023983",
+      "displayName": "Microsoft Power Platform"
+    },
+    "user": {
+      "email": "analista.desarrollador@firplak.com",
+      "id": "3ddfdd78-49f5-455f-9a75-b488faa57e2b",
+      "displayName": "Administrador Global"
+    }
+  },
+  "parentReference": {
+    "id": "a938274b-bbc5-4bbd-99ea-f8d18d6e95a6",
+    "siteId": "firplaksa.sharepoint.com,61567c23-79a5-4438-a377-2f240de3c001,cbab86be-5337-4c4a-bfa5-29b6803775c3"
+  },
+  "contentType": {
+    "id": "0x01000FCAEF0322011543887F98EF07A63ECE",
+    "name": "Item"
+  },
+  "fields@odata.context": "https://graph.microsoft.com/v1.0/$metadata#sites('firplaksa.sharepoint.com%2C61567c23-79a5-4438-a377-2f240de3c001%2Ccbab86be-5337-4c4a-bfa5-29b6803775c3')/lists('f2b08754-807d-4b36-9f08-f86c5e7566a6')/items('47380')/fields/$entity",
+  "fields": {
+    "@odata.etag": "\"9d829f03-9c72-446e-a988-f0946c34a508,11\"",
+    "Title": "890928342-7",
+    "LinkTitle": "890928342-7",
+    "Proveedor": "PROTOR LTDA",
+    "Nro_Factura": "ELEC29952",
+    "Aprobacion_Doliente": "Aprobado",
+    "Gestion_Contabilidad": "Procesado",
+    "Consecutivo": 97290,
+    "ResponsabledeAutorizarLookupId": "328",
+    "Observaciones": "IR43400",
+    "Created": "2026-02-26T17:27:51Z",
+    "AuthorLookupId": "6357",
+    "id": "47380",
+    "Procesado": true,
+    "Modified": "2026-02-27T14:40:41Z",
+    "FechaProcesado": "2026-02-27T14:40:41Z",
+    "FechaAprobacion": "2026-02-26T22:05:00Z",
+    "DigitadoPor": "Andrey Uribe Cano",
+    "centro_costos": "[{\"centroCosto\":\"N/A\",\"cuenta\":\"0000 - INFORME DE RECEPCI├ôN (IR)\",\"valor\":\"414000\"}]",
+    "tiene_anticipo": "Sin Anticipo",
+    "tablaCostos": {
+      "Description": "https://firplaksa.sharepoint.com/:x:/s/FPKContabilidad/IQCZcPUSLnv4Sb50v7EFlW4rAStDHbunWNOYa9qlgtsDcZw",
+      "Url": "https://firplaksa.sharepoint.com/:x:/s/FPKContabilidad/IQCZcPUSLnv4Sb50v7EFlW4rAStDHbunWNOYa9qlgtsDcZw"
+    },
+    "notificar_reasignacion": false,
+    "notificacionContabilidadEnviada": true,
+    "Valortotal": 414000,
+    "CUFE": "31420010d86e25408ef128d013929c91b40e89ba396992eb913bb90b1993f57b3b9a381bf7e7eb83bdd0565d7bda762a",
+    "ContentType": "Item",
+    "EditorLookupId": "233",
+    "_UIVersionString": "11.0",
+    "Attachments": true,
+    "Edit": "",
+    "LinkTitleNoMenu": "890928342-7",
+    "ItemChildCount": "0",
+    "FolderChildCount": "0",
+    "_ComplianceFlags": "",
+    "_ComplianceTag": "",
+    "_ComplianceTagWrittenTime": "",
+    "_ComplianceTagUserId": "",
+    "AppAuthorLookupId": "47",
+    "AppEditorLookupId": "47"
+  }
+}

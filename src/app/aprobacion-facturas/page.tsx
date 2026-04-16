@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Switch } from "@/components/ui/Switch";
 
 interface SharePointInvoice {
     id: string;
@@ -35,6 +37,46 @@ export default function InvoicesPage() {
     const [isSearchingUsers, setIsSearchingUsers] = useState(false);
     const [isUpdatingResponsible, setIsUpdatingResponsible] = useState(false);
     const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
+    const [isProvidersSidebarOpen, setIsProvidersSidebarOpen] = useState(false);
+    const [providers, setProviders] = useState<any[]>([]);
+    const [providersSearch, setProvidersSearch] = useState("");
+    const [loadingProviders, setLoadingProviders] = useState(false);
+
+    const [columnFilters, setColumnFilters] = useState({
+        invoice: "",
+        provider: "",
+        amount: "",
+        responsible: "",
+        status: "",
+        contabilidad: ""
+    });
+
+    // Opciones para los filtros dropdown
+    const filterOptions = useMemo(() => {
+        const options = {
+            invoices: new Set<string>(),
+            providers: new Set<string>(),
+            responsibles: new Set<string>(),
+            statuses: new Set<string>(),
+            contabilidades: new Set<string>(),
+        };
+
+        invoices.forEach(inv => {
+            if (inv.Nro_Factura) options.invoices.add(inv.Nro_Factura);
+            if (inv.Proveedor) options.providers.add(inv.Proveedor);
+            if (inv.Responsable_de_Autorizar) options.responsibles.add(inv.Responsable_de_Autorizar);
+            if (inv.Aprobacion_Doliente) options.statuses.add(inv.Aprobacion_Doliente);
+            if (inv.Gestion_Contabilidad) options.contabilidades.add(inv.Gestion_Contabilidad);
+        });
+
+        return {
+            invoices: Array.from(options.invoices).sort(),
+            providers: Array.from(options.providers).sort(),
+            responsibles: Array.from(options.responsibles).sort(),
+            statuses: Array.from(options.statuses).sort(),
+            contabilidades: Array.from(options.contabilidades).sort(),
+        };
+    }, [invoices]);
 
     const fetchInvoices = async () => {
         try {
@@ -81,6 +123,12 @@ export default function InvoicesPage() {
         setPendingResponsibleUser(null);
         setIsEditingResponsible(false);
     }, [selectedInvoice]);
+
+    useEffect(() => {
+        if (isProvidersSidebarOpen) {
+            fetchProviders();
+        }
+    }, [isProvidersSidebarOpen]);
 
     useEffect(() => {
         const timer = setTimeout(async () => {
@@ -145,6 +193,62 @@ export default function InvoicesPage() {
 
 
 
+    const fetchProviders = async () => {
+        setLoadingProviders(true);
+        try {
+            const { data, error } = await supabase
+                .from('proveedores')
+                .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
+                .order('razon_social', { ascending: true });
+            if (error) throw error;
+            setProviders(data || []);
+        } catch (error) {
+            console.error('Error fetching providers:', error);
+        } finally {
+            setLoadingProviders(false);
+        }
+    };
+
+    const toggleProviderAutoApproval = async (id: string, currentValue: boolean) => {
+        const newValue = !currentValue;
+        setProviders(prev => prev.map(p => p.id === id ? { ...p, aprobacion_automatica: newValue } : p));
+        try {
+            const { error } = await supabase
+                .from('proveedores')
+                .update({ aprobacion_automatica: newValue })
+                .eq('id', id);
+            if (error) throw error;
+        } catch (error) {
+            console.error('Error updating provider:', error);
+            setProviders(prev => prev.map(p => p.id === id ? { ...p, aprobacion_automatica: currentValue } : p));
+            alert('Error al actualizar el proveedor.');
+        }
+    };
+
+    const updateProviderField = async (id: string, field: string, value: any) => {
+        setProviders(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+        try {
+            const { error } = await supabase
+                .from('proveedores')
+                .update({ [field]: value })
+                .eq('id', id);
+            if (error) throw error;
+        } catch (error) {
+            console.error(`Error updating provider ${field}:`, error);
+            alert('Error al guardar el cambio.');
+        }
+    };
+
+    const handleCopyLink = (inv: SharePointInvoice) => {
+        const url = `${window.location.origin}/externo/factura/${inv.id}`;
+        navigator.clipboard.writeText(url).then(() => {
+            alert("Enlace copiado al portapapeles");
+        }).catch(err => {
+            console.error("Error al copiar:", err);
+            alert("No se pudo copiar el enlace");
+        });
+    };
+
     const formatCurrency = (value: any) => {
         if (value === undefined || value === null || value === "") return "$ 0,00";
 
@@ -191,10 +295,21 @@ export default function InvoicesPage() {
             inv.Nit?.toLowerCase().includes(searchTerm.toLowerCase());
 
         const matchesTab = activeTab === 'pending' ? isPending(inv) : isProcessed(inv);
-
         const matchesResponsable = selectedResponsable === "all" || inv.Responsable_de_Autorizar === selectedResponsable;
 
-        return matchesSearch && matchesTab && matchesResponsable;
+        // Filtros por columna (Excel-style)
+        const matchesColInvoice = !columnFilters.invoice || inv.Nro_Factura?.toLowerCase().includes(columnFilters.invoice.toLowerCase());
+        const matchesColProvider = !columnFilters.provider || 
+            inv.Proveedor?.toLowerCase().includes(columnFilters.provider.toLowerCase()) || 
+            inv.Nit?.toLowerCase().includes(columnFilters.provider.toLowerCase());
+        const matchesColAmount = !columnFilters.amount || String(inv.Monto).includes(columnFilters.amount);
+        const matchesColResponsible = !columnFilters.responsible || inv.Responsable_de_Autorizar?.toLowerCase().includes(columnFilters.responsible.toLowerCase());
+        const matchesColStatus = !columnFilters.status || (inv.Aprobacion_Doliente || "Pendiente").toLowerCase().includes(columnFilters.status.toLowerCase());
+        const matchesColContabilidad = !columnFilters.contabilidad || (inv.Gestion_Contabilidad || "Pendiente").toLowerCase().includes(columnFilters.contabilidad.toLowerCase());
+
+        return matchesSearch && matchesTab && matchesResponsable && 
+               matchesColInvoice && matchesColProvider && matchesColAmount && 
+               matchesColResponsible && matchesColStatus && matchesColContabilidad;
     });
 
     return (
@@ -254,6 +369,13 @@ export default function InvoicesPage() {
                         </motion.div>
 
                         <div className="flex gap-2">
+                            <button
+                                onClick={() => setIsProvidersSidebarOpen(true)}
+                                className="h-10 px-4 flex items-center gap-2 rounded-full bg-[#254153]/5 text-[#254153] hover:bg-[#254153]/10 transition-colors text-xs font-bold"
+                            >
+                                <ShieldCheck className="h-4 w-4" />
+                                <span className="hidden lg:inline">Aprobación Automática</span>
+                            </button>
                             <Button
                                 variant="outline"
                                 onClick={() => fetchInvoices()}
@@ -351,10 +473,90 @@ export default function InvoicesPage() {
                                     <tr className="bg-gray-50/50 border-b border-gray-100">
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Factura</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Proveedor</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right px-10">Valor total</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Valor total</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Responsable</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Estado</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">G. Contabilidad</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Datos adjuntos</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Acciones</th>
+                                    </tr>
+                                    <tr className="bg-white border-b border-gray-50">
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-invoice"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.invoice}
+                                                onChange={(e) => setColumnFilters({...columnFilters, invoice: e.target.value})}
+                                            />
+                                            <datalist id="list-invoice">
+                                                {filterOptions.invoices.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-provider"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.provider}
+                                                onChange={(e) => setColumnFilters({...columnFilters, provider: e.target.value})}
+                                            />
+                                            <datalist id="list-provider">
+                                                {filterOptions.providers.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.amount}
+                                                onChange={(e) => setColumnFilters({...columnFilters, amount: e.target.value})}
+                                            />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-responsible"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.responsible}
+                                                onChange={(e) => setColumnFilters({...columnFilters, responsible: e.target.value})}
+                                            />
+                                            <datalist id="list-responsible">
+                                                {filterOptions.responsibles.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-status"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.status}
+                                                onChange={(e) => setColumnFilters({...columnFilters, status: e.target.value})}
+                                            />
+                                            <datalist id="list-status">
+                                                {filterOptions.statuses.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-contabilidad"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.contabilidad}
+                                                onChange={(e) => setColumnFilters({...columnFilters, contabilidad: e.target.value})}
+                                            />
+                                            <datalist id="list-contabilidad">
+                                                {filterOptions.contabilidades.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2" />
+                                        <td className="px-3 py-2" />
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
@@ -367,12 +569,13 @@ export default function InvoicesPage() {
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-24 ml-auto" /></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-32" /></td>
                                                     <td className="px-6 py-5"><div className="h-7 bg-gray-100 rounded-full w-24" /></td>
+                                                    <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-24" /></td>
                                                     <td className="px-6 py-5 text-right"><div className="h-8 bg-gray-100 rounded-lg w-16 ml-auto" /></td>
                                                 </tr>
                                             ))
                                         ) : filteredInvoices.length === 0 ? (
                                             <tr>
-                                                <td colSpan={6} className="px-6 py-20 text-center">
+                                                <td colSpan={8} className="px-6 py-20 text-center">
                                                     <div className="flex flex-col items-center gap-3 opacity-30">
                                                         <Search className="h-12 w-12 text-[#254153]" />
                                                         <p className="text-lg font-bold text-[#254153]">No se encontraron resultados</p>
@@ -410,8 +613,37 @@ export default function InvoicesPage() {
                                                             {inv.Aprobacion_Doliente || "Pendiente"}
                                                         </span>
                                                     </td>
+                                                    <td className="px-6 py-5">
+                                                        <span className="text-[10px] font-bold text-gray-600 uppercase tracking-tight">
+                                                            {inv.Gestion_Contabilidad || "Pendiente"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-5">
+                                                        {(inv.documentInfo || inv.Attachments) ? (
+                                                            <a
+                                                                href={`/api/sharepoint/attachment-redirect?itemId=${inv.id}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50"
+                                                                title="Ver Documento Adjunto"
+                                                            >
+                                                                <FileText className="h-3.5 w-3.5" />
+                                                                <span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span>
+                                                            </a>
+                                                        ) : (
+                                                            <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>
+                                                        )}
+                                                    </td>
                                                     <td className="px-6 py-5 text-right">
                                                         <div className="flex items-center justify-end gap-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                onClick={() => handleCopyLink(inv)}
+                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
+                                                                title="Copiar Link Público"
+                                                            >
+                                                                <Copy className="h-3.5 w-3.5" />
+                                                            </Button>
                                                             <Button
                                                                 variant="outline"
                                                                 onClick={() => setSelectedInvoice(inv)}
@@ -419,14 +651,6 @@ export default function InvoicesPage() {
                                                                 title="Ver Detalle"
                                                             >
                                                                 <Search className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => setSelectedInvoice(inv)}
-                                                                className="h-8 px-3 text-[10px] font-bold text-blue-600 border-blue-100 hover:bg-blue-50 bg-white rounded-lg transition-all shadow-sm flex items-center gap-1.5"
-                                                            >
-                                                                <Paperclip className="h-3 w-3" />
-                                                                Enviar Factura
                                                             </Button>
                                                         </div>
                                                     </td>
@@ -449,6 +673,147 @@ export default function InvoicesPage() {
                     )}
                 </div>
             </main>
+
+            {/* Panel Aprobación Automática */}
+            <AnimatePresence>
+                {isProvidersSidebarOpen && (
+                    <div className="fixed inset-0 z-[90] flex justify-end">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsProvidersSidebarOpen(false)}
+                            className="absolute inset-0 bg-[#254153]/20 backdrop-blur-sm"
+                        />
+                        <motion.div
+                            initial={{ x: "100%" }}
+                            animate={{ x: 0 }}
+                            exit={{ x: "100%" }}
+                            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                            className="relative w-full max-w-md bg-white shadow-2xl h-full flex flex-col border-l border-gray-100"
+                        >
+                            <div className="p-6 border-b border-gray-50 flex items-center justify-between bg-white sticky top-0 z-10">
+                                <div>
+                                    <h2 className="text-xl font-bold text-[#254153] flex items-center gap-2">
+                                        <ShieldCheck className="h-5 w-5 text-green-600" />
+                                        Aprobación Automática
+                                    </h2>
+                                    <p className="text-xs text-gray-400 font-medium">Gestiona proveedores de confianza</p>
+                                </div>
+                                <button
+                                    onClick={() => setIsProvidersSidebarOpen(false)}
+                                    className="h-9 w-9 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+
+                            <div className="p-4 border-b border-gray-50 bg-gray-50/50">
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar proveedor o Nit..."
+                                        value={providersSearch}
+                                        onChange={(e) => setProvidersSearch(e.target.value)}
+                                        className="w-full h-11 pl-10 pr-4 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153]/30 transition-all font-medium"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                {loadingProviders ? (
+                                    Array.from({ length: 8 }).map((_, i) => (
+                                        <div key={i} className="h-20 bg-gray-50 rounded-2xl animate-pulse" />
+                                    ))
+                                ) : (
+                                    providers
+                                        .filter(p =>
+                                            p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) ||
+                                            p.numero_identificacion?.includes(providersSearch)
+                                        )
+                                        .map((p) => (
+                                            <div
+                                                key={p.id}
+                                                className={`p-4 rounded-2xl border transition-all duration-300 flex flex-col ${
+                                                    p.aprobacion_automatica
+                                                    ? 'bg-green-50/30 border-green-100 shadow-xs'
+                                                    : 'bg-white border-gray-100 hover:border-gray-200 shadow-xs'
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between w-full">
+                                                    <div className="flex-1 min-w-0 pr-4">
+                                                        <p className={`text-sm font-bold truncate ${p.aprobacion_automatica ? 'text-green-800' : 'text-[#254153]'}`}>
+                                                            {p.razon_social || 'S/N'}
+                                                        </p>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Nit: {p.numero_identificacion || 'N/A'}</span>
+                                                            {p.aprobacion_automatica && (
+                                                                <span className="flex items-center gap-1 text-[9px] font-black text-green-600 bg-green-100 px-1.5 py-0.5 rounded-sm uppercase tracking-tighter">
+                                                                    <Check className="h-2 w-2" /> Activo
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <Switch
+                                                        checked={!!p.aprobacion_automatica}
+                                                        onChange={() => toggleProviderAutoApproval(p.id, !!p.aprobacion_automatica)}
+                                                    />
+                                                </div>
+
+                                                {p.aprobacion_automatica && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, height: 0 }}
+                                                        animate={{ opacity: 1, height: 'auto' }}
+                                                        className="mt-4 pt-4 border-t border-green-100/50 flex gap-3"
+                                                    >
+                                                        <div className="flex-1">
+                                                            <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Valor Ref. (COP)</label>
+                                                            <div className="relative">
+                                                                <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-600" />
+                                                                <input
+                                                                    type="number"
+                                                                    defaultValue={p.valor_de_referencia || ''}
+                                                                    onBlur={(e) => updateProviderField(p.id, 'valor_de_referencia', e.target.value === '' ? null : Number(e.target.value))}
+                                                                    className="w-full h-8 pl-6 pr-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
+                                                                    placeholder="0.00"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="w-24">
+                                                            <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">% Desv.</label>
+                                                            <input
+                                                                type="number"
+                                                                defaultValue={p.porcentaje_desviacion || ''}
+                                                                onBlur={(e) => updateProviderField(p.id, 'porcentaje_desviacion', e.target.value === '' ? null : Number(e.target.value))}
+                                                                className="w-full h-8 px-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
+                                                                placeholder="%"
+                                                            />
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </div>
+                                        ))
+                                )}
+                            </div>
+
+                            <div className="p-6 bg-gray-50/50 border-t border-gray-100">
+                                <div className="flex items-start gap-3 p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                                    <div className="mt-0.5 h-8 w-8 rounded-lg bg-green-50 flex items-center justify-center text-green-600 shrink-0">
+                                        <ShieldCheck className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-gray-800">Control Inteligente</p>
+                                        <p className="text-[10px] text-gray-500 font-medium leading-relaxed mt-0.5">
+                                            Los proveedores activados aprobarán sus facturas automáticamente al ingresar.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             {/* Modal de Detalle de Factura */}
             <AnimatePresence>
@@ -518,12 +883,12 @@ export default function InvoicesPage() {
                                         </div>
 
                                         {/* Documento Adjunto */}
-                                        {selectedInvoice.documentInfo && (
+                                        {(selectedInvoice.documentInfo || selectedInvoice.Attachments) && (
                                             <div className="bg-[#254153]/5 p-6 rounded-[24px] border border-[#254153]/10 space-y-4">
                                                 <div className="flex items-center justify-between">
                                                     <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documento Adjunto</h4>
                                                     <span className="px-2 py-0.5 rounded bg-blue-100 text-[10px] font-bold text-blue-600 uppercase">
-                                                        {selectedInvoice.documentInfo.fileName?.split('.').pop()}
+                                                        {selectedInvoice.documentInfo?.fileName?.split('.').pop() || "Adjunto"}
                                                     </span>
                                                 </div>
                                                 <div className="flex items-center gap-4">
@@ -531,11 +896,11 @@ export default function InvoicesPage() {
                                                         <FileText className="h-6 w-6 text-blue-500" />
                                                     </div>
                                                     <div className="flex-1 overflow-hidden">
-                                                        <p className="text-sm font-bold text-[#254153] truncate">{selectedInvoice.documentInfo.fileName || "Factura Adjunta"}</p>
-                                                        <p className="text-[10px] text-gray-400 font-medium italic">Archivo original de SharePoint</p>
+                                                        <p className="text-sm font-bold text-[#254153] truncate">{selectedInvoice.documentInfo?.fileName || "Factura Adjunta"}</p>
+                                                        <p className="text-[10px] text-gray-400 font-medium italic">Archivo de SharePoint</p>
                                                     </div>
                                                     <a
-                                                        href={`https://firplaksa.sharepoint.com${selectedInvoice.documentInfo.serverRelativeUrl}`}
+                                                        href={`/api/sharepoint/attachment-redirect?itemId=${selectedInvoice.id}`}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="h-10 px-4 flex items-center justify-center rounded-xl bg-white border border-gray-100 text-xs font-bold text-[#254153] hover:bg-gray-50 transition-all shadow-sm"
@@ -655,11 +1020,13 @@ export default function InvoicesPage() {
                                                     Actualizar Responsable
                                                 </Button>
                                             ) : (
-                                                <Button className="flex-1 h-14 rounded-2xl bg-[#254153] hover:bg-[#1a2d3a] text-white font-black text-sm shadow-xl shadow-blue-900/10">
-                                                    Enviar Factura
-                                                </Button>
+                                                <div className="flex-1" />
                                             )}
-                                            <Button variant="outline" className="h-14 rounded-2xl px-6 border-gray-100 font-bold text-gray-500 hover:bg-gray-50">
+                                            <Button 
+                                                variant="outline" 
+                                                className="h-14 rounded-2xl px-8 border-gray-100 font-bold text-gray-500 hover:bg-gray-50"
+                                                onClick={() => window.print()}
+                                            >
                                                 Imprimir
                                             </Button>
                                         </div>

@@ -1,0 +1,25 @@
+{
+  "odata.metadata": "https://200.7.96.194:50000/b1s/v1/$metadata#ChartOfAccounts",
+  "value": [
+    {
+      "Code": "25250505",
+      "Name": "VACACIONES CONSOLIDADAS"
+    },
+    {
+      "Code": "26059505",
+      "Name": "DESCUENTO DE CRECIMIENTO"
+    },
+    {
+      "Code": "26059510",
+      "Name": "PREMIACIONES PUBLICIDAD"
+    },
+    {
+      "Code": "26100505",
+      "Name": "PROVISION CESANTIAS"
+    },
+    {
+      "Code": "26101005",
+      "Name": "PROVISION INTERESES"
+    }
+  ]
+}

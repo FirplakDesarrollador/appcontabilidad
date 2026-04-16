@@ -48,7 +48,7 @@ async function test() {
     console.log(`Site ID: ${siteId}`);
     console.log(`List ID: ${listId}`);
 
-    const spItemId = '47380';
+    const spItemId = '47600';
     const attachmentsRes = await client.api(`/sites/${siteId}/lists/${listId}/items/${spItemId}/attachments`).get();
     const attachments = attachmentsRes.value || [];
 

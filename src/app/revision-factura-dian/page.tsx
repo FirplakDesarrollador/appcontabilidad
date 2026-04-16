@@ -62,6 +62,7 @@ export default function RevisionFacturaDianPage() {
                     .from("Registro_Facturas")
                     .select("Nro_Factura")
                     .order("ID", { ascending: false })
+
                     .range(from, from + step - 1);
 
                 if (batchError) throw batchError;
@@ -84,6 +85,7 @@ export default function RevisionFacturaDianPage() {
                     .replace(/([a-z])0+/g, '$1')
                     .replace(/^0+/, '')
             ) || []);
+
             setAllInvoiceNumbers(nroSet);
             console.log(`Total invoice numbers loaded for comparison: ${nroSet.size}`);
         } catch (err: any) {

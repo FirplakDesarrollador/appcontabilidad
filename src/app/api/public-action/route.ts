@@ -21,10 +21,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, error: 'Acción no válida' }, { status: 400 });
         }
 
-        // 1. Fetch invoice number to identify it in SharePoint
+        // 1. Fetch invoice data to identify it in SharePoint and for emails
         const { data: invoice, error: fetchError } = await supabase
             .from('Registro_Facturas')
-            .select('Nro_Factura')
+            .select('Nro_Factura, Proveedor, Nit, Responsable_de_Autorizar, Observaciones')
             .eq('ID', id)
             .single();
 
@@ -35,7 +35,6 @@ export async function POST(req: NextRequest) {
             .from('Registro_Facturas')
             .update({
                 Aprobacion_Doliente: action,
-                Gestion_Contabilidad: action,
                 FechaProcesado: new Date().toISOString(),
                 Procesado: 'true'
             })
@@ -43,12 +42,14 @@ export async function POST(req: NextRequest) {
 
         if (updateError) throw updateError;
 
-        // 3. Update SharePoint (Async/background or wait)
+        // 3. Update SharePoint and trigger Email (Async/background)
         try {
             await updateSharePointInvoiceStatus(invoice.Nro_Factura!, action);
+            
+
+            
         } catch (spError) {
-            console.error('Failed to sync with SharePoint:', spError);
-            // We don't fail the whole request if SharePoint fails, but we should log it.
+            console.error('Failed to sync with SharePoint or Trigger Notifications:', spError);
         }
 
         return NextResponse.json({ success: true });

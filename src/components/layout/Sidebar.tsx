@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { PieChart, FileCheck, FileText, LogOut, RefreshCw } from "lucide-react";
+import { PieChart, FileCheck, FileText, LogOut, RefreshCw, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
@@ -30,6 +30,7 @@ export function Sidebar() {
         { name: "Aprobación de documento soporte", icon: FileText, path: "/aprobacion-documentos" },
         { name: "Cargue de TRM en SAP", icon: RefreshCw, path: "/cargue-trm" },
         { name: "Revisión de factura DIAN", icon: FileCheck, path: "/revision-factura-dian" },
+        { name: "Informe junta", icon: BarChart3, path: "/informe-junta" },
     ];
 
     return (

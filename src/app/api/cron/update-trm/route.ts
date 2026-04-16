@@ -74,6 +74,15 @@ export async function GET(request: Request) {
         for (const db of databases) {
             console.log(`Updating TRM for Database: ${db}`);
             try {
+                // Determine credentials for this DB
+                const isViventta = db === process.env.SAP_COMPANY_DB_VIVENTTA;
+                const username = isViventta ? process.env.SAP_USERNAME_VIVENTTA : process.env.SAP_USERNAME;
+                const password = isViventta ? process.env.SAP_PASSWORD_VIVENTTA : process.env.SAP_PASSWORD;
+
+                if (!username || !password) {
+                    throw new Error(`Missing credentials for database ${db}`);
+                }
+
                 // Login to SAP for this specific DB
                 const loginUrl = process.env.SAP_API_URL || "https://200.7.96.194:50000/b1s/v1/Login";
                 const loginResponse = await fetchWithRetry(loginUrl, {
@@ -81,8 +90,8 @@ export async function GET(request: Request) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         CompanyDB: db,
-                        Password: process.env.SAP_PASSWORD,
-                        UserName: process.env.SAP_USERNAME,
+                        Password: password,
+                        UserName: username,
                     }),
                 });
 

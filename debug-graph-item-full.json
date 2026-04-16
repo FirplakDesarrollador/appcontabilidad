@@ -1,0 +1,71 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#sites('firplaksa.sharepoint.com%2C61567c23-79a5-4438-a377-2f240de3c001%2Ccbab86be-5337-4c4a-bfa5-29b6803775c3')/lists('f2b08754-807d-4b36-9f08-f86c5e7566a6')/items(fields())/$entity",
+  "@odata.etag": "\"34228e3c-d0ca-477e-915e-8f8f6fd7b96f,6\"",
+  "createdDateTime": "2026-03-05T22:27:44Z",
+  "eTag": "\"34228e3c-d0ca-477e-915e-8f8f6fd7b96f,6\"",
+  "id": "47701",
+  "lastModifiedDateTime": "2026-03-05T22:29:47Z",
+  "webUrl": "https://firplaksa.sharepoint.com/sites/FPKContabilidad/Lists/Registro_de_Facturas/47701_.000",
+  "createdBy": {
+    "user": {
+      "email": "analista2.desarrollo@firplak.com",
+      "id": "3693cf47-1cfd-4d38-9ac9-a84ee3377c2a",
+      "displayName": "Esteban Muñoz García"
+    }
+  },
+  "lastModifiedBy": {
+    "application": {
+      "id": "7ab7862c-4c57-491e-8a45-d52a7e023983",
+      "displayName": "Microsoft Power Platform"
+    },
+    "user": {
+      "email": "alejandro.isaza@firplak.com",
+      "id": "54eb6d16-2c61-47de-853f-845c3e4594db",
+      "displayName": "Alejandro Isaza"
+    }
+  },
+  "parentReference": {
+    "id": "a938274b-bbc5-4bbd-99ea-f8d18d6e95a6",
+    "siteId": "firplaksa.sharepoint.com,61567c23-79a5-4438-a377-2f240de3c001,cbab86be-5337-4c4a-bfa5-29b6803775c3"
+  },
+  "contentType": {
+    "id": "0x01000FCAEF0322011543887F98EF07A63ECE",
+    "name": "Item"
+  },
+  "fields@odata.context": "https://graph.microsoft.com/v1.0/$metadata#sites('firplaksa.sharepoint.com%2C61567c23-79a5-4438-a377-2f240de3c001%2Ccbab86be-5337-4c4a-bfa5-29b6803775c3')/lists('f2b08754-807d-4b36-9f08-f86c5e7566a6')/items('47701')/fields/$entity",
+  "fields": {
+    "@odata.etag": "\"34228e3c-d0ca-477e-915e-8f8f6fd7b96f,6\"",
+    "Title": "900278155-1",
+    "LinkTitle": "900278155-1",
+    "Proveedor": "HIDROSPOT SAS",
+    "Nro_Factura": "HSN40310",
+    "Aprobacion_Doliente": "Por Aprobar",
+    "Gestion_Contabilidad": "Por Procesar",
+    "Consecutivo": 97611,
+    "ResponsabledeAutorizarLookupId": "8037",
+    "Observaciones": "Creada automaticamente por XML.",
+    "Created": "2026-03-05T22:27:44Z",
+    "AuthorLookupId": "6357",
+    "id": "47701",
+    "Procesado": false,
+    "Modified": "2026-03-05T22:29:47Z",
+    "notificar_reasignacion": false,
+    "notificacionContabilidadEnviada": false,
+    "Valortotal": 313828.6,
+    "CUFE": "4ed8c5b51c5db494bd8786ebcd51bf533b0fde3e1ef9828fef1898420955cb8d9abdabe89023ab1a5a48564cf4f1b333",
+    "ContentType": "Item",
+    "EditorLookupId": "47",
+    "_UIVersionString": "6.0",
+    "Attachments": true,
+    "Edit": "",
+    "LinkTitleNoMenu": "900278155-1",
+    "ItemChildCount": "0",
+    "FolderChildCount": "0",
+    "_ComplianceFlags": "",
+    "_ComplianceTag": "",
+    "_ComplianceTagWrittenTime": "",
+    "_ComplianceTagUserId": "",
+    "AppAuthorLookupId": "47",
+    "AppEditorLookupId": "47"
+  }
+}

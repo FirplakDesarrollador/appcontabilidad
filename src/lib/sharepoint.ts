@@ -11,11 +11,21 @@ const msalConfig = {
 
 const cca = new msal.ConfidentialClientApplication(msalConfig);
 
+// Cache for Site IDs to avoid redundant API calls
+const siteIdCache: Record<string, string> = {};
+
 async function getAccessToken() {
     const tokenRequest = {
         scopes: ["https://graph.microsoft.com/.default"],
     };
     const response = await cca.acquireTokenByClientCredential(tokenRequest);
+    return response?.accessToken;
+}
+
+export async function getSharePointRESTToken() {
+    const response = await cca.acquireTokenByClientCredential({
+        scopes: ["https://firplaksa.sharepoint.com/.default"],
+    });
     return response?.accessToken;
 }
 
@@ -61,7 +71,6 @@ export async function updateSharePointInvoiceStatus(invoiceNumber: string, actio
 
         // 4. Update the Item
         await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch({
-            Gestion_Contabilidad: action === 'Aprobado' ? 'Procesado' : 'Rechazado',
             Aprobacion_Doliente: action
         });
 
@@ -112,7 +121,7 @@ export async function getSharePointInvoices(page: number = 1, pageSize: number =
     }
 }
 
-export async function fetchAllSharePointItems() {
+export async function fetchAllSharePointItems(listName: string = 'Registro_de_Facturas') {
     try {
         const client = await getGraphClient();
 
@@ -122,16 +131,14 @@ export async function fetchAllSharePointItems() {
 
         // 2. Find the List
         const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-        const list = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
+        const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
 
-        if (!list) throw new Error('SharePoint list "Registro_de_Facturas" not found');
+        if (!list) throw new Error(`SharePoint list "${listName}" not found`);
         const listId = list.id;
 
-        // 3. Fetch the "Responsable de Autorizar" lookup list to resolve IDs to names
-        // The lookup column references the site's User Information List
+        // 3. Fetch the "User Information List" to resolve IDs to names
         const userMap = new Map<string, string>();
         try {
-            // Try to get the User Information List
             let userNextLink: string | null = `/sites/${siteId}/lists('User Information List')/items?$select=id,fields&$expand=fields($select=Title)&$top=500`;
             while (userNextLink) {
                 const userResponse = await client.api(userNextLink).get();
@@ -144,20 +151,24 @@ export async function fetchAllSharePointItems() {
             }
             console.log(`[SharePoint] Loaded ${userMap.size} users for lookup resolution`);
         } catch (e: any) {
-            console.warn('[SharePoint] Could not load User Information List, trying alternative approach:', e.message);
+            console.warn('[SharePoint] Could not load User Information List:', e.message);
         }
 
         // 4. Iterative Fetch of all list items
         let allItems: any[] = [];
         let nextLink: string | null = `/sites/${siteId}/lists/${listId}/items?expand=fields&top=500`;
 
-        console.log('Starting full SharePoint fetch...');
+        console.log(`Starting full SharePoint fetch for list: ${listName}...`);
 
         while (nextLink) {
             const response = await client.api(nextLink).get();
             const items = response.value.map((item: any) => {
                 const fields = item.fields || {};
-                const lookupId = fields.ResponsabledeAutorizarLookupId;
+                
+                // Resolve Responsable lookup
+                // Registro_de_Facturas use: ResponsabledeAutorizarLookupId
+                // Documento_Soporte use: ResponsableAprobarLookupId
+                const lookupId = fields.ResponsabledeAutorizarLookupId || fields.ResponsableAprobarLookupId || fields.Responsable_de_AutorizarLookupId;
                 const responsableName = lookupId ? userMap.get(String(lookupId)) : null;
 
                 return {
@@ -173,7 +184,188 @@ export async function fetchAllSharePointItems() {
 
         return allItems;
     } catch (error) {
-        console.error('SharePoint full fetch error:', error);
+        console.error(`SharePoint full fetch error for ${listName}:`, error);
         throw error;
+    }
+}
+
+
+export async function getSharePointItemById(itemId: string, listName: string = 'Registro_de_Facturas') {
+    try {
+        const client = await getGraphClient();
+
+        // 1. Resolve Site ID
+        const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
+        const siteId = siteResponse.id;
+
+        // 2. Find the List
+        const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
+        const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
+
+        if (!list) throw new Error(`SharePoint list "${listName}" not found`);
+        const listId = list.id;
+
+        // 3. Fetch specific item
+        const item = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}`)
+            .expand('fields')
+            .get();
+
+        let attachments: any[] = [];
+        try {
+            const restToken = await getSharePointRESTToken();
+            const restUrl = `https://firplaksa.sharepoint.com/sites/FPKContabilidad/_api/web/lists(guid'${listId}')/items(${itemId})/AttachmentFiles`;
+            
+            const restRes = await fetch(restUrl, {
+                headers: {
+                    'Authorization': `Bearer ${restToken}`,
+                    'Accept': 'application/json;odata=nometadata'
+                }
+            });
+            if (restRes.ok) {
+                const restData = await restRes.json();
+                const results = restData.value || [];
+                attachments = results.map((a: any) => ({
+                    name: a.FileName,
+                    serverRelativeUrl: a.ServerRelativeUrl
+                }));
+            }
+        } catch (restErr) {
+            console.error("Error fetching attachments via REST for item " + itemId, restErr);
+        }
+
+        // Fallback for attachments link
+        if (attachments.length === 0 && item.fields.Attachments === true) {
+            attachments.push({
+                name: 'Ver en SharePoint',
+                serverRelativeUrl: `/Lists/${listName}/DispForm.aspx?ID=${itemId}`,
+                isNative: true
+            });
+        }
+
+        // 4. Resolve Responsable lookup
+        const fields = item.fields || {};
+        const lookupId = fields.ResponsabledeAutorizarLookupId || fields.ResponsableAprobarLookupId || fields.Responsable_de_AutorizarLookupId;
+        let responsableName = null;
+
+        if (lookupId) {
+            try {
+                const userRes = await client.api(`/sites/${siteId}/lists('User Information List')/items/${lookupId}`).expand('fields($select=Title)').get();
+                responsableName = userRes.fields?.Title || null;
+            } catch (e) {
+                console.warn(`Could not resolve responsable for ID ${lookupId}`);
+            }
+        }
+
+        return {
+            id: item.id,
+            ...fields,
+            Responsable_de_Autorizar: responsableName || fields.Responsable_de_Autorizar || null,
+            rawAttachments: attachments
+        };
+    } catch (error) {
+        console.error(`Error fetching SharePoint item ${itemId} from ${listName}:`, error);
+        throw error;
+    }
+}
+
+export async function getSharePointInvoiceById(itemId: string) {
+    return getSharePointItemById(itemId, 'Registro_de_Facturas');
+}
+
+
+ 
+
+
+export async function findExternalInvoiceDocument(nit: string, nroFactura: string, dateStr: string) {
+    try {
+        const caGraph = await cca.acquireTokenByClientCredential({
+            scopes: ['https://graph.microsoft.com/.default'],
+        });
+        const client = Client.init({
+            authProvider: (done) => done(null, caGraph!.accessToken),
+        });
+
+        // 1. Obtener Site ID de ITPowerApps (con caché)
+        let siteId = siteIdCache['ITPowerApps'];
+        if (!siteId) {
+            const site = await client.api('/sites/firplaksa.sharepoint.com:/sites/ITPowerApps').get();
+            siteId = site.id;
+            siteIdCache['ITPowerApps'] = siteId;
+        }
+        
+        // Limpiar el NIT de caracteres no numéricos
+        const cleanNitFull = nit.replace(/[^0-9]/g, '');
+        // NIT sin el último dígito (asumiendo que es el dígito de verificación si viene de un formato con guión)
+        const nitParts = nit.split('-');
+        const nitWithoutDV = nitParts[0].replace(/[^0-9]/g, '');
+        
+        // 2. Buscar por el número de factura o el NIT en el sitio
+        // Intentamos una búsqueda que combine ambos para ser más precisos
+        const query = `${nroFactura}`;
+        console.log(`[SharePoint Search] Searching for "${query}" in ITPowerApps (NIT: ${nitWithoutDV})...`);
+        const searchRes = await client.api(`/sites/${siteId}/drive/root/search(q='${query}')`).get();
+        
+        // 3. Filtrar resultados que coincidan con el NIT y el número de factura
+        const items = searchRes.value || [];
+        
+        // Intentar encontrar carpetas que contengan los datos con lógica más flexible
+        const matches = items.filter((item: any) => {
+            if (!item.folder) return false;
+            const folderName = item.name;
+            
+            // Patrón esperado: FACTURA-UBL(NIT;NRO;...)
+            if (!folderName.includes('FACTURA-UBL(')) return false;
+            
+            // Extraer el contenido entre paréntesis
+            const contentMatch = folderName.match(/\(([^)]+)\)/);
+            if (!contentMatch) return false;
+            
+            const parts = contentMatch[1].split(';');
+            if (parts.length < 2) return false;
+            
+            const folderNit = parts[0].trim().replace(/[^0-9]/g, '');
+            const folderNro = parts[1].trim();
+            
+            // Comparar número de factura (prioridad absoluta según el usuario)
+            const nroMatches = folderNro === nroFactura;
+            
+            if (nroMatches) {
+                console.log(`[SharePoint Search] Potential match by NRO: ${folderName}`);
+                // Si el NIT también coincide, es un "Perfect Match"
+                const nitMatches = folderNit === cleanNitFull || folderNit === nitWithoutDV;
+                if (nitMatches) {
+                    item.isPerfectMatch = true;
+                }
+                // Si coincide el número de factura, lo dejamos pasar
+                return true; 
+            }
+            
+            return false;
+        });
+
+        // Ordenar: primero los que coinciden en NIT, luego el resto
+        const bestMatch = (matches as any[]).sort((a, b) => (b.isPerfectMatch ? 1 : 0) - (a.isPerfectMatch ? 1 : 0))[0];
+
+        if (bestMatch) {
+            console.log(`[SharePoint Search] Selected match: ${bestMatch.name}`);
+            // 4. Si encontramos la carpeta, buscar el PDF dentro
+            const children = await client.api(`/drives/${bestMatch.parentReference.driveId}/items/${bestMatch.id}/children`).get();
+            const pdf = children.value.find((c: any) => c.name.toLowerCase().endsWith('.pdf'));
+            if (pdf) {
+                return {
+                    id: pdf.id,
+                    driveId: bestMatch.parentReference.driveId,
+                    fileName: pdf.name,
+                    webUrl: pdf.webUrl,
+                    downloadUrl: pdf['@microsoft.graph.downloadUrl']
+                };
+            }
+        }
+
+        console.warn(`[SharePoint Search] No matching folder found for Invoice ${nroFactura}`);
+        return null;
+    } catch (error) {
+        console.error('Error finding external document:', error);
+        return null;
     }
 }
