@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
         if (updateError) throw updateError;
 
-        // 3. Update SharePoint and trigger SAP Draft (Async/background-ish)
+        // 3. Update SharePoint AND Fetch current fields for SAP
         let sapResult = null;
         try {
             await updateSharePointInvoiceStatus(invoice.Nro_Factura!, action);
@@ -52,6 +52,12 @@ export async function POST(req: NextRequest) {
             if (action === 'Aprobado') {
                 console.log(`Public Action: Triggering SAP Draft for invoice ${invoice.Nro_Factura}`);
                 
+                // TRAER DATOS REALES DE SHAREPOINT
+                const { getSharePointInvoiceById } = await import('@/lib/sharepoint');
+                const spItem = await getSharePointInvoiceById(id);
+                const consecutivoReal = spItem.Consecutivo || id;
+                const proveedorReal = spItem.Proveedor || invoice.Proveedor || "Proveedor Desconocido";
+
                 let distribuciones = [];
                 try {
                     distribuciones = typeof invoice.centro_costos === 'string' 
@@ -66,9 +72,9 @@ export async function POST(req: NextRequest) {
                     total: invoice["Valor total"]!,
                     distribuciones: distribuciones,
                     anticipo: invoice.tiene_anticipo ? 't' : 'f',
-                    observations: `Proveedor: ${invoice.Proveedor || 'N/A'} - ${invoice.Observaciones || 'Aprobado vía link de aprobación rápida'}`,
+                    observations: `Proveedor: ${proveedorReal} | Factura: ${invoice.Nro_Factura} | Obs: ${invoice.Observaciones || 'Aprobado vía link rápido'}`,
                     nroFactura: invoice.Nro_Factura!,
-                    itemId: invoice.Consecutivo
+                    itemId: consecutivoReal
                 });
             }
         } catch (spError) {

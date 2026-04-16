@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
         if (!list) throw new Error(`SharePoint list "${listName}" not found`);
         const listId = list.id;
 
-        // 3. Update the Item
+        // 3. Update the Item AND Fetch current fields for SAP
         const isDocSoporte = listName === 'Documento_Soporte';
         const updatePayload: any = {};
 
@@ -59,28 +59,26 @@ export async function POST(req: NextRequest) {
         await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
         console.log(`SharePoint update for item ${itemId} to ${action} successful`);
 
+        // FETCH the item again to get the "Consecutivo" and "Proveedor" from SharePoint
+        const spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).get();
+        const consecutivoReal = spItem.Consecutivo || itemId;
+        const proveedorReal = spItem.Proveedor || "Proveedor Desconocido";
+
         // 4. Trigger SAP Draft Creation on Approval
         let sapResult = null;
         if (action === 'Aprobado') {
             try {
-                console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (NIT: ${nit})...`);
-                
-                // Fetch the full record from Supabase to get the Consecutivo
-                const { data: invoice } = await supabase
-                    .from('Registro_Facturas')
-                    .select('Consecutivo, Proveedor')
-                    .eq('ID', itemId)
-                    .single();
+                console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
 
                 sapResult = await createSapDraft({
                     nit: nit || "",
                     total: valor || "0",
                     distribuciones: distribuciones || [],
                     anticipo: anticipo || 'f',
-                    observations: `Proveedor: ${invoice?.Proveedor || 'N/A'} - ${observaciones || 'Aprobado vía portal externo'}`,
+                    observations: `Proveedor: ${proveedorReal} | Factura: ${nroFactura} | Obs: ${observaciones || 'Aprobado vía portal externo'}`,
                     nroFactura: nroFactura || itemId,
                     docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA',
-                    itemId: invoice?.Consecutivo || itemId
+                    itemId: consecutivoReal
                 });
             } catch (sapErr: any) {
                 console.error('Failed to trigger SAP Draft registration:', sapErr.message);
