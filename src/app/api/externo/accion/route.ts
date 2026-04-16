@@ -84,6 +84,19 @@ export async function POST(req: NextRequest) {
             } catch (sapErr: any) {
                 console.error('Failed to trigger SAP Draft registration:', sapErr.message);
                 sapResult = { success: false, error: sapErr.message };
+
+                // LOG ERROR TO SUPABASE
+                try {
+                    await supabase.from('Log_Errores_SAP').insert({
+                        factura_id: itemId,
+                        nro_factura: nroFactura || itemId,
+                        proveedor: proveedorReal,
+                        error_mensaje: sapErr.message,
+                        detalles: sapErr
+                    });
+                } catch (logErr) {
+                    console.error('Failed to log SAP error to database:', logErr);
+                }
             }
         }
 
