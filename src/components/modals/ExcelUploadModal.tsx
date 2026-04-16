@@ -21,17 +21,40 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
     const [allMissingData, setAllMissingData] = useState<any[][]>([]);
     const [headers, setHeaders] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
+    const [spLoading, setSpLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [spNumbers, setSpNumbers] = useState<Set<string> | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const selectedFile = e.target.files?.[0];
         if (selectedFile) {
-            processFile(selectedFile);
+            await fetchSpNumbersAndProcess(selectedFile);
         }
     };
 
-    const processFile = (file: File) => {
+    const fetchSpNumbersAndProcess = async (selectedFile: File) => {
+        setSpLoading(true);
+        setError(null);
+        setFile(selectedFile);
+        try {
+            const res = await fetch('/api/sharepoint/invoice-numbers');
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error || 'Error cargando datos de SharePoint');
+            const numbers = new Set<string>(json.numbers as string[]);
+            setSpNumbers(numbers);
+            console.log(`[MODAL] Loaded ${numbers.size} invoice numbers from SharePoint (cached: ${json.cached}).`);
+            processFile(selectedFile, numbers);
+        } catch (err: any) {
+            console.warn('[MODAL] SP fetch failed, falling back to Supabase set:', err.message);
+            // Fallback to the Supabase-sourced set if SP is unreachable
+            processFile(selectedFile, allInvoiceNumbers || null);
+        } finally {
+            setSpLoading(false);
+        }
+    };
+
+    const processFile = (file: File, invoiceNumbersOverride?: Set<string> | null) => {
         setLoading(true);
         setError(null);
         setFile(file);
@@ -110,8 +133,16 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
                                 ? updatedHeadersLower.indexOf("nro. factura")
                                 : updatedHeadersLower.indexOf("nro_factura");
 
-                        const existingInvoiceNumbers = allInvoiceNumbers || new Set(
-                            existingInvoices.map(inv => String(inv.Nro_Factura || "").toLowerCase().trim())
+                        // Aggressive normalization: lower case, remove everything except letters/numbers, strip zeros after letters and leading zeros
+                        const normalizeRef = (num: any) => 
+                            String(num || "")
+                                .toLowerCase()
+                                .replace(/[^a-z0-9]/g, '')
+                                .replace(/([a-z])0+/g, '$1')
+                                .replace(/^0+/, '');
+
+                        const existingInvoiceNumbers = invoiceNumbersOverride ?? allInvoiceNumbers ?? new Set(
+                            existingInvoices.map(inv => normalizeRef(inv.Nro_Factura))
                         );
 
                         // Add Status Header and Filter for "No encontrado"
@@ -121,7 +152,7 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
                             const newRow = [...row];
                             let status = "Desconocido";
                             if (facturaIndex !== -1) {
-                                const facturaNum = String(row[facturaIndex] || "").toLowerCase().trim();
+                                const facturaNum = normalizeRef(row[facturaIndex]);
                                 status = existingInvoiceNumbers.has(facturaNum) ? "Encontrado" : "No encontrado";
                             }
                             newRow.push(status);
@@ -144,8 +175,16 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
                                 ? initialHeadersLower.indexOf("nro. factura")
                                 : initialHeadersLower.indexOf("nro_factura");
 
-                        const existingInvoiceNumbers = allInvoiceNumbers || new Set(
-                            existingInvoices.map(inv => String(inv.Nro_Factura || "").toLowerCase().trim())
+                        // Aggressive normalization: same logic as above
+                        const normalizeRef = (num: any) => 
+                            String(num || "")
+                                .toLowerCase()
+                                .replace(/[^a-z0-9]/g, '')
+                                .replace(/([a-z])0+/g, '$1')
+                                .replace(/^0+/, '');
+
+                        const existingInvoiceNumbers = invoiceNumbersOverride ?? allInvoiceNumbers ?? new Set(
+                            existingInvoices.map(inv => normalizeRef(inv.Nro_Factura))
                         );
 
                         // Add Status Header and Filter for "No encontrado"
@@ -155,7 +194,7 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
                             const newRow = [...row];
                             let status = "Desconocido";
                             if (facturaIndex !== -1) {
-                                const facturaNum = String(row[facturaIndex] || "").toLowerCase().trim();
+                                const facturaNum = normalizeRef(row[facturaIndex]);
                                 status = existingInvoiceNumbers.has(facturaNum) ? "Encontrado" : "No encontrado";
                             }
                             newRow.push(status);
@@ -212,12 +251,12 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
         e.stopPropagation();
     };
 
-    const handleDrop = (e: React.DragEvent) => {
+    const handleDrop = async (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
         const droppedFile = e.dataTransfer.files?.[0];
         if (droppedFile && (droppedFile.name.endsWith(".xlsx") || droppedFile.name.endsWith(".xls"))) {
-            processFile(droppedFile);
+            await fetchSpNumbersAndProcess(droppedFile);
         } else {
             setError("Por favor carga un archivo Excel válido (.xlsx o .xls)");
         }
@@ -229,6 +268,7 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
         setAllMissingData([]);
         setHeaders([]);
         setError(null);
+        setSpNumbers(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
@@ -328,7 +368,12 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
                                     </div>
 
                                     {/* Preview Table */}
-                                    {loading ? (
+                                    {spLoading ? (
+                                        <div className="h-64 flex flex-col items-center justify-center gap-3">
+                                            <Loader2 className="h-8 w-8 text-[#254153] animate-spin" />
+                                            <p className="text-sm text-gray-400">Consultando SharePoint…</p>
+                                        </div>
+                                    ) : loading ? (
                                         <div className="h-64 flex flex-col items-center justify-center gap-3">
                                             <Loader2 className="h-8 w-8 text-[#254153] animate-spin" />
                                             <p className="text-sm text-gray-400">Procesando documento...</p>

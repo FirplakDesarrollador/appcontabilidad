@@ -19,6 +19,8 @@ export default function RevisionFacturaDianPage() {
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncProgress, setSyncProgress] = useState(0);
     const [comparisonResult, setComparisonResult] = useState<{ headers: string[], data: any[][] } | null>(null);
     const [allInvoiceNumbers, setAllInvoiceNumbers] = useState<Set<string>>(new Set());
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
@@ -59,6 +61,7 @@ export default function RevisionFacturaDianPage() {
                 const { data: batch, error: batchError } = await supabase
                     .from("Registro_Facturas")
                     .select("Nro_Factura")
+                    .order("ID", { ascending: false })
                     .range(from, from + step - 1);
 
                 if (batchError) throw batchError;
@@ -74,7 +77,13 @@ export default function RevisionFacturaDianPage() {
                 if (from > 50000) moreData = false;
             }
 
-            const nroSet = new Set(allNros.map(item => String(item.Nro_Factura || "").toLowerCase().replace(/\s/g, '')) || []);
+            const nroSet = new Set(allNros.map(item => 
+                String(item.Nro_Factura || "")
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]/g, '')
+                    .replace(/([a-z])0+/g, '$1')
+                    .replace(/^0+/, '')
+            ) || []);
             setAllInvoiceNumbers(nroSet);
             console.log(`Total invoice numbers loaded for comparison: ${nroSet.size}`);
         } catch (err: any) {
@@ -82,6 +91,47 @@ export default function RevisionFacturaDianPage() {
             setError(err.message || "Error al cargar las facturas.");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleSync = async () => {
+        setIsSyncing(true);
+        setSyncProgress(0);
+        setError(null);
+        
+        const BATCH_SIZE = 50;
+        const TOTAL_TO_SYNC = 300; // Let's sync 300 latest records for efficiency
+        
+        try {
+            let currentOffset = 0;
+            let totalProcessedTotal = 0;
+            
+            while (currentOffset < TOTAL_TO_SYNC) {
+                const response = await fetch('/api/sharepoint/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ limit: BATCH_SIZE, offset: currentOffset })
+                });
+                
+                const result = await response.json();
+                if (!result.success) throw new Error(result.error || "Error sincronizando datos");
+                
+                totalProcessedTotal += result.processed;
+                currentOffset += BATCH_SIZE;
+                setSyncProgress(Math.round((currentOffset / TOTAL_TO_SYNC) * 100));
+                
+                if (result.processed === 0) break; // No more items
+            }
+            
+            // Re-fetch everything after sync
+            await fetchFacturas();
+            alert(`Sincronización completada: ${totalProcessedTotal} facturas procesadas.`);
+        } catch (err: any) {
+            console.error("Error during manual sync:", err);
+            setError(`Error de sincronización: ${err.message}`);
+        } finally {
+            setIsSyncing(false);
+            setSyncProgress(0);
         }
     };
 
@@ -299,6 +349,21 @@ export default function RevisionFacturaDianPage() {
                                     {showSavedList ? 'Ocultar Guardados' : `Ver Guardados (${facturasPendientes.length})`}
                                 </button>
                                 <button
+                                    onClick={handleSync}
+                                    disabled={isSyncing}
+                                    className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm bg-white text-[#254153] border border-gray-100 hover:bg-gray-50 disabled:opacity-50 overflow-hidden`}
+                                    title="Sincronizar con SharePoint"
+                                >
+                                    {isSyncing && (
+                                        <div 
+                                            className="absolute bottom-0 left-0 h-1 bg-green-500 transition-all duration-300" 
+                                            style={{ width: `${syncProgress}%` }}
+                                        />
+                                    )}
+                                    <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                                    {isSyncing ? `Sincronizando ${syncProgress}%` : 'Sincronizar SharePoint'}
+                                </button>
+                                <button
                                     onClick={() => setIsUploadModalOpen(true)}
                                     className="p-2 bg-white rounded-lg shadow-sm hover:shadow-md transition-all text-[#254153]"
                                     title="Cargar Documento Excel"
@@ -377,6 +442,9 @@ export default function RevisionFacturaDianPage() {
                     <div className="flex items-center justify-between pt-4">
                         <div className="flex items-center gap-4">
                             <h2 className="text-xl font-bold text-[#254153]">Resultados de Comparación</h2>
+                            <div className="flex items-center gap-2 px-2 py-0.5 bg-gray-100 rounded-md">
+                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">Sistema: {allInvoiceNumbers.size} registros</span>
+                            </div>
                             {comparisonResult && (
                                 <button
                                     onClick={() => {

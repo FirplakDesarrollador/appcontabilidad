@@ -53,18 +53,21 @@ export async function POST(req: Request) {
         const listId = list.id;
 
         // 2. Fetch specific batch items from SharePoint
-        console.log('[SYNC] Fetching metadata from SharePoint...');
-        let allSPItems: any[] = [];
-        let nextLink = `/sites/${siteId}/lists/${listId}/items?expand=fields&top=500`;
-
-        while (nextLink && allSPItems.length < offset + limit) {
-            const response = await client.api(nextLink).get();
-            allSPItems = [...allSPItems, ...response.value];
-            nextLink = response['@odata.nextLink'] ? response['@odata.nextLink'].split('v1.0')[1] : null;
-        }
-
-        const spBatch = allSPItems.slice(offset, offset + limit);
-        console.log(`[SYNC] Found ${spBatch.length} items to process in this batch.`);
+        // We use $orderby=id desc to get NEWEST invoices first
+        console.log(`[SYNC] Fetching metadata from SharePoint (offset=${offset}, limit=${limit})...`);
+        
+        // Note: SharePoint 'items' endpoint pagination is best done via nextLink, 
+        // but for specific offset/limit we can use $top and then skip manually or use $skip if supported.
+        // However, $orderby is crucial here.
+        let nextLink = `/sites/${siteId}/lists/${listId}/items?expand=fields&top=${limit + offset}&$orderby=id desc`;
+        
+        const response = await client.api(nextLink).get();
+        const allItems = response.value || [];
+        
+        // Skip the offset to get the specific batch
+        const spBatch = allItems.slice(offset, offset + limit);
+        
+        console.log(`[SYNC] Found ${spBatch.length} items to process in this batch (from ID ${spBatch[0]?.id} down).`);
 
         if (spBatch.length === 0) {
             return NextResponse.json({ success: true, message: 'No more items to sync', processed: 0, totalBatch: 0 });
