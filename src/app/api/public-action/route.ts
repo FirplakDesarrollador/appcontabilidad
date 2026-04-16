@@ -67,7 +67,8 @@ export async function POST(req: NextRequest) {
                     distribuciones: distribuciones,
                     anticipo: invoice.tiene_anticipo ? 't' : 'f',
                     observations: invoice.Observaciones || 'Aprobado vía link de aprobación rápida',
-                    nroFactura: invoice.Nro_Factura!
+                    nroFactura: invoice.Nro_Factura!,
+                    itemId: invoice.ID
                 });
             }
         } catch (spError) {

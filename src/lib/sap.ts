@@ -21,6 +21,7 @@ export interface SapDraftPayload {
     observations: string;
     nroFactura: string;
     docTypeDesc?: string;
+    itemId?: string | number; // SharePoint Sequence ID
 }
 
 // Custom HTTPS agent that skips certificate validation (SAP uses self-signed certs)
@@ -148,7 +149,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         const cardCode = bpRes.data.value[0].CardCode;
-        console.log(`SAP Draft [${nroFactura}]: Found BP ${cardCode} for NIT ${nit}`);
+        const cardName = bpRes.data.value[0].CardName;
+        console.log(`SAP Draft [${nroFactura}]: Found BP ${cardCode} (${cardName}) for NIT ${nit}`);
 
         // 3. BUILD DOCUMENT LINES — Look up ItemCode, Description and TaxCode from Supabase Articulos table
         const draftUrl = process.env.SAP_DRAFTS_URL || `${baseUrl}/Drafts`;
@@ -222,15 +224,23 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         // 4. CREATE DRAFT (oPurchaseInvoices)
-        const draftBody = {
+        const draftBody: any = {
             DocObjectCode: "oPurchaseInvoices",
             DocType: "dDocument_Items",
             CardCode: cardCode,
             NumAtCard: nroFactura || '',
             DocDate: new Date().toISOString().split('T')[0],
-            Comments: `Portal Aprobación - ${docTypeDesc} #${nroFactura || ''} | ${observations || ''} | Anticipo: ${anticipo || 'N/A'}`,
+            Comments: `Proveedor: ${cardName} | Factura: ${nroFactura} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`,
             DocumentLines: documentLines
         };
+
+        // If we have a sequence ID from SharePoint, use it as Manual DocNum
+        if (itemId) {
+            draftBody.Series = -1; // Manual
+            draftBody.HandWritten = "tYES";
+            draftBody.DocNum = parseInt(itemId.toString(), 10);
+            console.log(`SAP Draft [${nroFactura}]: Setting Manual DocNum to ${draftBody.DocNum}`);
+        }
 
         console.log(`SAP Draft [${nroFactura}]: Creating draft with ${documentLines.length} lines...`);
 

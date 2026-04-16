@@ -71,7 +71,8 @@ export async function POST(req: NextRequest) {
                     anticipo: anticipo || 'f',
                     observations: observaciones || 'Aprobado vía portal externo',
                     nroFactura: nroFactura || itemId,
-                    docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA'
+                    docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA',
+                    itemId: itemId
                 });
             } catch (sapErr: any) {
                 console.error('Failed to trigger SAP Draft registration:', sapErr.message);
