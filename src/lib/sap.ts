@@ -5,6 +5,7 @@
  */
 
 import https from 'https';
+import { supabase } from './supabaseClient';
 
 export interface SapDistribution {
     centroCostos: string;
@@ -149,7 +150,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
         const cardCode = bpRes.data.value[0].CardCode;
         console.log(`SAP Draft [${nroFactura}]: Found BP ${cardCode} for NIT ${nit}`);
 
-        // 3. BUILD DOCUMENT LINES — Look up ItemCode and TaxCode from SAP Items for each account
+        // 3. BUILD DOCUMENT LINES — Look up ItemCode, Description and TaxCode from Supabase Articulos table
         const draftUrl = process.env.SAP_DRAFTS_URL || `${baseUrl}/Drafts`;
         
         const documentLines: any[] = [];
@@ -164,38 +165,55 @@ export async function createSapDraft(payload: SapDraftPayload) {
                 const rawCC = dist.centroCostos || '';
                 const costCenter = rawCC.split(' - ')[0].trim();
 
-                // Look up ItemCode and TaxCode from SAP Items by ExpanseAccount
+                // Look up ItemCode, Description and TaxCode from Supabase Articulos table by AcctCode
                 let itemCode = '';
-                let taxCode = 'IVADEX'; // Default fallback
+                let itemDescription = '';
+                let taxCode = 'IVADEX';
                 
                 if (accountCode) {
                     try {
-                        const itemUrl = `${baseUrl}/Items?$filter=ExpanseAccount eq '${accountCode}'&$select=ItemCode,PurchaseVATGroup&$top=1`;
-                        const itemRes = await sapRequestWithRetry(itemUrl, { headers: authHeaders });
+                        console.log(`SAP Draft [${nroFactura}]: Buscando mapeo exacto para cuenta [${accountCode}]...`);
                         
-                        if (itemRes.status === 200 && itemRes.data.value && itemRes.data.value.length > 0) {
-                            const foundItem = itemRes.data.value[0];
-                            itemCode = foundItem.ItemCode || '';
-                            taxCode = foundItem.PurchaseVATGroup || taxCode;
-                            console.log(`SAP Draft [${nroFactura}]: Account ${accountCode} → Item: ${itemCode}, Tax: ${taxCode}`);
+                        // Buscamos en la tabla Articulos (Proyecto: zohdtksgxhbheaftgmsi)
+                        // Intentamos buscarlo como número y como string por si acaso
+                        const { data: articuloRows, error: articuloError } = await supabase
+                            .from('Articulos')
+                            .select('ItemCode, Dscription, TaxCode')
+                            .or(`AcctCode.eq.${accountCode},AcctCode.eq.${parseInt(accountCode, 10) || 0}`)
+                            .limit(1);
+                        
+                        if (!articuloError && articuloRows && articuloRows.length > 0) {
+                            const articuloData = articuloRows[0];
+                            itemCode = articuloData.ItemCode;
+                            itemDescription = articuloData.Dscription;
+                            taxCode = articuloData.TaxCode || taxCode;
+                            console.log(`   ✅ MAPEADO: ${itemCode} - ${itemDescription}`);
                         } else {
-                            console.warn(`SAP Draft [${nroFactura}]: No Item found for account ${accountCode}, using defaults`);
+                            console.error(`   ❌ ERROR: La cuenta ${accountCode} NO EXISTE en la tabla Articulos de Supabase.`);
+                            // NO ponemos artículos "cualquiera". Si no está, que falle SAP con el error real.
+                            itemCode = ''; 
+                            itemDescription = `CUENTA ${accountCode} SIN CONFIGURAR EN SUPABASE`;
                         }
                     } catch (lookupErr: any) {
-                        console.warn(`SAP Draft [${nroFactura}]: Item lookup failed for ${accountCode}: ${lookupErr.message}`);
+                        console.error(`   ❌ ERROR CRITICO en consulta Supabase: ${lookupErr.message}`);
                     }
                 }
 
                 documentLines.push({
-                    ItemCode: itemCode || undefined,       // Código de artículo (from Items table)
-                    ItemDescription: `${docTypeDesc} ${nroFactura || ''}`,
-                    AccountCode: accountCode,               // Cuenta contable
-                    CostingCode: costCenter,                // Centro de costos (Dimensión 1)
-                    UnitPrice: dist.valor || "0",           // Precio por unidad (valor del aprobado)
-                    LineTotal: dist.valor || "0",           // Total de línea
-                    VatGroup: taxCode,                      // Indicador de impuestos (from Items table)
+                    ItemCode: itemCode || undefined,
+                    ItemDescription: itemDescription || `${docTypeDesc} ${nroFactura}`,
+                    AccountCode: accountCode,
+                    CostingCode: costCenter,
+                    UnitPrice: dist.valor || "0",
+                    LineTotal: dist.valor || "0",
+                    VatGroup: taxCode,
                 });
             }
+        }
+
+        if (documentLines.some(l => !l.ItemCode)) {
+            const missing = documentLines.filter(l => !l.ItemCode).map(l => l.AccountCode).join(', ');
+            throw new Error(`Error: Las siguientes cuentas no tienen un artículo asociado en Supabase: ${missing}. Por favor regístralas en la tabla Articulos.`);
         }
 
         if (documentLines.length === 0) {
@@ -205,7 +223,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
         // 4. CREATE DRAFT (oPurchaseInvoices)
         const draftBody = {
             DocObjectCode: "oPurchaseInvoices",
-            DocType: "dDocument_Service",
+            DocType: "dDocument_Items",
             CardCode: cardCode,
             NumAtCard: nroFactura || '',
             DocDate: new Date().toISOString().split('T')[0],
