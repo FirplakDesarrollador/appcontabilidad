@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGraphClient } from '@/lib/sharepoint';
 import { createSapDraft } from '@/lib/sap';
+import { supabase } from '@/lib/supabaseClient';
 
 export async function POST(req: NextRequest) {
     try {
