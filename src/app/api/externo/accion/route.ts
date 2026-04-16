@@ -64,15 +64,22 @@ export async function POST(req: NextRequest) {
             try {
                 console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (NIT: ${nit})...`);
                 
+                // Fetch the full record from Supabase to get the Consecutivo
+                const { data: invoice } = await supabase
+                    .from('Registro_Facturas')
+                    .select('Consecutivo, Proveedor')
+                    .eq('ID', itemId)
+                    .single();
+
                 sapResult = await createSapDraft({
                     nit: nit || "",
                     total: valor || "0",
                     distribuciones: distribuciones || [],
                     anticipo: anticipo || 'f',
-                    observations: observaciones || 'Aprobado vía portal externo',
+                    observations: `Proveedor: ${invoice?.Proveedor || 'N/A'} - ${observaciones || 'Aprobado vía portal externo'}`,
                     nroFactura: nroFactura || itemId,
                     docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA',
-                    itemId: itemId
+                    itemId: invoice?.Consecutivo || itemId
                 });
             } catch (sapErr: any) {
                 console.error('Failed to trigger SAP Draft registration:', sapErr.message);

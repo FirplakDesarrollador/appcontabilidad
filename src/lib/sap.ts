@@ -225,13 +225,15 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         // 4. CREATE DRAFT (oPurchaseInvoices)
+        const finalComments = `Proveedor: ${cardName || 'N/A'} | Factura: ${nroFactura} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`;
+        
         const draftBody: any = {
             DocObjectCode: "oPurchaseInvoices",
             DocType: "dDocument_Items",
             CardCode: cardCode,
             NumAtCard: nroFactura || '',
             DocDate: new Date().toISOString().split('T')[0],
-            Comments: `Proveedor: ${cardName} | Factura: ${nroFactura} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`,
+            Comments: finalComments.substring(0, 250), // SAP limit is usually 250
             DocumentLines: documentLines
         };
 
@@ -240,7 +242,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
             draftBody.Series = -1; // Manual
             draftBody.HandWritten = "tYES";
             draftBody.DocNum = parseInt(itemId.toString(), 10);
-            console.log(`SAP Draft [${nroFactura}]: Setting Manual DocNum to ${draftBody.DocNum}`);
+            console.log(`SAP Draft [${nroFactura}]: Consecutivo Manual [${draftBody.DocNum}] - ${cardName}`);
         }
 
         console.log(`SAP Draft [${nroFactura}]: Creating draft with ${documentLines.length} lines...`);
