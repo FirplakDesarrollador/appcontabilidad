@@ -72,9 +72,10 @@ export async function POST(req: NextRequest) {
                     total: invoice["Valor total"]!,
                     distribuciones: distribuciones,
                     anticipo: invoice.tiene_anticipo ? 't' : 'f',
-                    observations: `Proveedor: ${proveedorReal} | Factura: ${invoice.Nro_Factura} | Obs: ${invoice.Observaciones || 'Aprobado vía link rápido'}`,
+                    observations: invoice.Observaciones || 'Aprobado vía link rápido',
                     nroFactura: invoice.Nro_Factura!,
-                    itemId: consecutivoReal
+                    itemId: consecutivoReal,
+                    proveedorName: proveedorReal
                 });
             }
         } catch (spError) {

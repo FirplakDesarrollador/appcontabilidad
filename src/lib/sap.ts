@@ -22,6 +22,7 @@ export interface SapDraftPayload {
     nroFactura: string;
     docTypeDesc?: string;
     itemId?: string | number; // SharePoint Sequence ID
+    proveedorName?: string; // Provider Name from SharePoint
 }
 
 // Custom HTTPS agent that skips certificate validation (SAP uses self-signed certs)
@@ -101,7 +102,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
         observations, 
         nroFactura, 
         docTypeDesc = 'FACTURA',
-        itemId
+        itemId,
+        proveedorName
     } = payload;
 
     if (!nit || !total) {
@@ -225,7 +227,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         // 4. CREATE DRAFT (oPurchaseInvoices)
-        const finalComments = `Proveedor: ${cardName || 'N/A'} | Factura: ${nroFactura} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`;
+        const displayProveedor = proveedorName || cardName || 'N/A';
+        const finalComments = `Proveedor: ${displayProveedor} | Factura: ${nroFactura} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`;
         
         const draftBody: any = {
             DocObjectCode: "oPurchaseInvoices",

@@ -75,10 +75,11 @@ export async function POST(req: NextRequest) {
                     total: valor || "0",
                     distribuciones: distribuciones || [],
                     anticipo: anticipo || 'f',
-                    observations: `Proveedor: ${proveedorReal} | Factura: ${nroFactura} | Obs: ${observaciones || 'Aprobado vía portal externo'}`,
+                    observations: observaciones || 'Aprobado vía portal externo',
                     nroFactura: nroFactura || itemId,
                     docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA',
-                    itemId: consecutivoReal
+                    itemId: consecutivoReal,
+                    proveedorName: proveedorReal
                 });
             } catch (sapErr: any) {
                 console.error('Failed to trigger SAP Draft registration:', sapErr.message);
