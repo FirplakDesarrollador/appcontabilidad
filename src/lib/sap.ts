@@ -166,9 +166,17 @@ export async function createSapDraft(payload: SapDraftPayload) {
                 const rawAccount = dist.cuenta || '';
                 const accountCode = rawAccount.split(' ')[0].trim();
                 
-                // Extract clean cost center code (e.g. "GA-FICOG" from "GA-FICOG - FINANZAS,CONTABILIDAD...")
-                const rawCC = dist.centroCostos || '';
-                const costCenter = rawCC.split(' - ')[0].trim();
+                // Extract clean cost center code (e.g. "GA-FICOG" from "GA-FICOG - FINANZAS")
+                const rawCC = String(dist.centroCostos || '').trim();
+                let costCenter = "";
+                
+                if (rawCC.includes(' - ')) {
+                    costCenter = rawCC.split(' - ')[0].trim();
+                } else {
+                    costCenter = rawCC;
+                }
+                
+                console.log(`SAP Draft [${nroFactura}]: Mapping line with account ${dist.cuenta} and CostingCode (Dim 1): [${costCenter}]`);
 
                 // Look up ItemCode, Description and TaxCode from Supabase Articulos table by AcctCode
                 let itemCode = '';

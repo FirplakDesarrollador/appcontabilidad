@@ -13,38 +13,61 @@ export async function POST(req: NextRequest) {
 
         console.log(`[Manual SAP Draft] Triggering for invoice ID: ${invoiceId}`);
 
-        // 1. Fetch invoice data from Supabase Registro_Facturas
-        const { data: invoice, error: fetchError } = await supabase
-            .from('Registro_Facturas')
-            .select('Nro_Factura, Proveedor, Nit, Responsable_de_Autorizar, Observaciones, centro_costos, "Valor total", tiene_anticipo')
-            .eq('ID', invoiceId)
-            .single();
-
-        if (fetchError || !invoice) {
-            console.error(`[Manual SAP Draft] Supabase fetch error:`, fetchError);
-            throw new Error(`Invoice ${invoiceId} not found in database`);
-        }
-
-        // 2. Fetch extra data from SharePoint (Consecutivo, Proveedor real)
-        let consecutivoReal = invoiceId;
-        let proveedorReal = invoice.Proveedor || "Proveedor Desconocido";
+        // 1. Fetch invoice data (EXCLUSIVELY from SharePoint as requested)
+        console.log(`[Manual SAP Draft] Fetching from SharePoint...`);
+        let invoice: any = null;
         
         try {
             const spItem = await getSharePointInvoiceById(String(invoiceId));
-            consecutivoReal = spItem.Consecutivo || invoiceId;
-            proveedorReal = spItem.Proveedor || invoice.Proveedor || "Proveedor Desconocido";
-            console.log(`[Manual SAP Draft] SharePoint data: Consecutivo=${consecutivoReal}, Proveedor=${proveedorReal}`);
+            if (!spItem) {
+                throw new Error(`Invoice ${invoiceId} not found in SharePoint`);
+            }
+
+            // Normalize fields from SharePoint (Support for multiple field name variants)
+            const nitValue = spItem.Nit || spItem.Nit_x0020_ || spItem["Nit "] || spItem.Title || "N/A";
+            const montoValue = spItem.Valortotal ?? spItem.Valor_x0020_total ?? spItem["Valor total"] ?? spItem.Monto ?? 0;
+            const nroFactura = spItem.Nro_Factura || spItem.Nro_x002e__x0020_Factura || spItem.Nro_Factura_x0020_ || "S/N";
+            
+            // Map SharePoint fields to the internal object format
+            invoice = {
+                id: spItem.id,
+                Nro_Factura: nroFactura,
+                Proveedor: spItem.Proveedor || "Proveedor en SharePoint",
+                Nit: String(nitValue),
+                Responsable_de_Autorizar: spItem.Responsable_de_Autorizar,
+                Observaciones: spItem.Observaciones || 'Sincronización manual desde portal de aprobación',
+                centro_costos: spItem.centro_costos || spItem.Centro_x0020_de_x0020_costos || spItem.tablaCostos || "[]",
+                "Valor total": String(montoValue),
+                tiene_anticipo: spItem.tiene_anticipo === 't' || spItem.tiene_anticipo === true || spItem.tiene_anticipo === 'true' || spItem.Tiene_x0020_anticipo === 't',
+                Consecutivo: spItem.Consecutivo || String(invoiceId)
+            };
+
+            console.log(`[Manual SAP Draft] SharePoint Item ${invoiceId} loaded successfully.`);
+
         } catch (spErr: any) {
-            console.warn(`[Manual SAP Draft] Failed to fetch SharePoint data for item ${invoiceId}:`, spErr.message);
-            // We continue with what we have from Supabase
+            console.error(`[Manual SAP Draft] SharePoint fetch error:`, spErr.message);
+            throw new Error(`Failed to retrieve invoice from SharePoint: ${spErr.message}`);
         }
+
+        // 2. Prepare distribution lines
+        const consecutivoReal = invoice.Consecutivo || invoiceId;
+        const proveedorReal = invoice.Proveedor || "Proveedor Desconocido";
 
         // 3. Prepare distribution lines
         let distribuciones = [];
         try {
-            distribuciones = typeof invoice.centro_costos === 'string' 
+            const raw = typeof invoice.centro_costos === 'string' 
                 ? JSON.parse(invoice.centro_costos) 
                 : (invoice.centro_costos || []);
+            
+            // Normalize to what createSapDraft expects (centroCostos)
+            distribuciones = raw.map((d: any) => ({
+                centroCostos: d.centroCosto || d.centro_costos || d.CentroCostos || d.TableCostos || d.centroCostos || '',
+                cuenta: d.cuenta || d.Cuenta || '',
+                valor: d.valor || d.Valor || d.monto || 0
+            }));
+            
+            console.log(`[Manual SAP Draft] Normalized ${distribuciones.length} distribution lines (Dimension 1 mapping).`);
         } catch (e) {
             console.error("[Manual SAP Draft] Error parsing centro_costos:", e);
         }
