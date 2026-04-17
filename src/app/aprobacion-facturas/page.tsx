@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 
@@ -41,6 +41,7 @@ export default function InvoicesPage() {
     const [providers, setProviders] = useState<any[]>([]);
     const [providersSearch, setProvidersSearch] = useState("");
     const [loadingProviders, setLoadingProviders] = useState(false);
+    const [syncingId, setSyncingId] = useState<string | null>(null);
 
     const [columnFilters, setColumnFilters] = useState({
         invoice: "",
@@ -247,6 +248,31 @@ export default function InvoicesPage() {
             console.error("Error al copiar:", err);
             alert("No se pudo copiar el enlace");
         });
+    };
+
+    const handleManualSapSync = async (inv: SharePointInvoice) => {
+        if (!confirm(`¿Estás seguro de crear un documento preliminar en SAP para la factura ${inv.Nro_Factura}?`)) return;
+        
+        setSyncingId(inv.id);
+        try {
+            const res = await fetch("/api/sap/manual-draft", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ invoiceId: inv.id })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                alert(`✅ Preliminar SAP creado exitosamente\nDocEntry: ${data.sap.draftId}`);
+            } else {
+                alert(`❌ Error al crear preliminar SAP: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Error manual SAP sync:", error);
+            alert("❌ Error de conexión al sincronizar con SAP. Revisa la consola.");
+        } finally {
+            setSyncingId(null);
+        }
     };
 
     const formatCurrency = (value: any) => {
@@ -636,14 +662,27 @@ export default function InvoicesPage() {
                                                     </td>
                                                     <td className="px-6 py-5 text-right">
                                                         <div className="flex items-center justify-end gap-2">
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => handleCopyLink(inv)}
-                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
-                                                                title="Copiar Link Público"
-                                                            >
-                                                                <Copy className="h-3.5 w-3.5" />
-                                                            </Button>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    onClick={() => handleCopyLink(inv)}
+                                                                    className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
+                                                                    title="Copiar Link Público"
+                                                                >
+                                                                    <Copy className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    onClick={() => handleManualSapSync(inv)}
+                                                                    disabled={syncingId === inv.id}
+                                                                    className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50"
+                                                                    title="Sincronizar con SAP Manualmente"
+                                                                >
+                                                                    {syncingId === inv.id ? (
+                                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                                    ) : (
+                                                                        <CloudUpload className="h-3.5 w-3.5" />
+                                                                    )}
+                                                                </Button>
                                                             <Button
                                                                 variant="outline"
                                                                 onClick={() => setSelectedInvoice(inv)}
