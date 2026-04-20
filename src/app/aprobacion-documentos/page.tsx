@@ -191,15 +191,34 @@ export default function SupportDocumentsPage() {
     };
 
     const fetchProviders = async () => {
-
         setLoadingProviders(true);
         try {
-            const { data, error } = await supabase
-                .from('proveedores')
-                .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
-                .order('razon_social', { ascending: true });
-            if (error) throw error;
-            setProviders(data || []);
+            let allProviders: any[] = [];
+            let from = 0;
+            const step = 1000;
+            let moreData = true;
+
+            while (moreData) {
+                const { data, error } = await supabase
+                    .from('proveedores')
+                    .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
+                    .order('razon_social', { ascending: true })
+                    .range(from, from + step - 1);
+
+                if (error) throw error;
+                
+                if (data && data.length > 0) {
+                    allProviders = [...allProviders, ...data];
+                    from += step;
+                } else {
+                    moreData = false;
+                }
+                
+                // Safety break to prevent infinite loops
+                if (from > 50000) moreData = false;
+            }
+
+            setProviders(allProviders);
         } catch (error) {
             console.error('Error fetching providers:', error);
         } finally {
