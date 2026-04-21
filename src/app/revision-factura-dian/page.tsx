@@ -24,6 +24,36 @@ export default function RevisionFacturaDianPage() {
     const [comparisonResult, setComparisonResult] = useState<{ headers: string[], data: any[][] } | null>(null);
     const [allInvoiceNumbers, setAllInvoiceNumbers] = useState<Set<string>>(new Set());
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+
+    const STORAGE_KEY = "revision_factura_dian_progress";
+
+    // Cargar progreso desde localStorage al montar
+    useEffect(() => {
+        const savedProgress = localStorage.getItem(STORAGE_KEY);
+        if (savedProgress) {
+            try {
+                const { comparisonResult: savedResult, selectedRows: savedSelected } = JSON.parse(savedProgress);
+                if (savedResult) setComparisonResult(savedResult);
+                if (savedSelected) setSelectedRows(new Set(savedSelected));
+            } catch (e) {
+                console.error("Error al cargar el progreso guardado:", e);
+                localStorage.removeItem(STORAGE_KEY);
+            }
+        }
+    }, []);
+
+    // Guardar progreso en localStorage cuando cambie
+    useEffect(() => {
+        if (comparisonResult) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                comparisonResult,
+                selectedRows: Array.from(selectedRows)
+            }));
+        } else {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+    }, [comparisonResult, selectedRows]);
+
     const [filters, setFilters] = useState({
         CreadoStart: "",
         CreadoEnd: "",
@@ -163,10 +193,18 @@ export default function RevisionFacturaDianPage() {
         return comparisonResult.data.filter((row) => {
             // Find column indices based on headers
             const headersLower = comparisonResult.headers.map(h => h.toLowerCase());
-            const proveedorIdx = headersLower.indexOf("proveedor");
-            const nitIdx = headersLower.indexOf("nit");
-            const nroFacturaIdx = headersLower.indexOf("factura") !== -1 ? headersLower.indexOf("factura") : headersLower.indexOf("nro. factura");
-            const valorIdx = headersLower.indexOf("valor total");
+            const findColIdx = (names: string[]) => {
+                for (const name of names) {
+                    const idx = headersLower.indexOf(name.toLowerCase());
+                    if (idx !== -1) return idx;
+                }
+                return -1;
+            };
+
+            const proveedorIdx = findColIdx(["proveedor", "nombre emisor", "nombre del emisor", "emisor"]);
+            const nitIdx = findColIdx(["nit", "nit emisor"]);
+            const nroFacturaIdx = findColIdx(["factura", "nro. factura", "nro_factura"]);
+            const valorIdx = findColIdx(["valor total", "total", "valor"]);
 
             return (
                 (proveedorIdx === -1 || String(row[proveedorIdx] || "").toLowerCase().includes(filters.Proveedor.toLowerCase())) &&
@@ -232,7 +270,7 @@ export default function RevisionFacturaDianPage() {
             const fechaEmisionIdx = mapIdx(["fecha emisin", "fecha emision", "fecha emisión", "fecha_emision"]);
             const fechaRecepcionIdx = mapIdx(["fecha recepcin", "fecha recepcion", "fecha recepción", "fecha_recepcion"]);
             const nitEmisorIdx = mapIdx(["nit emisor", "nit_emisor", "nit emi", "nit"]);
-            const nombreEmisorIdx = mapIdx(["nombre emisor", "nombre_emisor", "adquiriente", "proveedor"]);
+            const nombreEmisorIdx = mapIdx(["nombre del emisor", "nombre emisor", "nombre_emisor", "adquiriente", "proveedor", "emisor"]);
             const ivaIdx = mapIdx(["iva", "impuesto"]);
             const incIdx = mapIdx(["inc"]);
             const totalIdx = mapIdx(["total", "valor total", "valor_total", "valor"]);
@@ -390,6 +428,7 @@ export default function RevisionFacturaDianPage() {
                                         <tr>
                                             <th className="px-6 py-3">Factura / Folio</th>
                                             <th className="px-6 py-3">Emisor</th>
+                                            <th className="px-6 py-3">CUFE</th>
                                             <th className="px-6 py-3">NIT</th>
                                             <th className="px-6 py-3">Fecha Emisión</th>
                                             <th className="px-6 py-3 text-right">Total</th>
@@ -403,6 +442,15 @@ export default function RevisionFacturaDianPage() {
                                                     {factura.Prefijo}{factura.Folio}
                                                 </td>
                                                 <td className="px-6 py-3 text-gray-500">{factura.Nombre_Emisor}</td>
+                                                <td className="px-6 py-3 min-w-[250px]">
+                                                    <input 
+                                                        readOnly 
+                                                        value={factura["CUFE/CUDE"] || ""} 
+                                                        className="w-full bg-gray-50/50 border border-gray-100 rounded px-2 py-1 text-[10px] font-mono text-gray-500 focus:outline-none focus:border-[#254153] transition-colors cursor-text"
+                                                        onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
+                                                        title="Haz clic para seleccionar y copiar"
+                                                    />
+                                                </td>
                                                 <td className="px-6 py-3 text-gray-500">{factura.NIT_Emisor}</td>
                                                 <td className="px-6 py-3 text-gray-500">{factura.Fecha_Emision}</td>
                                                 <td className="px-6 py-3 text-right font-bold text-[#254153]">
@@ -451,6 +499,7 @@ export default function RevisionFacturaDianPage() {
                                         setComparisonResult(null);
                                         setSelectedRows(new Set());
                                         setSaveSuccess(false);
+                                        localStorage.removeItem(STORAGE_KEY);
                                     }}
                                     className="text-red-500 text-xs font-semibold hover:underline"
                                 >
@@ -524,13 +573,25 @@ export default function RevisionFacturaDianPage() {
                                                 <th key={i} className="px-6 py-4">
                                                     <div className="flex flex-col gap-2 min-w-[120px]">
                                                         <span>{header}</span>
-                                                        {["Proveedor", "NIT", "Factura", "Nro. Factura", "Valor Total"].includes(header) && (
+                                                        {["Proveedor", "Nombre del emisor", "NIT", "Factura", "Nro. Factura", "Valor Total", "Total"].includes(header) && (
                                                             <div className="relative">
                                                                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
                                                                 <input
                                                                     type="text"
-                                                                    name={header === "Factura" || header === "Nro. Factura" ? "Nro_Factura" : header}
-                                                                    value={filters[header === "Factura" || header === "Nro. Factura" ? "Nro_Factura" : header as keyof typeof filters] || ""}
+                                                                    name={
+                                                                        header === "Factura" || header === "Nro. Factura" ? "Nro_Factura" : 
+                                                                        header === "Proveedor" || header === "Nombre del emisor" || header === "Emisor" ? "Proveedor" : 
+                                                                        header === "NIT" || header === "Nit" ? "Nit" :
+                                                                        header === "Valor Total" || header === "Total" ? "Valor total" :
+                                                                        header
+                                                                    }
+                                                                    value={(filters[
+                                                                        (header === "Factura" || header === "Nro. Factura" ? "Nro_Factura" : 
+                                                                        header === "Proveedor" || header === "Nombre del emisor" || header === "Emisor" ? "Proveedor" : 
+                                                                        header === "NIT" || header === "Nit" ? "Nit" :
+                                                                        header === "Valor Total" || header === "Total" ? "Valor total" :
+                                                                        header) as keyof typeof filters
+                                                                    ] || "") as string}
                                                                     onChange={handleFilterChange}
                                                                     placeholder="Filtrar..."
                                                                     className="w-full pl-7 pr-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
