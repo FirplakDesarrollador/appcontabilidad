@@ -84,7 +84,11 @@ export default function InvoicesPage() {
             setLoading(true);
             
             // ETAPA 1: Carga rápida de las primeras 500 facturas
-            const quickResponse = await fetch(`/api/sharepoint/all${refresh ? '?refresh=true' : ''}${!refresh ? '&limit=500' : ''}`);
+            const params = new URLSearchParams();
+            if (refresh) params.append('refresh', 'true');
+            if (!refresh) params.append('limit', '500');
+            
+            const quickResponse = await fetch(`/api/sharepoint/all?${params.toString()}`);
             const quickData = await quickResponse.json();
 
             if (quickData.success) {
