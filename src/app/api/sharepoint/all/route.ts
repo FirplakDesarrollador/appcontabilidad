@@ -13,31 +13,37 @@ export async function GET(req: Request) {
         const refresh = searchParams.get('refresh') === 'true';
 
         if (!refresh) {
-            console.log('[API] Fetching all invoices from Supabase cache...');
+            console.log('[API] Fetching invoices from Supabase (Parallel & Selective)...');
+            
+            // Definimos las columnas esenciales para reducir el tamaño del payload
+            const columns = 'ID, Nit, Proveedor, Nro_Factura, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor total, Creado, sharepoint_id, documentos, Attachments, Documento_x0020_PDF';
+
+            // Lanzamos peticiones en paralelo para cubrir hasta 5000 registros
+            const batchSize = 1000;
+            const ranges = [
+                { from: 0, to: 999 },
+                { from: 1000, to: 1999 },
+                { from: 2000, to: 2999 },
+                { from: 3000, to: 3999 },
+                { from: 4000, to: 4999 }
+            ];
+
+            const results = await Promise.all(
+                ranges.map(range => 
+                    supabase
+                        .from('Registro_Facturas')
+                        .select(columns)
+                        .order('ID', { ascending: false })
+                        .range(range.from, range.to)
+                )
+            );
+
             let allData: any[] = [];
-            let from = 0;
-            const step = 1000;
-            let moreData = true;
-
-            while (moreData) {
-                const { data, error } = await supabase
-                    .from('Registro_Facturas')
-                    .select('*')
-                    .order('ID', { ascending: false })
-                    .range(from, from + step - 1);
-
-                if (error) {
-                    console.error('[API] Supabase error:', error);
-                    moreData = false;
-                } else if (data && data.length > 0) {
+            results.forEach(({ data, error }) => {
+                if (!error && data) {
                     allData = [...allData, ...data];
-                    from += step;
-                    // Limit to 20k for safety, but usually lists are smaller
-                    if (from > 20000) moreData = false;
-                } else {
-                    moreData = false;
                 }
-            }
+            });
 
             if (allData.length > 0) {
                 return NextResponse.json({
@@ -47,7 +53,7 @@ export async function GET(req: Request) {
                     source: 'cache'
                 });
             }
-            console.log('[API] Cache empty or error, falling back to SharePoint...');
+            console.log('[API] Cache empty, falling back to SharePoint...');
         }
 
         console.log('[API] Fetching all invoices from SharePoint (Direct)...');
