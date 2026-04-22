@@ -82,41 +82,52 @@ export default function InvoicesPage() {
     const fetchInvoices = async (refresh: boolean = false) => {
         try {
             setLoading(true);
-            const response = await fetch(`/api/sharepoint/all${refresh ? '?refresh=true' : ''}`);
-            const data = await response.json();
+            
+            // ETAPA 1: Carga rápida de las primeras 500 facturas
+            const quickResponse = await fetch(`/api/sharepoint/all${refresh ? '?refresh=true' : ''}${!refresh ? '&limit=500' : ''}`);
+            const quickData = await quickResponse.json();
 
-            if (data.success) {
-                const normalizedItems = data.items.map((item: any) => {
+            if (quickData.success) {
+                const normalize = (items: any[]) => items.map((item: any) => {
                     let documentInfo = null;
                     if (item.Documento_x0020_PDF) {
                         try {
                             documentInfo = JSON.parse(item.Documento_x0020_PDF);
-                        } catch (e) {
-                            console.warn("Error parsing Documento_x0020_PDF:", e);
-                        }
+                        } catch (e) {}
                     }
-
-                    // Normalize fields that might come from SharePoint OR Supabase cache
-                    const nitValue = item.Nit || item.Title || item.Nit_x0020_ || item["Nit "] || "N/A";
-                    const montoValue = item["Valor total"] ?? item.Valor_total ?? item.Valortotal ?? item.Valor_x0020_total ?? item.Monto ?? 0;
-                    const providerValue = item.Proveedor || item.Proveedor_x0020_ || "N/A";
-                    
                     return {
                         ...item,
-                        Monto: montoValue,
-                        Nit: nitValue,
-                        Proveedor: providerValue,
-                        Responsable_de_Autorizar: item.Responsable_de_Autorizar || item["Responsable de Autorizar"] || "Sin asignar",
+                        Monto: item["Valor total"] ?? item.Valor_total ?? item.Valortotal ?? item.Monto ?? 0,
+                        Nit: item.Nit || item.Title || "N/A",
+                        Proveedor: item.Proveedor || "N/A",
+                        Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
                         documentInfo,
-                        // If it's from cache, use 'documentos' as a fallback for the attachment
                         Attachments: item.Attachments || !!item.documentos || !!item.Documento_x0020_PDF
                     };
                 });
-                setInvoices(normalizedItems);
+
+                setInvoices(normalize(quickData.items));
+                setLoading(false); // Liberamos la UI rápido
+
+                // ETAPA 2: Si no es un refresh forzado y vinieron del cache, traemos el resto en segundo plano
+                if (!refresh && quickData.source === 'cache') {
+                    console.log("Fetching rest of invoices in background...");
+                    const fullResponse = await fetch(`/api/sharepoint/all?offset=500`);
+                    const fullData = await fullResponse.json();
+                    if (fullData.success) {
+                        setInvoices(prev => {
+                            const newItems = normalize(fullData.items);
+                            const combined = [...prev];
+                            newItems.forEach(item => {
+                                if (!combined.find(c => c.id === item.id)) combined.push(item);
+                            });
+                            return combined;
+                        });
+                    }
+                }
             }
         } catch (error) {
             console.error("Error fetching invoices:", error);
-        } finally {
             setLoading(false);
         }
     };

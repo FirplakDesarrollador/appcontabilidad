@@ -11,39 +11,55 @@ export async function GET(req: Request) {
     try {
         const { searchParams } = new URL(req.url);
         const refresh = searchParams.get('refresh') === 'true';
+        const limit = parseInt(searchParams.get('limit') || '0');
+        const offset = parseInt(searchParams.get('offset') || '0');
 
         if (!refresh) {
-            console.log('[API] Fetching invoices from Supabase (Parallel & Selective)...');
+            console.log(`[API] Fetching invoices from Supabase (Parallel & Selective, offset=${offset}, limit=${limit})...`);
             
             // Definimos las columnas esenciales para reducir el tamaño del payload
             const columns = 'ID, Nit, Proveedor, Nro_Factura, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor total, Creado, sharepoint_id, documentos, Attachments, Documento_x0020_PDF';
 
-            // Lanzamos peticiones en paralelo para cubrir hasta 5000 registros
-            const batchSize = 1000;
-            const ranges = [
-                { from: 0, to: 999 },
-                { from: 1000, to: 1999 },
-                { from: 2000, to: 2999 },
-                { from: 3000, to: 3999 },
-                { from: 4000, to: 4999 }
-            ];
-
-            const results = await Promise.all(
-                ranges.map(range => 
-                    supabase
-                        .from('Registro_Facturas')
-                        .select(columns)
-                        .order('ID', { ascending: false })
-                        .range(range.from, range.to)
-                )
-            );
-
             let allData: any[] = [];
-            results.forEach(({ data, error }) => {
-                if (!error && data) {
-                    allData = [...allData, ...data];
+
+            if (limit > 0) {
+                // Caso de carga rápida específica
+                const { data, error } = await supabase
+                    .from('Registro_Facturas')
+                    .select(columns)
+                    .order('ID', { ascending: false })
+                    .range(offset, offset + limit - 1);
+                
+                if (!error && data) allData = data;
+            } else {
+                // Caso de carga completa (o el resto desde un offset)
+                const batchSize = 1000;
+                const ranges = [];
+                
+                // Si hay un offset, empezamos desde ahí. Si no, cargamos todo (hasta 5000)
+                const start = offset;
+                const end = 5000;
+                
+                for (let i = start; i < end; i += batchSize) {
+                    ranges.push({ from: i, to: i + batchSize - 1 });
                 }
-            });
+
+                const results = await Promise.all(
+                    ranges.map(range => 
+                        supabase
+                            .from('Registro_Facturas')
+                            .select(columns)
+                            .order('ID', { ascending: false })
+                            .range(range.from, range.to)
+                    )
+                );
+
+                results.forEach(({ data, error }) => {
+                    if (!error && data) {
+                        allData = [...allData, ...data];
+                    }
+                });
+            }
 
             if (allData.length > 0) {
                 return NextResponse.json({
