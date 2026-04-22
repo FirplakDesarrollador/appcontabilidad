@@ -79,10 +79,10 @@ export default function InvoicesPage() {
         };
     }, [invoices]);
 
-    const fetchInvoices = async () => {
+    const fetchInvoices = async (refresh: boolean = false) => {
         try {
             setLoading(true);
-            const response = await fetch(`/api/sharepoint/all`);
+            const response = await fetch(`/api/sharepoint/all${refresh ? '?refresh=true' : ''}`);
             const data = await response.json();
 
             if (data.success) {
@@ -96,21 +96,26 @@ export default function InvoicesPage() {
                         }
                     }
 
-                    const nitValue = item.Title || item.Nit_x0020_ || item["Nit "] || item.Nit || "N/A";
-                    const montoValue = item.Valortotal ?? item.Valor_x0020_total ?? item["Valor total"] ?? item.Monto ?? 0;
-
+                    // Normalize fields that might come from SharePoint OR Supabase cache
+                    const nitValue = item.Nit || item.Title || item.Nit_x0020_ || item["Nit "] || "N/A";
+                    const montoValue = item["Valor total"] ?? item.Valor_total ?? item.Valortotal ?? item.Valor_x0020_total ?? item.Monto ?? 0;
+                    const providerValue = item.Proveedor || item.Proveedor_x0020_ || "N/A";
+                    
                     return {
                         ...item,
                         Monto: montoValue,
                         Nit: nitValue,
+                        Proveedor: providerValue,
                         Responsable_de_Autorizar: item.Responsable_de_Autorizar || item["Responsable de Autorizar"] || "Sin asignar",
-                        documentInfo
+                        documentInfo,
+                        // If it's from cache, use 'documentos' as a fallback for the attachment
+                        Attachments: item.Attachments || !!item.documentos || !!item.Documento_x0020_PDF
                     };
                 });
                 setInvoices(normalizedItems);
             }
         } catch (error) {
-            console.error("Error fetching all SharePoint invoices:", error);
+            console.error("Error fetching invoices:", error);
         } finally {
             setLoading(false);
         }
@@ -446,7 +451,7 @@ export default function InvoicesPage() {
                             </button>
                             <Button
                                 variant="outline"
-                                onClick={() => fetchInvoices()}
+                                onClick={() => fetchInvoices(true)}
                                 disabled={loading}
                                 className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm"
                             >
