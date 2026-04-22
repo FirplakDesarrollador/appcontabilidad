@@ -194,21 +194,63 @@ export default function InvoicesPage() {
 
 
 
-    const fetchProviders = async () => {
+    const fetchProviders = async (search?: string) => {
         setLoadingProviders(true);
         try {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('proveedores')
                 .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
                 .order('razon_social', { ascending: true });
+
+            if (search) {
+                query = query.or(`razon_social.ilike.%${search}%,numero_identificacion.ilike.%${search}%`);
+            }
+            
+            // Limitamos a 500 para que sea rápido, si busca algo específico lo encontrará
+            const { data, error } = await query.limit(500);
+
             if (error) throw error;
-            setProviders(data || []);
+
+            if (search) {
+                // Si es búsqueda, reemplazamos los resultados
+                setProviders(data || []);
+            } else {
+                // Si es carga inicial, combinamos con los que ya tienen aprobación automática activos
+                // (Para que no desaparezcan de la vista los que ya configuró)
+                setProviders(prev => {
+                    const activeOnes = prev.filter(p => p.aprobacion_automatica);
+                    const newOnes = data || [];
+                    const combined = [...activeOnes];
+                    
+                    newOnes.forEach(p => {
+                        if (!combined.find(c => c.id === p.id)) {
+                            combined.push(p);
+                        }
+                    });
+                    return combined;
+                });
+            }
         } catch (error) {
             console.error('Error fetching providers:', error);
         } finally {
             setLoadingProviders(false);
         }
     };
+
+    // Efecto para búsqueda con debounce
+    useEffect(() => {
+        if (!isProvidersSidebarOpen) return;
+
+        const timer = setTimeout(() => {
+            if (providersSearch.length >= 2) {
+                fetchProviders(providersSearch);
+            } else if (providersSearch.length === 0) {
+                fetchProviders();
+            }
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [providersSearch, isProvidersSidebarOpen]);
 
     const toggleProviderAutoApproval = async (id: string, currentValue: boolean) => {
         const newValue = !currentValue;
@@ -736,6 +778,9 @@ export default function InvoicesPage() {
                                     <h2 className="text-xl font-bold text-[#254153] flex items-center gap-2">
                                         <ShieldCheck className="h-5 w-5 text-green-600" />
                                         Aprobación Automática
+                                        <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-normal">
+                                            {providers.length.toLocaleString()}
+                                        </span>
                                     </h2>
                                     <p className="text-xs text-gray-400 font-medium">Gestiona proveedores de confianza</p>
                                 </div>
