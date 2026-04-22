@@ -13,17 +13,37 @@ export async function GET(req: Request) {
         const refresh = searchParams.get('refresh') === 'true';
 
         if (!refresh) {
-            console.log('[API] Fetching invoices from Supabase cache...');
-            const { data, error } = await supabase
-                .from('Registro_Facturas')
-                .select('*')
-                .order('ID', { ascending: false });
+            console.log('[API] Fetching all invoices from Supabase cache...');
+            let allData: any[] = [];
+            let from = 0;
+            const step = 1000;
+            let moreData = true;
 
-            if (!error && data && data.length > 0) {
+            while (moreData) {
+                const { data, error } = await supabase
+                    .from('Registro_Facturas')
+                    .select('*')
+                    .order('ID', { ascending: false })
+                    .range(from, from + step - 1);
+
+                if (error) {
+                    console.error('[API] Supabase error:', error);
+                    moreData = false;
+                } else if (data && data.length > 0) {
+                    allData = [...allData, ...data];
+                    from += step;
+                    // Limit to 20k for safety, but usually lists are smaller
+                    if (from > 20000) moreData = false;
+                } else {
+                    moreData = false;
+                }
+            }
+
+            if (allData.length > 0) {
                 return NextResponse.json({
                     success: true,
-                    total: data.length,
-                    items: data,
+                    total: allData.length,
+                    items: allData,
                     source: 'cache'
                 });
             }
