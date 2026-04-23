@@ -8,6 +8,8 @@ import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2,
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
+import { useSidebar } from "@/context/SidebarContext";
+import { Menu } from "lucide-react";
 
 
 interface SharePointInvoice {
@@ -28,6 +30,7 @@ interface SharePointInvoice {
 }
 
 export default function InvoicesPage() {
+    const { toggleSidebar } = useSidebar();
     const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
@@ -411,12 +414,23 @@ export default function InvoicesPage() {
         <div className="min-h-screen bg-[#f8fafc] flex">
             <Sidebar />
 
-            <main className="flex-1 md:ml-64 relative bg-[#f8fafc]">
+            <main 
+                className="flex-1 relative bg-[#f8fafc] transition-all duration-300 ease-in-out"
+                style={{ marginLeft: 'var(--sidebar-width, 256px)' }}
+            >
                 {/* Header Superior */}
                 <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-10">
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-1.5 bg-[#254153] rounded-full" />
-                        <h1 className="text-xl font-bold text-gray-800 tracking-tight">Aprobación de Facturas</h1>
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={toggleSidebar}
+                            className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-[#254153]"
+                        >
+                            <Menu className="h-6 w-6" />
+                        </button>
+                        <div className="flex items-center gap-3">
+                            <div className="h-8 w-1.5 bg-[#254153] rounded-full" />
+                            <h1 className="text-xl font-bold text-gray-800 tracking-tight">Aprobación de Facturas</h1>
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-4">

@@ -17,8 +17,10 @@ import {
     TrendingUp,
     ArrowUpRight
 } from "lucide-react";
+import { useSidebar } from "@/context/SidebarContext";
 
 export default function DashboardPage() {
+    const { toggleSidebar } = useSidebar();
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<User | null>(null);
@@ -51,10 +53,21 @@ export default function DashboardPage() {
             <Sidebar />
 
             {/* Main Content */}
-            <main className="flex-1 md:ml-64 relative bg-[#f8fafc]">
+            <main 
+                className="flex-1 relative bg-[#f8fafc] transition-all duration-300 ease-in-out"
+                style={{ marginLeft: 'var(--sidebar-width, 256px)' }}
+            >
                 {/* Topbar */}
                 <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-6 sticky top-0 z-10">
-                    <div className="font-semibold text-gray-800 text-lg">Resumen Financiero</div>
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={toggleSidebar}
+                            className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-[#254153]"
+                        >
+                            <Menu className="h-6 w-6" />
+                        </button>
+                        <div className="font-semibold text-gray-800 text-lg">Resumen Financiero</div>
+                    </div>
                     <div className="flex items-center gap-4">
                         <div className="relative hidden md:block">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />

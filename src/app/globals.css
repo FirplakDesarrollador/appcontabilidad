@@ -5,6 +5,7 @@
   --foreground: #171717;
   --primary: #254153;
   --primary-foreground: #ffffff;
+  --sidebar-width: 256px;
 }
 
 @media (prefers-color-scheme: dark) {

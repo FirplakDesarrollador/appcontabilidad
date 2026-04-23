@@ -71,7 +71,10 @@ export default function InformeJuntaPage() {
         <div className="flex h-screen bg-[#f8fafc]">
             <Sidebar />
 
-            <main className="flex-1 md:ml-64 p-8 overflow-y-auto">
+            <main 
+                className="flex-1 p-8 overflow-y-auto relative transition-all duration-300 ease-in-out"
+                style={{ marginLeft: 'var(--sidebar-width, 256px)' }}
+            >
                 <div className="max-w-6xl mx-auto space-y-12">
                     {/* Header */}
                     <div className="flex flex-col gap-6">
