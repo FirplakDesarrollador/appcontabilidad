@@ -18,7 +18,7 @@ export async function GET(req: Request) {
             console.log(`[API] Fetching invoices from Supabase (Parallel & Selective, offset=${offset}, limit=${limit})...`);
             
             // Definimos las columnas esenciales para reducir el tamaño del payload
-            const columns = 'ID, Nit, Proveedor, Nro_Factura, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor total, Creado, sharepoint_id, documentos, Attachments';
+            const columns = 'ID, Nit, Proveedor, Nro_Factura, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor total, Creado, sharepoint_id, documentos, Attachments, FechaAprobacion';
 
             let allData: any[] = [];
 

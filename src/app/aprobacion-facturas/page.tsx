@@ -23,6 +23,7 @@ interface SharePointInvoice {
     OData__RegistrationDate?: string;
     Created?: string;
     Documento_x0020_PDF?: string;
+    FechaAprobacion?: string;
     [key: string]: any;
 }
 
@@ -110,6 +111,7 @@ export default function InvoicesPage() {
                         Nit: item.Nit || item.Title || "N/A",
                         Proveedor: item.Proveedor || "N/A",
                         Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
+                        FechaAprobacion: item.FechaAprobacion || null,
                         documentInfo,
                         Attachments: item.Attachments || !!item.documentos || !!item.fp
                     };
@@ -578,6 +580,7 @@ export default function InvoicesPage() {
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Responsable</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Estado</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">G. Contabilidad</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Fecha Aprobación</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Datos adjuntos</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Acciones</th>
                                     </tr>
@@ -658,6 +661,7 @@ export default function InvoicesPage() {
                                         </td>
                                         <td className="px-3 py-2" />
                                         <td className="px-3 py-2" />
+                                        <td className="px-3 py-2" />
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
@@ -671,6 +675,7 @@ export default function InvoicesPage() {
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-32" /></td>
                                                     <td className="px-6 py-5"><div className="h-7 bg-gray-100 rounded-full w-24" /></td>
                                                     <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-24" /></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-28" /></td>
                                                     <td className="px-6 py-5 text-right"><div className="h-8 bg-gray-100 rounded-lg w-16 ml-auto" /></td>
                                                 </tr>
                                             ))
@@ -718,6 +723,11 @@ export default function InvoicesPage() {
                                                         <span className="text-[10px] font-bold text-gray-600 uppercase tracking-tight">
                                                             {inv.Gestion_Contabilidad || "Pendiente"}
                                                         </span>
+                                                    </td>
+                                                    <td className="px-6 py-5">
+                                                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">
+                                                            {inv.FechaAprobacion ? new Date(inv.FechaAprobacion).toLocaleString() : "Sin fecha"}
+                                                        </div>
                                                     </td>
                                                     <td className="px-6 py-5">
                                                         {(inv.documentInfo || inv.Attachments) ? (
