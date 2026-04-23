@@ -369,3 +369,49 @@ export async function findExternalInvoiceDocument(nit: string, nroFactura: strin
         return null;
     }
 }
+
+export async function createSharePointFolder(siteId: string, parentPath: string, folderName: string) {
+    try {
+        const client = await getGraphClient();
+        const response = await client.api(`/sites/${siteId}/drive/root:/${parentPath}:/children`).post({
+            name: folderName,
+            folder: {},
+            "@microsoft.graph.conflictBehavior": "replace"
+        });
+        return response;
+    } catch (error) {
+        console.error('Error creating SharePoint folder:', error);
+        throw error;
+    }
+}
+
+export async function uploadFileToSharePoint(siteId: string, folderId: string, fileName: string, fileBuffer: Buffer) {
+    try {
+        const client = await getGraphClient();
+        const response = await client.api(`/sites/${siteId}/drive/items/${folderId}:/${fileName}:/content`).put(fileBuffer);
+        return response;
+    } catch (error) {
+        console.error('Error uploading file to SharePoint:', error);
+        throw error;
+    }
+}
+
+export async function createSharePointListItem(siteId: string, listName: string, fields: Record<string, any>) {
+    try {
+        const client = await getGraphClient();
+        
+        // Find the List ID
+        const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
+        const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
+        if (!list) throw new Error(`SharePoint list "${listName}" not found`);
+        
+        const response = await client.api(`/sites/${siteId}/lists/${list.id}/items`).post({
+            fields: fields
+        });
+        return response;
+    } catch (error) {
+        console.error('Error creating SharePoint list item:', error);
+        throw error;
+    }
+}
+

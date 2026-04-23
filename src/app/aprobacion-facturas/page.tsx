@@ -7,6 +7,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
+import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
+
 
 interface SharePointInvoice {
     id: string;
@@ -42,6 +44,8 @@ export default function InvoicesPage() {
     const [providersSearch, setProvidersSearch] = useState("");
     const [loadingProviders, setLoadingProviders] = useState(false);
     const [syncingId, setSyncingId] = useState<string | null>(null);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
 
     const [columnFilters, setColumnFilters] = useState({
         invoice: "",
@@ -465,7 +469,15 @@ export default function InvoicesPage() {
                                 <span className="hidden lg:inline">Aprobación Automática</span>
                             </button>
                             <Button
+                                onClick={() => setIsCreateModalOpen(true)}
+                                className="bg-[#254153] text-white rounded-xl h-11 px-6 font-black hover:bg-[#1a2f3d] transition-all shadow-lg shadow-blue-900/10 flex items-center gap-2"
+                            >
+                                <CloudUpload className="h-4 w-4" />
+                                Crear Factura
+                            </Button>
+                            <Button
                                 variant="outline"
+
                                 onClick={() => fetchInvoices(true)}
                                 disabled={loading}
                                 className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm"
@@ -1141,6 +1153,13 @@ export default function InvoicesPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            <CreateInvoiceModal 
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                onSuccess={() => fetchInvoices(true)}
+            />
         </div>
     );
 }
+
