@@ -24,6 +24,23 @@ export default function DashboardPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<User | null>(null);
+    const [sapInvoices, setSapInvoices] = useState<any[]>([]);
+    const [sapLoading, setSapLoading] = useState(true);
+
+    const fetchSapInvoices = async () => {
+        try {
+            setSapLoading(true);
+            const response = await fetch('/api/sap/recent-invoices');
+            const data = await response.json();
+            if (data.success) {
+                setSapInvoices(data.invoices);
+            }
+        } catch (error) {
+            console.error('Error fetching SAP invoices:', error);
+        } finally {
+            setSapLoading(false);
+        }
+    };
 
     useEffect(() => {
         const checkUser = async () => {
@@ -33,6 +50,7 @@ export default function DashboardPage() {
             } else {
                 setUser(session.user);
                 setLoading(false);
+                fetchSapInvoices();
             }
         };
 
@@ -161,19 +179,69 @@ export default function DashboardPage() {
                             </div>
                         </div>
 
-                        <div className="bg-[#254153] text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
-                            <div className="relative z-10">
-                                <h3 className="text-lg font-bold mb-4">Consejo Pro</h3>
-                                <p className="text-gray-300 text-sm mb-6">
-                                    Mantén tus reportes actualizados para mejorar la predicción de gastos trimestrales.
-                                </p>
-                                <Button className="w-full bg-white text-[#254153] hover:bg-gray-100">
-                                    Actualizar Reporte
-                                </Button>
+                        {/* SAP Recent Invoices Tile */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-lg font-bold text-[#254153]">Últimas en SAP</h3>
+                                <div className="h-8 w-8 bg-blue-50 rounded-lg flex items-center justify-center">
+                                    <Briefcase className="h-4 w-4 text-blue-600" />
+                                </div>
                             </div>
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10" />
-                            <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full blur-2xl -ml-5 -mb-5" />
+                            
+                            <div className="space-y-3 flex-1 overflow-auto">
+                                {sapLoading ? (
+                                    [1, 2, 3, 4, 5].map(i => (
+                                        <div key={i} className="h-16 w-full animate-pulse bg-gray-50 rounded-xl" />
+                                    ))
+                                ) : sapInvoices.length > 0 ? (
+                                    sapInvoices.map((inv: any) => (
+                                        <div key={inv.DocEntry} className="p-3 bg-gray-50/50 rounded-xl border border-transparent hover:border-gray-200 transition-all">
+                                            <div className="flex justify-between items-start mb-1">
+                                                <span className="text-xs font-bold text-[#254153] bg-[#254153]/5 px-2 py-0.5 rounded">
+                                                    #{inv.DocNum}
+                                                </span>
+                                                <span className="text-xs font-bold text-gray-900">
+                                                    ${new Intl.NumberFormat('es-CO').format(inv.DocTotal)}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm font-medium text-gray-800 truncate" title={inv.CardName}>
+                                                {inv.CardName}
+                                            </p>
+                                            <div className="flex justify-between items-center mt-1">
+                                                <p className="text-[10px] text-gray-500">{inv.NumAtCard || 'Sin Ref'}</p>
+                                                <p className="text-[10px] text-gray-400 font-medium">{inv.DocDate?.split('T')[0]}</p>
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                                        <div className="bg-gray-50 p-3 rounded-full mb-3">
+                                            <Search className="h-6 w-6 text-gray-300" />
+                                        </div>
+                                        <p className="text-sm text-gray-400">No hay facturas recientes</p>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <Button variant="outline" className="w-full mt-4 h-10 text-xs" onClick={() => fetchSapInvoices()}>
+                                Refrescar SAP
+                            </Button>
                         </div>
+                    </div>
+
+                    {/* Pro Tip Section */}
+                    <div className="bg-[#254153] text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
+                        <div className="relative z-10 max-w-lg">
+                            <h3 className="text-xl font-bold mb-4">Consejo Pro</h3>
+                            <p className="text-gray-300 mb-6">
+                                Mantén tus reportes actualizados para mejorar la predicción de gastos trimestrales y el flujo de caja.
+                            </p>
+                            <Button className="bg-white text-[#254153] hover:bg-gray-100">
+                                Actualizar Reporte
+                            </Button>
+                        </div>
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -mr-20 -mt-20" />
+                        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full blur-3xl -ml-10 -mb-10" />
                     </div>
 
                 </div>
