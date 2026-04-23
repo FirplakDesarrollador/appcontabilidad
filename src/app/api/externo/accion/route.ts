@@ -38,6 +38,10 @@ export async function POST(req: NextRequest) {
             updatePayload.Aprobacion_Doliente = action;
         }
 
+        if (action === 'Aprobado') {
+            updatePayload.FechaAprobacion = new Date().toISOString();
+        }
+
         if (observaciones) {
             updatePayload.Observaciones = observaciones;
         }
