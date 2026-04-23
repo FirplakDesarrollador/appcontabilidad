@@ -189,6 +189,11 @@ export async function createSapDraft(payload: SapDraftPayload) {
                 } else {
                     costCenter = rawCC;
                 }
+
+                // Si es "N / A", lo dejamos como null para no enviarlo a SAP
+                if (costCenter === "N / A" || costCenter === "N/A" || !costCenter) {
+                    costCenter = "";
+                }
                 
                 console.log(`SAP Draft [${nroFactura}]: Mapping line with account ${dist.cuenta} and CostingCode (Dim 1): [${costCenter}]`);
 
@@ -230,8 +235,11 @@ export async function createSapDraft(payload: SapDraftPayload) {
                     ItemCode: itemCode || undefined,
                     ItemDescription: itemDescription || `${docTypeDesc} ${nroFactura}`,
                     AccountCode: accountCode,
-                    CostingCode: costCenter,
-                    U_CentroCostos: costCenter,
+                    // Solo enviar centros de costos si tienen un valor real
+                    ...(costCenter ? { 
+                        CostingCode: costCenter,
+                        U_CentroCostos: costCenter
+                    } : {}),
                     UnitPrice: dist.valor || "0",
                     LineTotal: dist.valor || "0",
                     VatGroup: taxCode,
