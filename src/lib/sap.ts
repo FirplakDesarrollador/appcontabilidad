@@ -141,7 +141,18 @@ export async function createSapDraft(payload: SapDraftPayload) {
     try {
         // 2. SEARCH BUSINESS PARTNER BY NIT (Búsqueda flexible: exacta, parcial o por CardCode)
         console.log(`SAP Draft [${nroFactura}]: Buscando Socio de Negocio para NIT ${nit}...`);
-        const bpUrl = `${baseUrl}/BusinessPartners?$filter=FederalTaxID eq '${nit}' or contains(FederalTaxID, '${nit}') or CardCode eq 'P${nit}' or CardCode eq '${nit}'&$select=CardCode,CardName,FederalTaxID`;
+        
+        const rawNit = nit;
+        const cleanNit = nit.replace(/[^0-9]/g, '');
+        const baseNit = nit.split('-')[0].replace(/[^0-9]/g, '');
+        
+        // Si el NIT tiene 9 dígitos y no tiene guion, intentar buscarlo con guion antes del último dígito
+        let nitWithDash = rawNit;
+        if (!rawNit.includes('-') && cleanNit.length === 9) {
+            nitWithDash = `${cleanNit.substring(0, 8)}-${cleanNit.substring(8)}`;
+        }
+
+        const bpUrl = `${baseUrl}/BusinessPartners?$filter=FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}'&$select=CardCode,CardName,FederalTaxID`;
         const bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
 
         if (bpRes.status !== 200) {
@@ -153,7 +164,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         // Priorizar coincidencia exacta de FederalTaxID o CardCode
-        const match = bpRes.data.value.find((v: any) => v.FederalTaxID === nit || v.CardCode === nit || v.CardCode === `P${nit}`) || bpRes.data.value[0];
+        const match = bpRes.data.value.find((v: any) => v.FederalTaxID === rawNit || v.FederalTaxID === nitWithDash || v.CardCode === baseNit || v.CardCode === `P${baseNit}`) || bpRes.data.value[0];
         const cardCode = match.CardCode;
         const cardName = match.CardName;
         console.log(`SAP Draft [${nroFactura}]: Found BP ${cardCode} (${cardName}) for NIT ${nit}`);

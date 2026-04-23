@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
 
             // Normalize fields from SharePoint (Support for multiple field name variants)
             let nitValue = spItem.Nit || spItem.Nit_x0020_ || spItem["Nit "] || spItem.Title || "N/A";
-            nitValue = String(nitValue).replace(/[^0-9]/g, ''); // Normalizar NIT: solo números
+            nitValue = String(nitValue).replace(/[.\s]/g, '').trim(); // Normalizar NIT: quitar puntos y espacios, mantener guion
             const montoValue = spItem.Valortotal ?? spItem.Valor_x0020_total ?? spItem["Valor total"] ?? spItem.Monto ?? 0;
             const nroFactura = spItem.Nro_Factura || spItem.Nro_x002e__x0020_Factura || spItem.Nro_Factura_x0020_ || "S/N";
             
