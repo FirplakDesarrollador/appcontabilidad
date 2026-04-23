@@ -1006,6 +1006,12 @@ export default function InvoicesPage() {
                                                     <p className="text-[11px] font-bold text-gray-400 uppercase">Fecha Registro</p>
                                                     <p className="font-bold text-gray-600">{selectedInvoice.Created ? new Date(selectedInvoice.Created).toLocaleDateString() : "N/A"}</p>
                                                 </div>
+                                                <div>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Fecha Aprobación</p>
+                                                    <p className="font-bold text-gray-600">
+                                                        {selectedInvoice.FechaAprobacion ? new Date(selectedInvoice.FechaAprobacion).toLocaleString() : "Pendiente"}
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
 
