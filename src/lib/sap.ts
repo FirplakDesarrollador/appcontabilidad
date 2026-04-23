@@ -139,8 +139,9 @@ export async function createSapDraft(payload: SapDraftPayload) {
     console.log(`SAP Draft [${nroFactura}]: Login successful (Session: ${sessionId})`);
 
     try {
-        // 2. SEARCH BUSINESS PARTNER BY NIT
-        const bpUrl = `${baseUrl}/BusinessPartners?$filter=FederalTaxID eq '${nit}'&$select=CardCode`;
+        // 2. SEARCH BUSINESS PARTNER BY NIT (Búsqueda flexible: exacta, parcial o por CardCode)
+        console.log(`SAP Draft [${nroFactura}]: Buscando Socio de Negocio para NIT ${nit}...`);
+        const bpUrl = `${baseUrl}/BusinessPartners?$filter=FederalTaxID eq '${nit}' or contains(FederalTaxID, '${nit}') or CardCode eq 'P${nit}' or CardCode eq '${nit}'&$select=CardCode,CardName,FederalTaxID`;
         const bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
 
         if (bpRes.status !== 200) {
@@ -148,11 +149,13 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         if (!bpRes.data.value || bpRes.data.value.length === 0) {
-            throw new Error(`Supplier with NIT ${nit} not found in SAP`);
+            throw new Error(`Supplier with NIT ${nit} not found in SAP. Verifique que el proveedor exista y el NIT sea correcto.`);
         }
 
-        const cardCode = bpRes.data.value[0].CardCode;
-        const cardName = bpRes.data.value[0].CardName;
+        // Priorizar coincidencia exacta de FederalTaxID o CardCode
+        const match = bpRes.data.value.find((v: any) => v.FederalTaxID === nit || v.CardCode === nit || v.CardCode === `P${nit}`) || bpRes.data.value[0];
+        const cardCode = match.CardCode;
+        const cardName = match.CardName;
         console.log(`SAP Draft [${nroFactura}]: Found BP ${cardCode} (${cardName}) for NIT ${nit}`);
 
         // 3. BUILD DOCUMENT LINES — Look up ItemCode, Description and TaxCode from Supabase Articulos table
