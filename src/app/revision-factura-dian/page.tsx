@@ -1,7 +1,7 @@
 "use client";
 
 import { Sidebar } from "@/components/layout/Sidebar";
-import { ArrowLeft, RefreshCw, AlertCircle, Search, CheckSquare, Square, Save, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertCircle, Search, CheckSquare, Square, Save, Loader2, CheckCircle2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
@@ -19,8 +19,41 @@ export default function RevisionFacturaDianPage() {
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncProgress, setSyncProgress] = useState(0);
     const [comparisonResult, setComparisonResult] = useState<{ headers: string[], data: any[][] } | null>(null);
+    const [allInvoiceNumbers, setAllInvoiceNumbers] = useState<Set<string>>(new Set());
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+
+    const STORAGE_KEY = "revision_factura_dian_progress";
+
+    // Cargar progreso desde localStorage al montar
+    useEffect(() => {
+        const savedProgress = localStorage.getItem(STORAGE_KEY);
+        if (savedProgress) {
+            try {
+                const { comparisonResult: savedResult, selectedRows: savedSelected } = JSON.parse(savedProgress);
+                if (savedResult) setComparisonResult(savedResult);
+                if (savedSelected) setSelectedRows(new Set(savedSelected));
+            } catch (e) {
+                console.error("Error al cargar el progreso guardado:", e);
+                localStorage.removeItem(STORAGE_KEY);
+            }
+        }
+    }, []);
+
+    // Guardar progreso en localStorage cuando cambie
+    useEffect(() => {
+        if (comparisonResult) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                comparisonResult,
+                selectedRows: Array.from(selectedRows)
+            }));
+        } else {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+    }, [comparisonResult, selectedRows]);
+
     const [filters, setFilters] = useState({
         CreadoStart: "",
         CreadoEnd: "",
@@ -37,6 +70,7 @@ export default function RevisionFacturaDianPage() {
         setLoading(true);
         setError(null);
         try {
+            // Fetch only the most recent 200 for display to keep UI snappy
             const { data, error } = await supabase
                 .from("Registro_Facturas")
                 .select("*")
@@ -45,11 +79,89 @@ export default function RevisionFacturaDianPage() {
 
             if (error) throw error;
             setFacturas(data || []);
+
+            // Also fetch all invoice numbers for accurate comparison in the modal
+            // We use a loop to bypass the default 1000 row limit
+            let allNros: any[] = [];
+            let from = 0;
+            const step = 1000;
+            let moreData = true;
+
+            while (moreData) {
+                const { data: batch, error: batchError } = await supabase
+                    .from("Registro_Facturas")
+                    .select("Nro_Factura")
+                    .order("ID", { ascending: false })
+                    .range(from, from + step - 1);
+
+                if (batchError) throw batchError;
+
+                if (batch && batch.length > 0) {
+                    allNros = [...allNros, ...batch];
+                    from += step;
+                } else {
+                    moreData = false;
+                }
+
+                // Safety break to prevent infinite loops (unlikely with 4k records but good practice)
+                if (from > 50000) moreData = false;
+            }
+
+            const nroSet = new Set(allNros.map(item => 
+                String(item.Nro_Factura || "")
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]/g, '')
+                    .replace(/([a-z])0+/g, '$1')
+                    .replace(/^0+/, '')
+            ) || []);
+            setAllInvoiceNumbers(nroSet);
+            console.log(`Total invoice numbers loaded for comparison: ${nroSet.size}`);
         } catch (err: any) {
             console.error("Error fetching facturas:", err);
             setError(err.message || "Error al cargar las facturas.");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleSync = async () => {
+        setIsSyncing(true);
+        setSyncProgress(0);
+        setError(null);
+        
+        const BATCH_SIZE = 50;
+        const TOTAL_TO_SYNC = 300; // Let's sync 300 latest records for efficiency
+        
+        try {
+            let currentOffset = 0;
+            let totalProcessedTotal = 0;
+            
+            while (currentOffset < TOTAL_TO_SYNC) {
+                const response = await fetch('/api/sharepoint/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ limit: BATCH_SIZE, offset: currentOffset })
+                });
+                
+                const result = await response.json();
+                if (!result.success) throw new Error(result.error || "Error sincronizando datos");
+                
+                totalProcessedTotal += result.processed;
+                currentOffset += BATCH_SIZE;
+                setSyncProgress(Math.round((currentOffset / TOTAL_TO_SYNC) * 100));
+                
+                if (result.processed === 0) break; // No more items
+            }
+            
+            // Re-fetch everything after sync
+            await fetchFacturas();
+            alert(`Sincronización completada: ${totalProcessedTotal} facturas procesadas.`);
+        } catch (err: any) {
+            console.error("Error during manual sync:", err);
+            setError(`Error de sincronización: ${err.message}`);
+        } finally {
+            setIsSyncing(false);
+            setSyncProgress(0);
         }
     };
 
@@ -81,10 +193,18 @@ export default function RevisionFacturaDianPage() {
         return comparisonResult.data.filter((row) => {
             // Find column indices based on headers
             const headersLower = comparisonResult.headers.map(h => h.toLowerCase());
-            const proveedorIdx = headersLower.indexOf("proveedor");
-            const nitIdx = headersLower.indexOf("nit");
-            const nroFacturaIdx = headersLower.indexOf("factura") !== -1 ? headersLower.indexOf("factura") : headersLower.indexOf("nro. factura");
-            const valorIdx = headersLower.indexOf("valor total");
+            const findColIdx = (names: string[]) => {
+                for (const name of names) {
+                    const idx = headersLower.indexOf(name.toLowerCase());
+                    if (idx !== -1) return idx;
+                }
+                return -1;
+            };
+
+            const proveedorIdx = findColIdx(["proveedor", "nombre emisor", "nombre del emisor", "emisor"]);
+            const nitIdx = findColIdx(["nit", "nit emisor"]);
+            const nroFacturaIdx = findColIdx(["factura", "nro. factura", "nro_factura"]);
+            const valorIdx = findColIdx(["valor total", "total", "valor"]);
 
             return (
                 (proveedorIdx === -1 || String(row[proveedorIdx] || "").toLowerCase().includes(filters.Proveedor.toLowerCase())) &&
@@ -145,12 +265,12 @@ export default function RevisionFacturaDianPage() {
 
             const tipoDocIdx = mapIdx(["tipo de documento", "tipo_documento", "documento"]);
             const cufeIdx = mapIdx(["cufe/cude", "cufe", "cude", "uuid"]);
-            const folioIdx = mapIdx(["folio", "nro. factura", "nro_factura"]);
+            const folioIdx = mapIdx(["folio", "nro. factura", "nro_factura", "factura"]);
             const prefijoIdx = mapIdx(["prefijo"]);
             const fechaEmisionIdx = mapIdx(["fecha emisin", "fecha emision", "fecha emisión", "fecha_emision"]);
             const fechaRecepcionIdx = mapIdx(["fecha recepcin", "fecha recepcion", "fecha recepción", "fecha_recepcion"]);
             const nitEmisorIdx = mapIdx(["nit emisor", "nit_emisor", "nit emi", "nit"]);
-            const nombreEmisorIdx = mapIdx(["nombre emisor", "nombre_emisor", "adquiriente", "proveedor"]);
+            const nombreEmisorIdx = mapIdx(["nombre del emisor", "nombre emisor", "nombre_emisor", "adquiriente", "proveedor", "emisor"]);
             const ivaIdx = mapIdx(["iva", "impuesto"]);
             const incIdx = mapIdx(["inc"]);
             const totalIdx = mapIdx(["total", "valor total", "valor_total", "valor"]);
@@ -209,11 +329,44 @@ export default function RevisionFacturaDianPage() {
         }
     };
 
+    const handleDeleteComparisonRow = (rowToDelete: any[]) => {
+        if (!comparisonResult) return;
+
+        const remainingData = comparisonResult.data.filter(row =>
+            JSON.stringify(row) !== JSON.stringify(rowToDelete)
+        );
+
+        setComparisonResult({ ...comparisonResult, data: remainingData });
+        setSelectedRows(new Set());
+    };
+
+    const handleDeleteSaved = async (id: number) => {
+        if (!confirm("¿Estás seguro de que deseas eliminar esta factura guardada?")) return;
+
+        try {
+            const { error: deleteError } = await supabase
+                .from("Facturas pendientes")
+                .delete()
+                .eq("ID", id);
+
+            if (deleteError) throw deleteError;
+
+            // Update local state
+            setFacturasPendientes(prev => prev.filter(f => f.ID !== id));
+        } catch (err: any) {
+            console.error("Error deleting factura:", err);
+            setError(err.message || "Error al eliminar la factura.");
+        }
+    };
+
     return (
         <div className="flex h-screen bg-[#f8fafc]">
             <Sidebar />
 
-            <main className="flex-1 md:ml-64 p-8 overflow-y-auto">
+            <main 
+                className="flex-1 p-8 overflow-y-auto relative transition-all duration-300 ease-in-out"
+                style={{ marginLeft: 'var(--sidebar-width, 256px)' }}
+            >
                 <div className="max-w-7xl mx-auto space-y-6">
                     {/* Header */}
                     <div className="flex flex-col gap-4">
@@ -237,6 +390,21 @@ export default function RevisionFacturaDianPage() {
                                     {showSavedList ? 'Ocultar Guardados' : `Ver Guardados (${facturasPendientes.length})`}
                                 </button>
                                 <button
+                                    onClick={handleSync}
+                                    disabled={isSyncing}
+                                    className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm bg-white text-[#254153] border border-gray-100 hover:bg-gray-50 disabled:opacity-50 overflow-hidden`}
+                                    title="Sincronizar con SharePoint"
+                                >
+                                    {isSyncing && (
+                                        <div 
+                                            className="absolute bottom-0 left-0 h-1 bg-green-500 transition-all duration-300" 
+                                            style={{ width: `${syncProgress}%` }}
+                                        />
+                                    )}
+                                    <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                                    {isSyncing ? `Sincronizando ${syncProgress}%` : 'Sincronizar SharePoint'}
+                                </button>
+                                <button
                                     onClick={() => setIsUploadModalOpen(true)}
                                     className="p-2 bg-white rounded-lg shadow-sm hover:shadow-md transition-all text-[#254153]"
                                     title="Cargar Documento Excel"
@@ -257,15 +425,17 @@ export default function RevisionFacturaDianPage() {
                                 </h2>
                                 <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">{facturasPendientes.length} registros</span>
                             </div>
-                            <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+                            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-white text-gray-400 font-medium border-b border-gray-100 sticky top-0">
                                         <tr>
                                             <th className="px-6 py-3">Factura / Folio</th>
                                             <th className="px-6 py-3">Emisor</th>
+                                            <th className="px-6 py-3">CUFE</th>
                                             <th className="px-6 py-3">NIT</th>
                                             <th className="px-6 py-3">Fecha Emisión</th>
                                             <th className="px-6 py-3 text-right">Total</th>
+                                            <th className="px-6 py-3 text-center w-20">Acciones</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50">
@@ -275,10 +445,28 @@ export default function RevisionFacturaDianPage() {
                                                     {factura.Prefijo}{factura.Folio}
                                                 </td>
                                                 <td className="px-6 py-3 text-gray-500">{factura.Nombre_Emisor}</td>
+                                                <td className="px-6 py-3 min-w-[250px]">
+                                                    <input 
+                                                        readOnly 
+                                                        value={factura["CUFE/CUDE"] || ""} 
+                                                        className="w-full bg-gray-50/50 border border-gray-100 rounded px-2 py-1 text-[10px] font-mono text-gray-500 focus:outline-none focus:border-[#254153] transition-colors cursor-text"
+                                                        onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
+                                                        title="Haz clic para seleccionar y copiar"
+                                                    />
+                                                </td>
                                                 <td className="px-6 py-3 text-gray-500">{factura.NIT_Emisor}</td>
                                                 <td className="px-6 py-3 text-gray-500">{factura.Fecha_Emision}</td>
                                                 <td className="px-6 py-3 text-right font-bold text-[#254153]">
                                                     ${Number(factura.Total).toLocaleString('es-CO')}
+                                                </td>
+                                                <td className="px-6 py-3 text-center">
+                                                    <button
+                                                        onClick={() => handleDeleteSaved(factura.ID)}
+                                                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Eliminar factura"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -305,12 +493,16 @@ export default function RevisionFacturaDianPage() {
                     <div className="flex items-center justify-between pt-4">
                         <div className="flex items-center gap-4">
                             <h2 className="text-xl font-bold text-[#254153]">Resultados de Comparación</h2>
+                            <div className="flex items-center gap-2 px-2 py-0.5 bg-gray-100 rounded-md">
+                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">Sistema: {allInvoiceNumbers.size} registros</span>
+                            </div>
                             {comparisonResult && (
                                 <button
                                     onClick={() => {
                                         setComparisonResult(null);
                                         setSelectedRows(new Set());
                                         setSaveSuccess(false);
+                                        localStorage.removeItem(STORAGE_KEY);
                                     }}
                                     className="text-red-500 text-xs font-semibold hover:underline"
                                 >
@@ -339,6 +531,7 @@ export default function RevisionFacturaDianPage() {
                         isOpen={isUploadModalOpen}
                         onClose={() => setIsUploadModalOpen(false)}
                         existingInvoices={facturas}
+                        allInvoiceNumbers={allInvoiceNumbers}
                         onConfirm={handleExcelConfirmed}
                     />
 
@@ -363,9 +556,9 @@ export default function RevisionFacturaDianPage() {
                                 </button>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
                                 <table className="w-full text-sm text-left">
-                                    <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200">
+                                    <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200 sticky top-0 z-10">
                                         <tr>
                                             <th className="px-6 py-4 w-10">
                                                 <button
@@ -383,13 +576,25 @@ export default function RevisionFacturaDianPage() {
                                                 <th key={i} className="px-6 py-4">
                                                     <div className="flex flex-col gap-2 min-w-[120px]">
                                                         <span>{header}</span>
-                                                        {["Proveedor", "NIT", "Factura", "Nro. Factura", "Valor Total"].includes(header) && (
+                                                        {["Proveedor", "Nombre del emisor", "NIT", "Factura", "Nro. Factura", "Valor Total", "Total"].includes(header) && (
                                                             <div className="relative">
                                                                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
                                                                 <input
                                                                     type="text"
-                                                                    name={header === "Factura" || header === "Nro. Factura" ? "Nro_Factura" : header}
-                                                                    value={filters[header === "Factura" || header === "Nro. Factura" ? "Nro_Factura" : header as keyof typeof filters] || ""}
+                                                                    name={
+                                                                        header === "Factura" || header === "Nro. Factura" ? "Nro_Factura" : 
+                                                                        header === "Proveedor" || header === "Nombre del emisor" || header === "Emisor" ? "Proveedor" : 
+                                                                        header === "NIT" || header === "Nit" ? "Nit" :
+                                                                        header === "Valor Total" || header === "Total" ? "Valor total" :
+                                                                        header
+                                                                    }
+                                                                    value={(filters[
+                                                                        (header === "Factura" || header === "Nro. Factura" ? "Nro_Factura" : 
+                                                                        header === "Proveedor" || header === "Nombre del emisor" || header === "Emisor" ? "Proveedor" : 
+                                                                        header === "NIT" || header === "Nit" ? "Nit" :
+                                                                        header === "Valor Total" || header === "Total" ? "Valor total" :
+                                                                        header) as keyof typeof filters
+                                                                    ] || "") as string}
                                                                     onChange={handleFilterChange}
                                                                     placeholder="Filtrar..."
                                                                     className="w-full pl-7 pr-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#254153] font-normal"
@@ -399,6 +604,7 @@ export default function RevisionFacturaDianPage() {
                                                     </div>
                                                 </th>
                                             ))}
+                                            <th className="px-6 py-4 text-center w-20">Acciones</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
@@ -431,6 +637,15 @@ export default function RevisionFacturaDianPage() {
                                                         </td>
                                                     );
                                                 })}
+                                                <td className="px-6 py-4 text-center">
+                                                    <button
+                                                        onClick={() => handleDeleteComparisonRow(row)}
+                                                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Quitar de la lista"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
