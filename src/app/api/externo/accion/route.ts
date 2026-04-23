@@ -63,6 +63,29 @@ export async function POST(req: NextRequest) {
         await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
         console.log(`SharePoint update for item ${itemId} to ${action} successful`);
 
+        // Sync to Supabase for immediate feedback
+        try {
+            const supabaseUpdate: any = {
+                Aprobacion_Doliente: action,
+                updated_at: new Date().toISOString()
+            };
+            if (updatePayload.FechaAprobacion) {
+                supabaseUpdate.FechaAprobacion = updatePayload.FechaAprobacion;
+            }
+            if (observaciones) {
+                supabaseUpdate.Observaciones = observaciones;
+            }
+
+            await supabase
+                .from('Registro_Facturas')
+                .update(supabaseUpdate)
+                .eq('ID', itemId);
+            
+            console.log(`Supabase cache updated for item ${itemId}`);
+        } catch (supaErr) {
+            console.error('Failed to update Supabase cache:', supaErr);
+        }
+
         // FETCH the item again to get the "Consecutivo" and "Proveedor" from SharePoint
         const spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).get();
         const consecutivoReal = spItem.Consecutivo || itemId;
