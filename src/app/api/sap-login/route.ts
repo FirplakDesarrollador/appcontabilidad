@@ -8,8 +8,16 @@ export async function POST(request: Request) {
 
     console.log('--- SAP LOGIN DEBUG ---');
     const db = bodyRequest.companyDB || process.env.SAP_COMPANY_DB || "Firplak_SA";
-    const user = process.env.SAP_USERNAME || "manager";
-    const pass = process.env.SAP_PASSWORD || "2023Fir#.*";
+    
+    // Determine credentials for this DB
+    const isViventta = db === process.env.SAP_COMPANY_DB_VIVENTTA;
+    const user = isViventta 
+        ? (process.env.SAP_USERNAME_VIVENTTA || "cmrestre")
+        : (process.env.SAP_USERNAME || "manager");
+    const pass = isViventta 
+        ? (process.env.SAP_PASSWORD_VIVENTTA || "1234")
+        : (process.env.SAP_PASSWORD || "2023Fir#.*");
+        
     const url = process.env.SAP_API_URL || "https://200.7.96.194:50000/b1s/v1/Login";
 
     console.log(`--- SAP LOGIN ATTEMPT (DYNAMIC) ---`);
