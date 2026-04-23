@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
@@ -29,6 +29,19 @@ interface SharePointInvoice {
     [key: string]: any;
 }
 
+const ModalInfoItem = ({ icon, label, value, subValue }: { icon: React.ReactNode, label: string, value?: string, subValue?: string }) => (
+    <div className="flex gap-4">
+        <div className="h-12 w-12 rounded-2xl bg-gray-50 flex items-center justify-center text-[#254153] shrink-0 border border-gray-100 shadow-sm">
+            {icon}
+        </div>
+        <div className="flex flex-col justify-center overflow-hidden">
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-none mb-1">{label}</span>
+            <span className="text-sm font-extrabold text-[#254153] truncate leading-tight">{value || 'N/A'}</span>
+            {subValue && <span className="text-[10px] text-gray-400 mt-1 italic font-medium">{subValue}</span>}
+        </div>
+    </div>
+);
+
 export default function InvoicesPage() {
     const { toggleSidebar } = useSidebar();
     const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
@@ -49,6 +62,11 @@ export default function InvoicesPage() {
     const [loadingProviders, setLoadingProviders] = useState(false);
     const [syncingId, setSyncingId] = useState<string | null>(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [actionLoading, setActionLoading] = useState<'Aprobado' | 'Rechazado' | null>(null);
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [sapStatus, setSapStatus] = useState<'idle' | 'loading' | 'found' | 'not_found' | 'error'>('idle');
 
 
     const [columnFilters, setColumnFilters] = useState({
@@ -181,6 +199,43 @@ export default function InvoicesPage() {
 
         return () => clearTimeout(timer);
     }, [userSearchQuery]);
+
+    const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
+        if (!selectedInvoice) return;
+        
+        setActionLoading(action);
+        try {
+            const res = await fetch("/api/sharepoint/update-status", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    itemId: selectedInvoice.id,
+                    status: action
+                })
+            });
+
+            if (res.ok) {
+                // Update local state
+                const updatedInvoices = invoices.map(inv =>
+                    inv.id === selectedInvoice.id
+                        ? { ...inv, Aprobacion_Doliente: action, Gestion_Contabilidad: action }
+                        : inv
+                );
+                setInvoices(updatedInvoices);
+                setSelectedInvoice(null);
+                setIsModalOpen(false);
+                alert(`Factura ${action.toLowerCase()} correctamente`);
+            } else {
+                const data = await res.json();
+                alert(`Error al procesar: ${data.error}`);
+            }
+        } catch (error) {
+            console.error(`Error performing ${action}:`, error);
+            alert("Error de conexión al procesar la acción");
+        } finally {
+            setActionLoading(null);
+        }
+    };
 
     const handleUpdateResponsible = async () => {
         if (!selectedInvoice || !pendingResponsibleUser) return;
@@ -719,7 +774,7 @@ export default function InvoicesPage() {
                                                         <div className="text-sm font-bold text-gray-800">{inv.Proveedor || "N/A"}</div>
                                                         <div className="text-[11px] text-gray-500 mt-0.5 font-medium">NIT: {inv.Nit || "N/A"}</div>
                                                     </td>
-                                                    <td className="px-6 py-5 text-right px-10">
+                                                    <td className="py-5 text-right px-10">
                                                         <div className="text-sm font-extrabold text-[#254153]">{formatCurrency(inv.Monto)}</div>
                                                     </td>
                                                     <td className="px-6 py-5">
@@ -1090,7 +1145,7 @@ export default function InvoicesPage() {
             {/* Panel Aprobación Automática */}
             <AnimatePresence>
                 {isProvidersSidebarOpen && (
-                    <div className="fixed inset-0 z-[90] flex justify-end">
+                    <div className="fixed inset-0 z-90 flex justify-end">
                         <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -1234,7 +1289,7 @@ export default function InvoicesPage() {
             {/* Modal de Detalle de Factura */}
             <AnimatePresence>
                 {selectedInvoice && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
                         <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -1391,7 +1446,7 @@ export default function InvoicesPage() {
                                                             </div>
 
                                                             {userSearchResults.length > 0 && (
-                                                                <div className="absolute z-[110] left-0 right-0 mt-1 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden max-h-[220px] overflow-y-auto custom-scrollbar">
+                                                                <div className="absolute z-110 left-0 right-0 mt-1 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden max-h-[220px] overflow-y-auto custom-scrollbar">
                                                                     {userSearchResults.map((user) => (
                                                                         <button
                                                                             key={user.id}
@@ -1403,7 +1458,7 @@ export default function InvoicesPage() {
                                                                             }}
                                                                             className="w-full px-4 py-3 flex items-center gap-3 hover:bg-blue-50/50 transition-colors text-left border-b border-gray-50 last:border-0"
                                                                         >
-                                                                            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                                                                            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
                                                                                 <User className="h-4 w-4 text-blue-600" />
                                                                             </div>
                                                                             <div className="min-w-0">
