@@ -98,10 +98,11 @@ export default function InvoicesPage() {
             if (quickData.success) {
                 const normalize = (items: any[]) => items.map((item: any) => {
                     let documentInfo = null;
-                    if (item.Documento_x0020_PDF) {
-                        try {
-                            documentInfo = JSON.parse(item.Documento_x0020_PDF);
-                        } catch (e) {}
+                    if (item.documentos || item.fp) {
+                        documentInfo = {
+                            fileName: "Factura.pdf",
+                            serverRelativeUrl: item.documentos || item.fp
+                        };
                     }
                     return {
                         ...item,
@@ -110,7 +111,7 @@ export default function InvoicesPage() {
                         Proveedor: item.Proveedor || "N/A",
                         Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
                         documentInfo,
-                        Attachments: item.Attachments || !!item.documentos || !!item.Documento_x0020_PDF
+                        Attachments: item.Attachments || !!item.documentos || !!item.fp
                     };
                 });
 

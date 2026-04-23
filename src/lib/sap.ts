@@ -268,7 +268,11 @@ export async function createSapDraft(payload: SapDraftPayload) {
         });
 
         if (createDraftRes.status !== 201 && createDraftRes.status !== 200) {
-            throw new Error(`Failed to create SAP Draft: ${JSON.stringify(createDraftRes.data)}`);
+            const sapError = createDraftRes.data?.error?.message?.value || JSON.stringify(createDraftRes.data);
+            const firstLineInfo = documentLines.length > 0 
+                ? ` (Línea 1: Cuenta ${documentLines[0].AccountCode}, Item ${documentLines[0].ItemCode}, CC ${documentLines[0].CostingCode})` 
+                : "";
+            throw new Error(`Failed to create SAP Draft: ${sapError}${firstLineInfo}`);
         }
 
         console.log(`SAP Draft [${nroFactura}]: Created successfully with DocEntry ${createDraftRes.data.DocEntry}`);
