@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
@@ -107,9 +108,29 @@ export default function SupportDocumentsPage() {
         }
     };
 
+    const router = useRouter();
+    const [user, setUser] = useState<any>(null);
+
     useEffect(() => {
-        fetchDocuments();
-    }, []);
+        const checkUser = async () => {
+            try {
+                const { data: { session }, error } = await supabase.auth.getSession();
+                if (error || !session) {
+                    if (error) console.error("Error de autenticación:", error.message);
+                    await supabase.auth.signOut();
+                    router.push("/login");
+                } else {
+                    setUser(session.user);
+                    fetchDocuments();
+                }
+            } catch (err) {
+                console.error("Error inesperado en checkUser:", err);
+                router.push("/login");
+            }
+        };
+
+        checkUser();
+    }, [router]);
 
     useEffect(() => {
         setPendingResponsibleUser(null);

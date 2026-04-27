@@ -3,6 +3,7 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { ArrowLeft, RefreshCw, AlertCircle, Search, CheckSquare, Square, Save, Loader2, CheckCircle2, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { RegistroFactura, FacturaPendiente } from "@/types";
@@ -182,10 +183,30 @@ export default function RevisionFacturaDianPage() {
         }
     };
 
+    const router = useRouter();
+    const [user, setUser] = useState<any>(null);
+
     useEffect(() => {
-        fetchFacturas();
-        fetchFacturasPendientes();
-    }, []);
+        const checkUser = async () => {
+            try {
+                const { data: { session }, error } = await supabase.auth.getSession();
+                if (error || !session) {
+                    if (error) console.error("Error de autenticación:", error.message);
+                    await supabase.auth.signOut();
+                    router.push("/login");
+                } else {
+                    setUser(session.user);
+                    fetchFacturas();
+                    fetchFacturasPendientes();
+                }
+            } catch (err) {
+                console.error("Error inesperado en checkUser:", err);
+                router.push("/login");
+            }
+        };
+
+        checkUser();
+    }, [router]);
 
     const filteredResults = useMemo(() => {
         if (!comparisonResult) return [];

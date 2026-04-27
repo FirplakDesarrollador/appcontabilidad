@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
@@ -29,6 +29,21 @@ interface SharePointInvoice {
     [key: string]: any;
 }
 
+function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode, label: string, value?: string, subValue?: string }) {
+    return (
+        <div className="flex items-start gap-4">
+            <div className="h-10 w-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#254153] flex-shrink-0">
+                {React.cloneElement(icon as React.ReactElement, { className: "h-5 w-5" })}
+            </div>
+            <div className="min-w-0">
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-0.5">{label}</p>
+                <p className="text-sm font-bold text-[#254153] truncate">{value || 'N/A'}</p>
+                {subValue && <p className="text-[10px] text-gray-400 mt-0.5 font-medium">{subValue}</p>}
+            </div>
+        </div>
+    );
+}
+
 export default function InvoicesPage() {
     const { toggleSidebar } = useSidebar();
     const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
@@ -49,6 +64,11 @@ export default function InvoicesPage() {
     const [loadingProviders, setLoadingProviders] = useState(false);
     const [syncingId, setSyncingId] = useState<string | null>(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [sapStatus, setSapStatus] = useState<'loading' | 'found' | 'not_found' | 'error' | null>(null);
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
 
 
     const [columnFilters, setColumnFilters] = useState({
@@ -121,6 +141,7 @@ export default function InvoicesPage() {
                 });
 
                 setInvoices(normalize(quickData.items));
+                setHasMore(quickData.items.length >= 500);
                 setLoading(false); // Liberamos la UI rápido
 
                 // ETAPA 2: Si no es un refresh forzado y vinieron del cache, traemos el resto en segundo plano
@@ -129,14 +150,15 @@ export default function InvoicesPage() {
                     const fullResponse = await fetch(`/api/sharepoint/all?offset=500`);
                     const fullData = await fullResponse.json();
                     if (fullData.success) {
+                        const newItems = normalize(fullData.items);
                         setInvoices(prev => {
-                            const newItems = normalize(fullData.items);
                             const combined = [...prev];
                             newItems.forEach(item => {
                                 if (!combined.find(c => c.id === item.id)) combined.push(item);
                             });
                             return combined;
                         });
+                        setHasMore(newItems.length >= 500);
                     }
                 }
             }
@@ -320,6 +342,37 @@ export default function InvoicesPage() {
             console.error("Error al copiar:", err);
             alert("No se pudo copiar el enlace");
         });
+    };
+
+    const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
+        if (!selectedInvoice) return;
+        setActionLoading(action);
+        try {
+            const res = await fetch("/api/sharepoint/update-status", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    itemId: selectedInvoice.id,
+                    status: action
+                })
+            });
+
+            if (res.ok) {
+                setInvoices(prev => prev.map(inv => 
+                    inv.id === selectedInvoice.id ? { ...inv, Gestion_Contabilidad: action } : inv
+                ));
+                setSelectedInvoice(prev => prev ? { ...prev, Gestion_Contabilidad: action } : null);
+                alert(`Factura ${action.toLowerCase()} correctamente`);
+            } else {
+                const data = await res.json();
+                alert(`Error: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Error updating status:", error);
+            alert("Error de conexión");
+        } finally {
+            setActionLoading(null);
+        }
     };
 
     const handleManualSapSync = async (inv: SharePointInvoice) => {
@@ -761,30 +814,33 @@ export default function InvoicesPage() {
                                                     </td>
                                                     <td className="px-6 py-5 text-right">
                                                         <div className="flex items-center justify-end gap-2">
-                                                                <Button
-                                                                    variant="outline"
-                                                                    onClick={() => handleCopyLink(inv)}
-                                                                    className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
-                                                                    title="Copiar Link Público"
-                                                                >
-                                                                    <Copy className="h-3.5 w-3.5" />
-                                                                </Button>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    onClick={() => handleManualSapSync(inv)}
-                                                                    disabled={syncingId === inv.id}
-                                                                    className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50"
-                                                                    title="Sincronizar con SAP Manualmente"
-                                                                >
-                                                                    {syncingId === inv.id ? (
-                                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                                    ) : (
-                                                                        <CloudUpload className="h-3.5 w-3.5" />
-                                                                    )}
-                                                                </Button>
                                                             <Button
                                                                 variant="outline"
-                                                                onClick={() => setSelectedInvoice(inv)}
+                                                                onClick={() => handleCopyLink(inv)}
+                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
+                                                                title="Copiar Link Público"
+                                                            >
+                                                                <Copy className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                onClick={() => handleManualSapSync(inv)}
+                                                                disabled={syncingId === inv.id}
+                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50"
+                                                                title="Sincronizar con SAP Manualmente"
+                                                            >
+                                                                {syncingId === inv.id ? (
+                                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                                ) : (
+                                                                    <CloudUpload className="h-3.5 w-3.5" />
+                                                                )}
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                onClick={() => {
+                                                                    setSelectedInvoice(inv);
+                                                                    setIsModalOpen(true);
+                                                                }}
                                                                 className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
                                                                 title="Ver Detalle"
                                                             >
@@ -804,7 +860,28 @@ export default function InvoicesPage() {
                                 <Button
                                     variant="outline"
                                     className="bg-white border-gray-200 text-gray-600 hover:bg-gray-50 font-medium rounded-xl h-10 px-6"
-                                    onClick={() => fetchInvoices(false)}
+                                    onClick={async () => {
+                                        setLoadingMore(true);
+                                        try {
+                                            const response = await fetch(`/api/sharepoint/all?offset=${invoices.length}`);
+                                            const data = await response.json();
+                                            if (data.success) {
+                                                const normalize = (items: any[]) => items.map((item: any) => ({
+                                                    ...item,
+                                                    Monto: item["Valor total"] ?? item.Valor_total ?? item.Valortotal ?? item.Monto ?? 0,
+                                                    Nit: item.Nit || item.Title || "N/A",
+                                                    Proveedor: item.Proveedor || "N/A",
+                                                    Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
+                                                    Attachments: item.Attachments || !!item.documentos || !!item.fp
+                                                }));
+                                                const newItems = normalize(data.items);
+                                                setInvoices(prev => [...prev, ...newItems]);
+                                                setHasMore(newItems.length >= 500);
+                                            }
+                                        } finally {
+                                            setLoadingMore(false);
+                                        }
+                                    }}
                                     disabled={loadingMore}
                                 >
                                     {loadingMore ? (

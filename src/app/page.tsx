@@ -44,13 +44,21 @@ export default function DashboardPage() {
 
     useEffect(() => {
         const checkUser = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) {
+            try {
+                const { data: { session }, error } = await supabase.auth.getSession();
+                
+                if (error || !session) {
+                    if (error) console.error("Error de autenticación:", error.message);
+                    await supabase.auth.signOut();
+                    router.push("/login");
+                } else {
+                    setUser(session.user);
+                    setLoading(false);
+                    fetchSapInvoices();
+                }
+            } catch (err) {
+                console.error("Error inesperado en checkUser:", err);
                 router.push("/login");
-            } else {
-                setUser(session.user);
-                setLoading(false);
-                fetchSapInvoices();
             }
         };
 
