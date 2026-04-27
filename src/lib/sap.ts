@@ -152,7 +152,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
             nitWithDash = `${cleanNit.substring(0, 8)}-${cleanNit.substring(8)}`;
         }
 
-        const bpUrl = `${baseUrl}/BusinessPartners?$filter=FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}'&$select=CardCode,CardName,FederalTaxID`;
+        const bpUrl = `${baseUrl}/BusinessPartners?$filter=FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}'&$select=CardCode,CardName,FederalTaxID,CardType`;
         const bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
 
         if (bpRes.status !== 200) {
@@ -163,11 +163,22 @@ export async function createSapDraft(payload: SapDraftPayload) {
             throw new Error(`Supplier with NIT ${nit} not found in SAP. Verifique que el proveedor exista y el NIT sea correcto.`);
         }
 
-        // Priorizar coincidencia exacta de FederalTaxID o CardCode
-        const match = bpRes.data.value.find((v: any) => v.FederalTaxID === rawNit || v.FederalTaxID === nitWithDash || v.CardCode === baseNit || v.CardCode === `P${baseNit}`) || bpRes.data.value[0];
+        // Priorizar coincidencia de tipo Proveedor (CardType 'S' o 'sSupplier')
+        const allBPs = bpRes.data.value;
+        const vendorMatch = allBPs.find((v: any) => v.CardType === 'sSupplier' || v.CardType === 'S');
+        
+        // Si hay varios y encontramos un proveedor, usamos ese. Si no, tomamos el primero (comportamiento original pero con log).
+        const match = vendorMatch || allBPs[0];
+        
         const cardCode = match.CardCode;
         const cardName = match.CardName;
-        console.log(`SAP Draft [${nroFactura}]: Found BP ${cardCode} (${cardName}) for NIT ${nit}`);
+        const cardType = match.CardType;
+        
+        console.log(`SAP Draft [${nroFactura}]: Found BP ${cardCode} (${cardName}) type [${cardType}] for NIT ${nit}`);
+        
+        if (cardType !== 'sSupplier' && cardType !== 'S') {
+            console.warn(`SAP Draft [${nroFactura}]: ADVERTENCIA - El Socio de Negocio encontrado no es de tipo Proveedor (Tipo: ${cardType}). SAP podría rechazar el documento.`);
+        }
 
         // 3. BUILD DOCUMENT LINES — Look up ItemCode, Description and TaxCode from Supabase Articulos table
         const draftUrl = process.env.SAP_DRAFTS_URL || `${baseUrl}/Drafts`;
