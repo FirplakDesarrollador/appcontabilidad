@@ -730,11 +730,17 @@ export default function PublicApprovalPage() {
                                                             <div className="grid grid-cols-1 gap-4">
                                                                 <div className="space-y-1.5">
                                                                     <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Centro Costos</label>
-                                                                    <SearchableSelect
-                                                                        options={centrosCostosList.map((c: any) => ({
-                                                                            value: `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`,
-                                                                            label: `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`
-                                                                        }))}
+                                                                     <SearchableSelect
+                                                                        options={(() => {
+                                                                            const uniqueMap = new Map();
+                                                                            centrosCostosList.forEach((c: any) => {
+                                                                                const label = `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`;
+                                                                                if (!uniqueMap.has(label)) {
+                                                                                    uniqueMap.set(label, { value: label, label });
+                                                                                }
+                                                                            });
+                                                                            return Array.from(uniqueMap.values());
+                                                                        })()}
                                                                         value={distribucion.centroCostos}
                                                                         onChange={(val) => {
                                                                             const newDist = [...distribuciones];
@@ -752,6 +758,19 @@ export default function PublicApprovalPage() {
                                                                         <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Cuenta</label>
                                                                         <SearchableSelect
                                                                             options={(() => {
+                                                                                // Caso especial para N/A - No aplica
+                                                                                if (distribucion.centroCostos === "N/A - No aplica") {
+                                                                                    return cuentasList
+                                                                                        .filter(c => 
+                                                                                            c.Título?.includes("22050510") || 
+                                                                                            c.Título?.includes("22100510")
+                                                                                        )
+                                                                                        .map((c: any) => ({
+                                                                                            value: c.Título,
+                                                                                            label: c.Título
+                                                                                        }));
+                                                                                }
+
                                                                                 const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === distribucion.centroCostos);
                                                                                 const prefix = selectedCC?.cuentas_asociadas?.toString();
                                                                                 const filtered = prefix 

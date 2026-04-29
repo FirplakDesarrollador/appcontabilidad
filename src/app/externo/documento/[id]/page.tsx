@@ -402,7 +402,16 @@ export default function PublicDocumentApprovalPage() {
                                         <div key={i} className="p-4 bg-gray-50 rounded-xl space-y-3 relative">
                                             {distribuciones.length > 1 && <button onClick={() => setDistribuciones(distribuciones.filter((_, idx) => idx !== i))} className="absolute top-2 right-2 text-red-500"><Trash2 size={14}/></button>}
                                             <SearchableSelect
-                                                options={centrosCostosList.map(c => ({ value: `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`, label: `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` }))}
+                                                options={(() => {
+                                                    const uniqueMap = new Map();
+                                                    centrosCostosList.forEach((c: any) => {
+                                                        const label = `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`;
+                                                        if (!uniqueMap.has(label)) {
+                                                            uniqueMap.set(label, { value: label, label });
+                                                        }
+                                                    });
+                                                    return Array.from(uniqueMap.values());
+                                                })()}
                                                 value={d.centroCostos}
                                                 onChange={val => {
                                                     const copy = [...distribuciones];
@@ -413,7 +422,31 @@ export default function PublicDocumentApprovalPage() {
                                                 placeholder="Centro Costos..."
                                             />
                                             <SearchableSelect
-                                                options={cuentasList.map(c => ({ value: c.Título, label: c.Título }))}
+                                                options={(() => {
+                                                    // Caso especial para N/A - No aplica
+                                                    if (d.centroCostos === "N/A - No aplica") {
+                                                        return cuentasList
+                                                            .filter(c => 
+                                                                c.Título?.includes("22050510") || 
+                                                                c.Título?.includes("22100510")
+                                                            )
+                                                            .map((c: any) => ({
+                                                                value: c.Título,
+                                                                label: c.Título
+                                                            }));
+                                                    }
+
+                                                    const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === d.centroCostos);
+                                                    const prefix = selectedCC?.cuentas_asociadas?.toString();
+                                                    const filtered = prefix 
+                                                        ? cuentasList.filter(c => c.Título?.startsWith(prefix))
+                                                        : cuentasList;
+                                                    
+                                                    return filtered.map((c: any) => ({
+                                                        value: c.Título,
+                                                        label: c.Título
+                                                    }));
+                                                })()}
                                                 value={d.cuenta}
                                                 onChange={val => {
                                                     const copy = [...distribuciones];
