@@ -809,21 +809,6 @@ export default function PublicApprovalPage() {
                                                                                     const newDist = [...distribuciones];
                                                                                     newDist[index].valor = newValue;
 
-                                                                                    if (newDist.length > 1) {
-                                                                                        const totalFactura = parseSafeFloat(editableTotal);
-                                                                                        // If editing last row, maybe do nothing or balance first?
-                                                                                        // User says "en otro se ajusta", let's always balance the other(s).
-                                                                                        // Standard: Edit any, adjust LAST (if not editing last), 
-                                                                                        // or if editing last, adjust previous.
-                                                                                        const targetIndex = index === newDist.length - 1 ? 0 : newDist.length - 1;
-                                                                                        
-                                                                                        const sumOthers = newDist.reduce((acc, curr, idx) => 
-                                                                                            idx === targetIndex ? acc : acc + parseSafeFloat(curr.valor), 0
-                                                                                        );
-                                                                                        
-                                                                                        const balance = Math.max(0, totalFactura - sumOthers);
-                                                                                        newDist[targetIndex].valor = balance.toFixed(2).replace(/\.00$/, '');
-                                                                                    }
 
                                                                                     setDistribuciones(newDist);
                                                                                 }}
