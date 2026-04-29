@@ -423,17 +423,14 @@ export default function PublicDocumentApprovalPage() {
                                             />
                                             <SearchableSelect
                                                 options={(() => {
-                                                    // Caso especial para N/A - No aplica
-                                                    if (d.centroCostos === "N/A - No aplica") {
-                                                        return cuentasList
-                                                            .filter(c => 
-                                                                c.Título?.includes("22050510") || 
-                                                                c.Título?.includes("22100510")
-                                                            )
-                                                            .map((c: any) => ({
-                                                                value: c.Título,
-                                                                label: c.Título
-                                                            }));
+                                                    const isNoAplica = d.centroCostos?.toLowerCase().includes("no aplica");
+
+                                                    if (isNoAplica) {
+                                                        // Mostrar todas las cuentas para No aplica
+                                                        return cuentasList.map((c: any) => ({
+                                                            value: c.Título,
+                                                            label: c.Título
+                                                        }));
                                                     }
 
                                                     const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === d.centroCostos);
