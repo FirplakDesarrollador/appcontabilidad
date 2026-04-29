@@ -761,11 +761,16 @@ export default function PublicApprovalPage() {
                                                                                 const isNoAplica = distribucion.centroCostos?.toLowerCase().includes("no aplica");
                                                                                 
                                                                                 if (isNoAplica) {
-                                                                                    // Mostrar todas las cuentas para No aplica
-                                                                                    return cuentasList.map((c: any) => ({
-                                                                                        value: c.Título,
-                                                                                        label: c.Título
-                                                                                    }));
+                                                                                    // Mostrar cuentas que empiezan por 0 y 22 para No aplica
+                                                                                    return cuentasList
+                                                                                        .filter((c: any) => 
+                                                                                            c.Título?.startsWith("0") || 
+                                                                                            c.Título?.startsWith("22")
+                                                                                        )
+                                                                                        .map((c: any) => ({
+                                                                                            value: c.Título,
+                                                                                            label: c.Título
+                                                                                        }));
                                                                                 }
 
                                                                                 const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === distribucion.centroCostos);
