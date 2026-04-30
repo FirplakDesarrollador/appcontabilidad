@@ -659,9 +659,9 @@ export default function PublicApprovalPage() {
                                                 <label className="text-sm font-bold text-[#254153]">¿Tiene anticipo o no la factura?</label>
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-3 gap-3">
                                                     {[
-                                                        { id: 'con-anticipo', label: 'Con anticipo', value: 'con anticipo' },
-                                                        { id: 'sin-anticipo', label: 'Sin anticipo', value: 'sin anticipo' },
-                                                        { id: 'con-tarjeta', label: 'Compra con tarjeta', value: 'compra con tarjeta' }
+                                                        { id: 'con-anticipo', label: 'Con anticipo', value: 'Con anticipo' },
+                                                        { id: 'sin-anticipo', label: 'Sin anticipo', value: 'Sin anticipo' },
+                                                        { id: 'con-tarjeta', label: 'Compra con tarjeta', value: 'Compra con tarjeta' }
                                                     ].map((opt) => (
                                                         <label
                                                             key={opt.id}

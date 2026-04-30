@@ -382,7 +382,7 @@ export default function PublicDocumentApprovalPage() {
                                 <div className="space-y-4">
                                     <label className="text-sm font-bold text-[#254153]">¿Tiene anticipo o no el documento?</label>
                                     <div className="grid grid-cols-1 gap-2">
-                                        {['con anticipo', 'sin anticipo', 'compra con tarjeta'].map(v => (
+                                        {['Con anticipo', 'Sin anticipo', 'Compra con tarjeta'].map(v => (
                                             <button key={v} onClick={() => setAnticipo(v)} className={`p-4 rounded-xl border-2 text-xs font-bold capitalize transition-all ${anticipo === v ? 'border-[#254153] bg-[#254153]/5' : 'border-gray-50'}`}>{v}</button>
                                         ))}
                                     </div>

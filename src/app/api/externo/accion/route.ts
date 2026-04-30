@@ -69,11 +69,6 @@ export async function POST(req: NextRequest) {
             }));
             const jsonDist = JSON.stringify(centroCostosArray);
             updatePayload.centro_costos = jsonDist;
-            
-            // Only update tablaCostos if it fits in 255 chars (it's likely a single line text field)
-            if (jsonDist.length <= 255) {
-                updatePayload.tablaCostos = jsonDist;
-            }
         }
 
         // Apply update to SharePoint
