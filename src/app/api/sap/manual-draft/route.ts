@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
                 Nit: String(nitValue),
                 Responsable_de_Autorizar: spItem.Responsable_de_Autorizar,
                 Observaciones: spItem.Observaciones || 'Sincronización manual desde portal de aprobación',
-                centro_costos: spItem.centro_costos || spItem.Centro_x0020_de_x0020_costos || spItem.tablaCostos || "[]",
+                centro_costos: spItem.tablaCostos || spItem.centro_costos || spItem.Centro_x0020_de_x0020_costos || "[]",
                 "Valor total": String(montoValue),
                 tiene_anticipo: spItem.tiene_anticipo === 't' || spItem.tiene_anticipo === true || spItem.tiene_anticipo === 'true' || spItem.Tiene_x0020_anticipo === 't',
                 Consecutivo: spItem.Consecutivo || String(invoiceId)
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
             
             // Normalize to what createSapDraft expects (centroCostos)
             distribuciones = raw.map((d: any) => ({
-                centroCostos: d.centroCosto || d.centro_costos || d.CentroCostos || d.TableCostos || d.centroCostos || '',
+                centroCostos: d.centroCostos || d.centroCosto || d.centro_costos || d.CentroCostos || d.TableCostos || '',
                 cuenta: d.cuenta || d.Cuenta || '',
                 valor: d.valor || d.Valor || d.monto || 0
             }));
@@ -105,9 +105,9 @@ export async function POST(req: NextRequest) {
             
             // LOG ERROR TO SUPABASE
             try {
-                await supabase.from('Log_Errores_SAP').insert({
-                    factura_id: invoiceId,
-                    nro_factura: invoice.Nro_Factura || invoiceId,
+                await supabase.from('log_errores_sap').insert({
+                    factura_id: Number(invoiceId),
+                    nro_factura: invoice.Nro_Factura || String(invoiceId),
                     proveedor: proveedorReal,
                     error_mensaje: sapErr.message,
                     detalles: sapErr

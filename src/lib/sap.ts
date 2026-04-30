@@ -182,17 +182,34 @@ export async function createSapDraft(payload: SapDraftPayload) {
 
         // 3. BUILD DOCUMENT LINES — Look up ItemCode, Description and TaxCode from Supabase Articulos table
         const draftUrl = process.env.SAP_DRAFTS_URL || `${baseUrl}/Drafts`;
-        
         const documentLines: any[] = [];
         
         if (Array.isArray(distribuciones) && distribuciones.length > 0) {
+            // Bulk fetch all relevant Articulos to avoid sequential queries
+            const uniqueAccountCodes = Array.from(new Set(distribuciones.map(d => {
+                const rawAccount = d.cuenta || '';
+                return rawAccount.split(' ')[0].trim();
+            }).filter(code => code)));
+
+            let allArticulos: any[] = [];
+            if (uniqueAccountCodes.length > 0) {
+                const { data, error: articulosError } = await supabase
+                    .from('Articulos')
+                    .select('ItemCode, Dscription, TaxCode, AcctCode')
+                    .in('AcctCode', uniqueAccountCodes);
+                
+                if (articulosError) {
+                    console.error('Error fetching articles from Supabase:', articulosError);
+                } else {
+                    allArticulos = data || [];
+                }
+            }
+
             for (const dist of distribuciones) {
-                // Extract clean account code (e.g. "51100505" from "51100505 - JUNTA DIRECTIVA")
                 const rawAccount = dist.cuenta || '';
                 const accountCode = rawAccount.split(' ')[0].trim();
                 
-                // Extract clean cost center code (e.g. "GA-FICOG" from "GA-FICOG - FINANZAS")
-                const rawCC = String(dist.centroCostos || '').trim();
+                const rawCC = String(dist.centroCostos || dist.centroCosto || '').trim();
                 let costCenter = "";
                 
                 if (rawCC.includes(' - ')) {
@@ -201,52 +218,20 @@ export async function createSapDraft(payload: SapDraftPayload) {
                     costCenter = rawCC;
                 }
 
-                // Si es "N / A", lo dejamos como null para no enviarlo a SAP
-                if (costCenter === "N / A" || costCenter === "N/A" || !costCenter) {
+                if (costCenter === "N / A" || costCenter === "N/A" || !costCenter || costCenter.toLowerCase().includes("no aplica")) {
                     costCenter = "";
                 }
-                
-                console.log(`SAP Draft [${nroFactura}]: Mapping line with account ${dist.cuenta} and CostingCode (Dim 1): [${costCenter}]`);
 
-                // Look up ItemCode, Description and TaxCode from Supabase Articulos table by AcctCode
-                let itemCode = '';
-                let itemDescription = '';
-                let taxCode = 'IVADEX';
-                
-                if (accountCode) {
-                    try {
-                        console.log(`SAP Draft [${nroFactura}]: Buscando mapeo exacto para cuenta [${accountCode}]...`);
-                        
-                        // Buscamos en la tabla Articulos (Proyecto: zohdtksgxhbheaftgmsi)
-                        // Intentamos buscarlo como número y como string por si acaso
-                        const { data: articuloRows, error: articuloError } = await supabase
-                            .from('Articulos')
-                            .select('ItemCode, Dscription, TaxCode')
-                            .or(`AcctCode.eq.${accountCode},AcctCode.eq.${parseInt(accountCode, 10) || 0}`)
-                            .limit(1);
-                        
-                        if (!articuloError && articuloRows && articuloRows.length > 0) {
-                            const articuloData = articuloRows[0];
-                            itemCode = articuloData.ItemCode;
-                            itemDescription = articuloData.Dscription;
-                            taxCode = articuloData.TaxCode || taxCode;
-                            console.log(`   ✅ MAPEADO: ${itemCode} - ${itemDescription}`);
-                        } else {
-                            console.error(`   ❌ ERROR: La cuenta ${accountCode} NO EXISTE en la tabla Articulos de Supabase.`);
-                            // NO ponemos artículos "cualquiera". Si no está, que falle SAP con el error real.
-                            itemCode = ''; 
-                            itemDescription = `CUENTA ${accountCode} SIN CONFIGURAR EN SUPABASE`;
-                        }
-                    } catch (lookupErr: any) {
-                        console.error(`   ❌ ERROR CRITICO en consulta Supabase: ${lookupErr.message}`);
-                    }
-                }
+                // Find mapped article from bulk result
+                const mappedArticulo = allArticulos.find(a => String(a.AcctCode) === accountCode);
+                const itemCode = mappedArticulo?.ItemCode || "";
+                const itemDescription = mappedArticulo?.Dscription || `${docTypeDesc} ${nroFactura}`;
+                const taxCode = mappedArticulo?.TaxCode || "IVADEX";
 
                 documentLines.push({
                     ItemCode: itemCode || undefined,
-                    ItemDescription: itemDescription || `${docTypeDesc} ${nroFactura}`,
+                    ItemDescription: itemDescription,
                     AccountCode: accountCode,
-                    // Solo enviar centros de costos si tienen un valor real
                     ...(costCenter ? { 
                         CostingCode: costCenter,
                         U_CentroCostos: costCenter

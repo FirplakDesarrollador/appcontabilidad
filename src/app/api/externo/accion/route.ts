@@ -56,7 +56,9 @@ export async function POST(req: NextRequest) {
                 cuenta: d.cuenta || "",
                 valor: d.valor ? String(d.valor) : "0"
             }));
-            updatePayload.centro_costos = JSON.stringify(centroCostosArray);
+            const jsonDist = JSON.stringify(centroCostosArray);
+            updatePayload.centro_costos = jsonDist;
+            updatePayload.tablaCostos = jsonDist; // Fallback for longer content
         }
 
         // Apply update to SharePoint
@@ -75,11 +77,15 @@ export async function POST(req: NextRequest) {
             if (observaciones) {
                 supabaseUpdate.Observaciones = observaciones;
             }
+            if (updatePayload.centro_costos) {
+                supabaseUpdate.centro_costos = updatePayload.centro_costos;
+                supabaseUpdate.tablaCostos = updatePayload.tablaCostos;
+            }
 
             await supabase
                 .from('Registro_Facturas')
                 .update(supabaseUpdate)
-                .eq('ID', itemId);
+                .eq('ID', Number(itemId));
             
             console.log(`Supabase cache updated for item ${itemId}`);
         } catch (supaErr) {
@@ -114,9 +120,9 @@ export async function POST(req: NextRequest) {
 
                 // LOG ERROR TO SUPABASE
                 try {
-                    await supabase.from('Log_Errores_SAP').insert({
-                        factura_id: itemId,
-                        nro_factura: nroFactura || itemId,
+                    await supabase.from('log_errores_sap').insert({
+                        factura_id: Number(itemId),
+                        nro_factura: nroFactura || String(itemId),
                         proveedor: proveedorReal,
                         error_mensaje: sapErr.message,
                         detalles: sapErr

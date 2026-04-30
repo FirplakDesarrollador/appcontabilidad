@@ -977,7 +977,7 @@ export default function InvoicesPage() {
                                         <ModalInfoItem icon={<User />} label="Proveedor" value={selectedInvoice.Proveedor} />
                                         <ModalInfoItem icon={<Landmark />} label="NIT" value={selectedInvoice.Nit} />
                                         <ModalInfoItem icon={<Calendar />} label="Fecha" value={selectedInvoice.FechaAprobacion || selectedInvoice.Creado ? new Date(selectedInvoice.FechaAprobacion || selectedInvoice.Creado!).toLocaleDateString() : 'N/A'} />
-                                        <ModalInfoItem icon={<Hash />} label="ID de Registro" value={selectedInvoice.ID.toString()} />
+                                        <ModalInfoItem icon={<Hash />} label="ID de Registro" value={String(selectedInvoice.ID ?? selectedInvoice.id ?? 'N/A')} />
                                         <div className="col-span-full pt-4 border-t border-gray-50">
                                             <ModalInfoItem icon={<User />} label="Responsable" value={selectedInvoice.Responsable_de_Autorizar} subValue="Autoridad asignada para esta gestión" />
                                         </div>
