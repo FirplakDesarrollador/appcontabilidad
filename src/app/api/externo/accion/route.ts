@@ -15,6 +15,13 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
         }
 
+        // Clean valor if present (Number field in SP)
+        let cleanValor: number | null = null;
+        if (valor) {
+            const numericValue = String(valor).replace(/[^0-9]/g, '');
+            cleanValor = numericValue ? Number(numericValue) : null;
+        }
+
         const client = await getGraphClient();
 
         // 1. Resolve Site ID
@@ -50,6 +57,10 @@ export async function POST(req: NextRequest) {
             updatePayload.tiene_anticipo = anticipo;
         }
 
+        if (cleanValor !== null) {
+            updatePayload.Valortotal = cleanValor;
+        }
+
         if (distribuciones && Array.isArray(distribuciones) && distribuciones.length > 0) {
             const centroCostosArray = distribuciones.map((d: any) => ({
                 centroCosto: d.centroCosto || d.centroCostos || "",
@@ -58,12 +69,22 @@ export async function POST(req: NextRequest) {
             }));
             const jsonDist = JSON.stringify(centroCostosArray);
             updatePayload.centro_costos = jsonDist;
-            updatePayload.tablaCostos = jsonDist; // Fallback for longer content
+            
+            // Only update tablaCostos if it fits in 255 chars (it's likely a single line text field)
+            if (jsonDist.length <= 255) {
+                updatePayload.tablaCostos = jsonDist;
+            }
         }
 
         // Apply update to SharePoint
-        await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
-        console.log(`SharePoint update for item ${itemId} to ${action} successful`);
+        console.log(`Sending PATCH to SharePoint item ${itemId} in list ${listId}:`, JSON.stringify(updatePayload, null, 2));
+        try {
+            await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
+            console.log(`SharePoint update for item ${itemId} to ${action} successful`);
+        } catch (spErr: any) {
+            console.error('SharePoint Patch Error Details:', JSON.stringify(spErr.body || spErr, null, 2));
+            throw new Error(`Error al actualizar SharePoint: ${spErr.message || 'Invalid request'}`);
+        }
 
         // Sync to Supabase for immediate feedback
         try {
@@ -74,12 +95,15 @@ export async function POST(req: NextRequest) {
             if (updatePayload.FechaAprobacion) {
                 supabaseUpdate.FechaAprobacion = updatePayload.FechaAprobacion;
             }
+            if (cleanValor !== null) {
+                supabaseUpdate["Valor total"] = cleanValor;
+            }
             if (observaciones) {
                 supabaseUpdate.Observaciones = observaciones;
             }
             if (updatePayload.centro_costos) {
                 supabaseUpdate.centro_costos = updatePayload.centro_costos;
-                supabaseUpdate.tablaCostos = updatePayload.tablaCostos;
+                supabaseUpdate.tablaCostos = jsonDist; // Keep full version in Supabase
             }
 
             await supabase
