@@ -11,8 +11,11 @@ const msalConfig = {
 
 const cca = new msal.ConfidentialClientApplication(msalConfig);
 
-// Cache for Site IDs to avoid redundant API calls
+// Cache for Site IDs and Users to avoid redundant API calls
 const siteIdCache: Record<string, string> = {};
+let globalUserMap: Map<string, string> | null = null;
+let lastUserFetch: number = 0;
+const USER_CACHE_TTL = 1000 * 60 * 30; // 30 minutes
 
 async function getAccessToken() {
     const tokenRequest = {
@@ -121,7 +124,7 @@ export async function getSharePointInvoices(page: number = 1, pageSize: number =
     }
 }
 
-export async function fetchAllSharePointItems(listName: string = 'Registro_de_Facturas') {
+export async function fetchAllSharePointItems(listName: string = 'Registro_de_Facturas', limit: number = 0, filter: string = '') {
     try {
         const client = await getGraphClient();
 
@@ -136,32 +139,47 @@ export async function fetchAllSharePointItems(listName: string = 'Registro_de_Fa
         if (!list) throw new Error(`SharePoint list "${listName}" not found`);
         const listId = list.id;
 
-        // 3. Fetch the "User Information List" to resolve IDs to names
-        const userMap = new Map<string, string>();
-        try {
-            let userNextLink: string | null = `/sites/${siteId}/lists('User Information List')/items?$select=id,fields&$expand=fields($select=Title)&$top=500`;
-            while (userNextLink) {
-                const userResponse = await client.api(userNextLink).get();
-                for (const u of userResponse.value) {
-                    if (u.fields?.Title) {
-                        userMap.set(String(u.id), u.fields.Title);
+        // 3. Fetch the "User Information List" to resolve IDs to names (with caching)
+        const now = Date.now();
+        if (!globalUserMap || (now - lastUserFetch > USER_CACHE_TTL)) {
+            const userMap = new Map<string, string>();
+            try {
+                console.log("[SharePoint] Fetching User Information List...");
+                let userNextLink: string | null = `/sites/${siteId}/lists('User Information List')/items?$select=id,fields&$expand=fields($select=Title)&$top=500`;
+                while (userNextLink) {
+                    const userResponse = await client.api(userNextLink).get();
+                    for (const u of userResponse.value) {
+                        if (u.fields?.Title) {
+                            userMap.set(String(u.id), u.fields.Title);
+                        }
                     }
+                    userNextLink = userResponse['@odata.nextLink'] ? userResponse['@odata.nextLink'].split('v1.0')[1] : null;
                 }
-                userNextLink = userResponse['@odata.nextLink'] ? userResponse['@odata.nextLink'].split('v1.0')[1] : null;
+                globalUserMap = userMap;
+                lastUserFetch = now;
+                console.log(`[SharePoint] Loaded ${userMap.size} users into cache`);
+            } catch (e: any) {
+                console.warn('[SharePoint] Could not load User Information List:', e.message);
+                if (!globalUserMap) globalUserMap = new Map();
             }
-            console.log(`[SharePoint] Loaded ${userMap.size} users for lookup resolution`);
-        } catch (e: any) {
-            console.warn('[SharePoint] Could not load User Information List:', e.message);
+        }
+        const userMap = globalUserMap;
+
+        // 4. Iterative Fetch of list items
+        let allItems: any[] = [];
+        const top = limit > 0 ? Math.min(limit, 500) : 500;
+        let nextLink: string | null = `/sites/${siteId}/lists/${listId}/items?expand=fields&top=${top}`;
+        
+        if (filter) {
+            nextLink += `&filter=${encodeURIComponent(filter)}`;
         }
 
-        // 4. Iterative Fetch of all list items
-        let allItems: any[] = [];
-        let nextLink: string | null = `/sites/${siteId}/lists/${listId}/items?expand=fields&top=500`;
-
-        console.log(`Starting full SharePoint fetch for list: ${listName}...`);
+        console.log(`Starting SharePoint fetch for list: ${listName}, limit: ${limit || 'none'}, filter: ${filter || 'none'}...`);
 
         while (nextLink) {
-            const response = await client.api(nextLink).get();
+            const response = await client.api(nextLink)
+                .header('Prefer', 'HonorNonIndexedQueriesWarningMayFailRandomly')
+                .get();
             const items = response.value.map((item: any) => {
                 const fields = item.fields || {};
                 
@@ -178,6 +196,13 @@ export async function fetchAllSharePointItems(listName: string = 'Registro_de_Fa
                 };
             });
             allItems = [...allItems, ...items];
+
+            // Check if we reached the limit
+            if (limit > 0 && allItems.length >= limit) {
+                allItems = allItems.slice(0, limit);
+                break;
+            }
+
             nextLink = response['@odata.nextLink'] ? response['@odata.nextLink'].split('v1.0')[1] : null;
             console.log(`Fetched ${allItems.length} items so far...`);
         }

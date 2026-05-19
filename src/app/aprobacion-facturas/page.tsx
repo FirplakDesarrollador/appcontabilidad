@@ -33,7 +33,7 @@ function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode
     return (
         <div className="flex items-start gap-4">
             <div className="h-10 w-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#254153] flex-shrink-0">
-                {React.cloneElement(icon as React.ReactElement, { className: "h-5 w-5" })}
+                {React.cloneElement(icon as React.ReactElement<any>, { className: "h-5 w-5" })}
             </div>
             <div className="min-w-0">
                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-0.5">{label}</p>
@@ -46,7 +46,21 @@ function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode
 
 export default function InvoicesPage() {
     const { toggleSidebar } = useSidebar();
-    const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
+    const [pendingInvoices, setPendingInvoices] = useState<SharePointInvoice[]>([]);
+    const [processedInvoices, setProcessedInvoices] = useState<SharePointInvoice[]>([]);
+    const [pendingCount, setPendingCount] = useState(0);
+    const [processedCount, setProcessedCount] = useState(0);
+    const [hasMoreProcessed, setHasMoreProcessed] = useState(true);
+    const [loadingMoreProcessed, setLoadingMoreProcessed] = useState(false);
+
+    const invoices = useMemo(() => {
+        const combined = [...pendingInvoices];
+        processedInvoices.forEach(item => {
+            if (!combined.some(c => c.id === item.id)) combined.push(item);
+        });
+        return combined.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+    }, [pendingInvoices, processedInvoices]);
+
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const [activeTab, setActiveTab] = useState<'pending' | 'processed'>('pending');
@@ -65,8 +79,6 @@ export default function InvoicesPage() {
     const [syncingId, setSyncingId] = useState<string | null>(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [hasMore, setHasMore] = useState(false);
-    const [loadingMore, setLoadingMore] = useState(false);
     const [sapStatus, setSapStatus] = useState<'loading' | 'found' | 'not_found' | 'error' | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -107,66 +119,110 @@ export default function InvoicesPage() {
         };
     }, [invoices]);
 
+    const [dataSource, setDataSource] = useState<'cache' | 'sharepoint' | 'loading'>('loading');
+
+    const normalizeInvoices = (items: any[]) => items.map((item: any) => {
+        let documentInfo = null;
+        if (item.documentos || item.fp) {
+            documentInfo = {
+                fileName: "Factura.pdf",
+                serverRelativeUrl: item.documentos || item.fp
+            };
+        }
+        return {
+            ...item,
+            id: item.id || item.ID || String(Math.random()),
+            Monto: item["Valor total"] ?? item.Valor_total ?? item.Valortotal ?? item.Monto ?? 0,
+            Nit: item.Nit || item.Title || "N/A",
+            Proveedor: item.Proveedor || "N/A",
+            Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
+            FechaAprobacion: item.FechaAprobacion || null,
+            documentInfo,
+            Attachments: item.Attachments || !!item.documentos || !!item.fp
+        };
+    });
+
     const fetchInvoices = async (refresh: boolean = false) => {
         try {
             setLoading(true);
+            setDataSource('loading');
             
-            // ETAPA 1: Carga rápida de las primeras 500 facturas
             const params = new URLSearchParams();
             if (refresh) params.append('refresh', 'true');
-            if (!refresh) params.append('limit', '500');
+            params.append('pending', 'true'); 
             
-            const quickResponse = await fetch(`/api/sharepoint/all?${params.toString()}`);
-            const quickData = await quickResponse.json();
+            const response = await fetch(`/api/sharepoint/all?${params.toString()}`);
+            const data = await response.json();
 
-            if (quickData.success) {
-                const normalize = (items: any[]) => items.map((item: any) => {
-                    let documentInfo = null;
-                    if (item.documentos || item.fp) {
-                        documentInfo = {
-                            fileName: "Factura.pdf",
-                            serverRelativeUrl: item.documentos || item.fp
-                        };
-                    }
-                    return {
-                        ...item,
-                        Monto: item["Valor total"] ?? item.Valor_total ?? item.Valortotal ?? item.Monto ?? 0,
-                        Nit: item.Nit || item.Title || "N/A",
-                        Proveedor: item.Proveedor || "N/A",
-                        Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
-                        FechaAprobacion: item.FechaAprobacion || null,
-                        documentInfo,
-                        Attachments: item.Attachments || !!item.documentos || !!item.fp
-                    };
-                });
-
-                setInvoices(normalize(quickData.items));
-                setHasMore(quickData.items.length >= 500);
-                setLoading(false); // Liberamos la UI rápido
-
-                // ETAPA 2: Si no es un refresh forzado y vinieron del cache, traemos el resto en segundo plano
-                if (!refresh && quickData.source === 'cache') {
-                    console.log("Fetching rest of invoices in background...");
-                    const fullResponse = await fetch(`/api/sharepoint/all?offset=500`);
-                    const fullData = await fullResponse.json();
-                    if (fullData.success) {
-                        const newItems = normalize(fullData.items);
-                        setInvoices(prev => {
-                            const combined = [...prev];
-                            newItems.forEach(item => {
-                                if (!combined.find(c => c.id === item.id)) combined.push(item);
-                            });
-                            return combined;
-                        });
-                        setHasMore(newItems.length >= 500);
-                    }
-                }
+            if (data.success) {
+                setPendingInvoices(normalizeInvoices(data.items));
+                if (data.pendingCount !== undefined) setPendingCount(data.pendingCount);
+                if (data.processedCount !== undefined) setProcessedCount(data.processedCount);
+                setDataSource(data.source);
             }
         } catch (error) {
             console.error("Error fetching invoices:", error);
+        } finally {
             setLoading(false);
         }
     };
+
+    const fetchHistory = async (reset: boolean = false) => {
+        if (!reset && processedInvoices.length > 0) return; // Already loaded history
+        
+        try {
+            setLoading(true);
+            const response = await fetch(`/api/sharepoint/all?processed=true&offset=0&limit=50`); 
+            const data = await response.json();
+
+            if (data.success) {
+                const normalized = normalizeInvoices(data.items);
+                setProcessedInvoices(normalized);
+                if (data.pendingCount !== undefined) setPendingCount(data.pendingCount);
+                if (data.processedCount !== undefined) setProcessedCount(data.processedCount);
+                setHasMoreProcessed(normalized.length === 50);
+            }
+        } catch (error) {
+            console.error("Error fetching history:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadMoreHistory = async () => {
+        if (loadingMoreProcessed || !hasMoreProcessed) return;
+        
+        setLoadingMoreProcessed(true);
+        try {
+            const currentOffset = processedInvoices.length;
+            const response = await fetch(`/api/sharepoint/all?processed=true&offset=${currentOffset}&limit=50`);
+            const data = await response.json();
+
+            if (data.success) {
+                const normalized = normalizeInvoices(data.items);
+                setProcessedInvoices(prev => {
+                    const combined = [...prev];
+                    normalized.forEach(item => {
+                        if (!combined.some(c => c.id === item.id)) combined.push(item);
+                    });
+                    return combined;
+                });
+                setHasMoreProcessed(normalized.length === 50);
+                if (data.pendingCount !== undefined) setPendingCount(data.pendingCount);
+                if (data.processedCount !== undefined) setProcessedCount(data.processedCount);
+            }
+        } catch (error) {
+            console.error("Error loading more history:", error);
+        } finally {
+            setLoadingMoreProcessed(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'processed') {
+            fetchHistory();
+        }
+    }, [activeTab]);
 
     useEffect(() => {
         fetchInvoices();
@@ -221,12 +277,16 @@ export default function InvoicesPage() {
 
             if (res.ok) {
                 // Update local state
-                const updatedInvoices = invoices.map(inv =>
+                setPendingInvoices(prev => prev.map(inv =>
                     inv.id === selectedInvoice.id
                         ? { ...inv, Responsable_de_Autorizar: pendingResponsibleUser.name }
                         : inv
-                );
-                setInvoices(updatedInvoices);
+                ));
+                setProcessedInvoices(prev => prev.map(inv =>
+                    inv.id === selectedInvoice.id
+                        ? { ...inv, Responsable_de_Autorizar: pendingResponsibleUser.name }
+                        : inv
+                ));
                 setSelectedInvoice({ ...selectedInvoice, Responsable_de_Autorizar: pendingResponsibleUser.name });
                 setIsEditingResponsible(false);
                 setPendingResponsibleUser(null);
@@ -358,7 +418,10 @@ export default function InvoicesPage() {
             });
 
             if (res.ok) {
-                setInvoices(prev => prev.map(inv => 
+                setPendingInvoices(prev => prev.map(inv => 
+                    inv.id === selectedInvoice.id ? { ...inv, Gestion_Contabilidad: action } : inv
+                ));
+                setProcessedInvoices(prev => prev.map(inv => 
                     inv.id === selectedInvoice.id ? { ...inv, Gestion_Contabilidad: action } : inv
                 ));
                 setSelectedInvoice(prev => prev ? { ...prev, Gestion_Contabilidad: action } : null);
@@ -525,8 +588,8 @@ export default function InvoicesPage() {
                         >
                             <h2 className="text-3xl font-extrabold text-[#254153]">Gestión de Facturas</h2>
                             <p className="text-gray-500 mt-1 font-medium flex items-center gap-2">
-                                <span className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-                                Datos cargados directamente desde SharePoint Online
+                                <span className={`h-2 w-2 rounded-full animate-pulse ${dataSource === 'cache' ? 'bg-emerald-500' : dataSource === 'sharepoint' ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                                {dataSource === 'cache' ? 'Cargado desde Caché (Alta Velocidad)' : dataSource === 'sharepoint' ? 'Cargado desde SharePoint Online' : 'Cargando datos...'}
                             </p>
                         </motion.div>
 
@@ -563,21 +626,21 @@ export default function InvoicesPage() {
                         {[
                             {
                                 label: "Total Facturas",
-                                value: invoices.length,
+                                value: pendingCount + processedCount,
                                 icon: Paperclip,
                                 color: "bg-blue-500",
                                 bg: "bg-blue-50"
                             },
                             {
                                 label: "Pendientes por Aprobar",
-                                value: invoices.filter(isPending).length,
+                                value: pendingCount,
                                 icon: RefreshCw,
                                 color: "bg-amber-500",
                                 bg: "bg-amber-50"
                             },
                             {
                                 label: "Histórico Procesadas",
-                                value: invoices.filter(isProcessed).length,
+                                value: processedCount,
                                 icon: Bell,
                                 color: "bg-emerald-500",
                                 bg: "bg-emerald-50"
@@ -613,9 +676,9 @@ export default function InvoicesPage() {
                         >
                             <RefreshCw className={`h-4 w-4 ${activeTab === 'pending' ? 'animate-spin-slow' : ''}`} />
                             Por Aprobar
-                            {invoices.filter(isPending).length > 0 && (
+                            {pendingCount > 0 && (
                                 <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'pending' ? "bg-white/20" : "bg-gray-200"}`}>
-                                    {invoices.filter(isPending).length}
+                                    {pendingCount}
                                 </span>
                             )}
                         </button>
@@ -627,9 +690,9 @@ export default function InvoicesPage() {
                         >
                             <Bell className="h-4 w-4" />
                             Histórico
-                            {invoices.filter(isProcessed).length > 0 && (
+                            {processedCount > 0 && (
                                 <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'processed' ? "bg-white/20" : "bg-gray-200"}`}>
-                                    {invoices.filter(isProcessed).length}
+                                    {processedCount}
                                 </span>
                             )}
                         </button>
@@ -855,36 +918,15 @@ export default function InvoicesPage() {
                                 </tbody>
                             </table>
                         </div>
-                        {hasMore && invoices.length > 0 && !loading && (
+                        {activeTab === 'processed' && hasMoreProcessed && processedInvoices.length > 0 && !loading && (
                             <div className="p-4 border-t border-gray-100 flex justify-center">
                                 <Button
                                     variant="outline"
                                     className="bg-white border-gray-200 text-gray-600 hover:bg-gray-50 font-medium rounded-xl h-10 px-6"
-                                    onClick={async () => {
-                                        setLoadingMore(true);
-                                        try {
-                                            const response = await fetch(`/api/sharepoint/all?offset=${invoices.length}`);
-                                            const data = await response.json();
-                                            if (data.success) {
-                                                const normalize = (items: any[]) => items.map((item: any) => ({
-                                                    ...item,
-                                                    Monto: item["Valor total"] ?? item.Valor_total ?? item.Valortotal ?? item.Monto ?? 0,
-                                                    Nit: item.Nit || item.Title || "N/A",
-                                                    Proveedor: item.Proveedor || "N/A",
-                                                    Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
-                                                    Attachments: item.Attachments || !!item.documentos || !!item.fp
-                                                }));
-                                                const newItems = normalize(data.items);
-                                                setInvoices(prev => [...prev, ...newItems]);
-                                                setHasMore(newItems.length >= 500);
-                                            }
-                                        } finally {
-                                            setLoadingMore(false);
-                                        }
-                                    }}
-                                    disabled={loadingMore}
+                                    onClick={loadMoreHistory}
+                                    disabled={loadingMoreProcessed}
                                 >
-                                    {loadingMore ? (
+                                    {loadingMoreProcessed ? (
                                         <>
                                             <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                                             Cargando más...
@@ -901,7 +943,7 @@ export default function InvoicesPage() {
                     {!loading && filteredInvoices.length > 0 && (
                         <div className="flex items-center justify-between pt-4">
                             <div className="text-sm text-gray-400 font-medium italic">
-                                Mostrando <span className="text-[#254153] font-bold">{filteredInvoices.length}</span> registros de {activeTab === 'pending' ? 'pestaña Por Aprobar' : 'pestaña Histórico'}
+                                Mostrando <span className="text-[#254153] font-bold">{filteredInvoices.length}</span> registros de {activeTab === 'pending' ? `${pendingCount} pendientes` : `${processedCount} procesados`}
                             </div>
                         </div>
                     )}

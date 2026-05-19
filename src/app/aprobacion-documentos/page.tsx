@@ -80,33 +80,74 @@ export default function SupportDocumentsPage() {
         };
     }, [documents]);
 
-    const fetchDocuments = async () => {
+    const [dataSource, setDataSource] = useState<'cache' | 'sharepoint' | 'loading'>('loading');
+
+    const normalizeDocuments = (items: any[]) => items.map((item: any) => ({
+        ...item,
+        id: item.id || item.ID || String(Math.random()),
+        Nro_Factura: item.consecutivo || item.Consecutivo_Doc_Soporte || "S/N",
+        Proveedor: item.proveedor || item.tsic || "N/A",
+        Nit: item.nit || item.Title || "N/A",
+        Monto: item.valor_total || item.Valortotal || 0,
+        Responsable_de_Autorizar: item.responsable_nombre || item.Responsable_de_Autorizar || "Sin asignar",
+        Aprobacion_Doliente: item.aprobacion_doliente || item.AprobacionDoliente || "Pendiente",
+        Gestion_Contabilidad: item.gestion_contabilidad || item.Gestion_Contabilidad || "Pendiente",
+        Created: item.fecha_creacion || item.Created || item.created_at
+    }));
+
+    const fetchDocuments = async (refresh = false) => {
         try {
             setLoading(true);
-            const response = await fetch(`/api/sharepoint/documentos`);
+            setDataSource('loading');
+            
+            const params = new URLSearchParams();
+            if (refresh) params.append('refresh', 'true');
+            params.append('pending', 'true'); 
+            
+            const response = await fetch(`/api/sharepoint/documentos/all?${params.toString()}`);
             const data = await response.json();
 
             if (data.success) {
-                const normalizedItems = data.items.map((item: any) => {
-                    return {
-                        ...item,
-                        Nro_Factura: item.Consecutivo_Doc_Soporte ? String(item.Consecutivo_Doc_Soporte) : "S/N",
-                        Proveedor: item.tsic || "N/A",
-                        Nit: item.Title || "N/A",
-                        Monto: item.Valortotal || 0,
-                        Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
-                        Aprobacion_Doliente: item.AprobacionDoliente || "Pendiente",
-                        Gestion_Contabilidad: item.Gestion_Contabilidad || "Pendiente"
-                    };
-                });
-                setDocuments(normalizedItems);
+                setDocuments(normalizeDocuments(data.items));
+                setDataSource(data.source);
             }
         } catch (error) {
-            console.error("Error fetching SharePoint support documents:", error);
+            console.error("Error fetching documents:", error);
         } finally {
             setLoading(false);
         }
     };
+
+    const fetchHistory = async () => {
+        if (documents.some(doc => !isPending(doc))) return; // Already loaded history
+        
+        try {
+            setLoading(true);
+            const response = await fetch(`/api/sharepoint/documentos/all?limit=2000`); 
+            const data = await response.json();
+
+            if (data.success) {
+                const normalized = normalizeDocuments(data.items);
+                setDocuments(prev => {
+                    const combined = [...prev];
+                    normalized.forEach((item: any) => {
+                        if (!combined.some(c => c.id === item.id)) combined.push(item);
+                    });
+                    return combined.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+                });
+            }
+        } catch (error) {
+            console.error("Error fetching history:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'processed') {
+            fetchHistory();
+        }
+    }, [activeTab]);
 
     const router = useRouter();
     const [user, setUser] = useState<any>(null);
@@ -121,7 +162,7 @@ export default function SupportDocumentsPage() {
                     router.push("/login");
                 } else {
                     setUser(session.user);
-                    fetchDocuments();
+                    fetchDocuments(); // Usará el nuevo límite de 100 por defecto para velocidad máxima
                 }
             } catch (err) {
                 console.error("Error inesperado en checkUser:", err);
@@ -407,8 +448,8 @@ export default function SupportDocumentsPage() {
                         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
                             <h2 className="text-3xl font-extrabold text-[#254153]">Gestión de Documento Soporte</h2>
                             <p className="text-gray-500 mt-1 font-medium flex items-center gap-2">
-                                <span className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-                                Lista: Documento_Soporte de SharePoint
+                                <span className={`h-2 w-2 rounded-full animate-pulse ${dataSource === 'cache' ? 'bg-emerald-500' : dataSource === 'sharepoint' ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                                {dataSource === 'cache' ? 'Cargado desde Caché (Alta Velocidad)' : dataSource === 'sharepoint' ? 'Cargado desde SharePoint Online' : 'Cargando datos...'}
                             </p>
                         </motion.div>
 
@@ -420,9 +461,9 @@ export default function SupportDocumentsPage() {
                                 <ShieldCheck className="h-4 w-4" />
                                 <span className="hidden lg:inline">Aprobación Automática</span>
                             </button>
-                            <Button variant="outline" onClick={() => fetchDocuments()} disabled={loading} className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm">
-                                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                                Actualizar
+                            <Button variant="outline" onClick={() => fetchDocuments(true)} disabled={loading} className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm">
+                                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                                Sincronizar SharePoint
                             </Button>
                         </div>
                     </div>
