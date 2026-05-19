@@ -96,19 +96,19 @@ export async function POST(req: Request) {
                 Responsable_de_Autorizar: fields.Responsable_de_Autorizar ?? null,
                 FechaAprobacion: fields.FechaAprobacion ?? null,
                 centro_costos: fields.centro_costos ?? null,
-                "Valor total": fields["Valor total"] ?? fields.Valor_total ?? null,
+                Valor_total: fields["Valor_x0020_total"] ?? fields["Valor total"] ?? fields.Valor_total ?? null,
                 tiene_anticipo: fields.tiene_anticipo ?? null,
                 Creado: fields.Created ?? fields.Creado ?? null,
-                "Creado por": fields["Creado por"] ?? fields.Creado_por ?? null,
+                Creado_por: fields.AuthorLookupId ? String(fields.AuthorLookupId) : (fields["Creado por"] ?? fields.Creado_por ?? null),
                 CUFE: fields.CUFE ?? null,
                 InformeRecepcion: fields.InformeRecepcion ?? null,
                 FechaProcesado: fields.FechaProcesado ?? null,
                 DigitadoPor: fields.DigitadoPor ?? null,
-                "Datos adjuntos": hasAttachmentsFlag ? 1 : 0, // Store as number for filtering
+                Datos_adjuntos: hasAttachmentsFlag ? 1 : 0,
                 tablaCostos: fields.tablaCostos ?? null,
                 Procesado: fields.Procesado != null ? String(fields.Procesado) : null,
                 Modificado: fields.Modified ?? fields.Modificado ?? null,
-                "Modificado por": (fields["Modificado por"] || fields.Modificado_por) ?? null,
+                Modificado_por: fields.EditorLookupId ? String(fields.EditorLookupId) : (fields["Modificado por"] ?? fields.Modificado_por ?? null),
                 fp: fields.fp ?? null,
             };
 

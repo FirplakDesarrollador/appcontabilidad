@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
         // 1. Fetch invoice data
         const { data: invoice, error: fetchError } = await supabase
             .from('Registro_Facturas')
-            .select('Nro_Factura, Proveedor, Nit, Responsable_de_Autorizar, Observaciones, centro_costos, "Valor total", tiene_anticipo')
+            .select('Nro_Factura, Proveedor, Nit, Responsable_de_Autorizar, Observaciones, centro_costos, Valor_total, tiene_anticipo')
             .eq('ID', id)
             .single();
 
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
                 try {
                     sapResult = await createSapDraft({
                         nit: invoice.Nit!,
-                        total: invoice["Valor total"]!,
+                        total: invoice["Valor_total"]!,
                         distribuciones: distribuciones,
                         anticipo: invoice.tiene_anticipo ? 't' : 'f',
                         observations: invoice.Observaciones || 'Aprobado vía link rápido',

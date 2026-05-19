@@ -132,7 +132,7 @@ export default function InvoicesPage() {
         return {
             ...item,
             id: item.id || item.ID || String(Math.random()),
-            Monto: item["Valor total"] ?? item.Valor_total ?? item.Valortotal ?? item.Monto ?? 0,
+            Monto: item.Valor_total ?? item["Valor total"] ?? item.Valortotal ?? item.Monto ?? 0,
             Nit: item.Nit || item.Title || "N/A",
             Proveedor: item.Proveedor || "N/A",
             Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
@@ -1010,7 +1010,7 @@ export default function InvoicesPage() {
                                         <div className="text-right">
                                             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Monto Total</p>
                                             <p className="text-3xl font-black text-[#254153] font-mono tracking-tighter">
-                                                {formatCurrency(selectedInvoice["Valor total"])}
+                                                {formatCurrency(selectedInvoice.Valor_total ?? selectedInvoice["Valor total"])}
                                             </p>
                                         </div>
                                     </div>

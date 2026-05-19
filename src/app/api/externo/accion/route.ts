@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
                 supabaseUpdate.FechaAprobacion = updatePayload.FechaAprobacion;
             }
             if (cleanValor !== null) {
-                supabaseUpdate["Valor total"] = cleanValor;
+                supabaseUpdate["Valor_total"] = cleanValor;
             }
             if (observaciones) {
                 supabaseUpdate.Observaciones = observaciones;

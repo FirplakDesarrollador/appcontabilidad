@@ -25,6 +25,7 @@ const { createClient } = await import('@supabase/supabase-js');
 const HOST = 'firplaksa.sharepoint.com';
 const SITE_PATH = 'FPKContabilidad';
 const LIST_NAME = 'Registro_de_Facturas';
+const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
 
 const cca = new ConfidentialClientApplication({
     auth: {
@@ -39,6 +40,10 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+// ─── Caché de IDs para no re-resolver en cada ciclo ──────────────────────────
+let cachedSiteId = null;
+let cachedListId = null;
+
 async function getGraphClient() {
     const response = await cca.acquireTokenByClientCredential({
         scopes: ['https://graph.microsoft.com/.default'],
@@ -48,13 +53,28 @@ async function getGraphClient() {
     });
 }
 
+async function getSiteAndListId(client) {
+    if (cachedSiteId && cachedListId) return { siteId: cachedSiteId, listId: cachedListId };
+    
+    const site = await client.api(`/sites/${HOST}:/sites/${SITE_PATH}`).get();
+    cachedSiteId = site.id;
+    
+    const lists = await client.api(`/sites/${cachedSiteId}/lists`).get();
+    const list = lists.value.find(l => l.name === LIST_NAME || l.displayName === LIST_NAME);
+    if (!list) throw new Error('SharePoint list not found!');
+    cachedListId = list.id;
+    
+    console.log(`[Sync] Site ID cached: ${cachedSiteId.substring(0, 20)}...`);
+    console.log(`[Sync] List ID cached: ${cachedListId}`);
+    return { siteId: cachedSiteId, listId: cachedListId };
+}
+
 function getLastSyncTime() {
     const path = join(__dirname, 'last_sync.json');
     if (existsSync(path)) {
         const data = JSON.parse(readFileSync(path, 'utf8'));
         return new Date(data.lastSyncTime);
     }
-    // Default to 1 hour ago if no previous sync
     const date = new Date();
     date.setHours(date.getHours() - 1);
     return date;
@@ -65,163 +85,163 @@ function saveLastSyncTime(date) {
     writeFileSync(path, JSON.stringify({ lastSyncTime: date.toISOString() }));
 }
 
+// ─── Mapeo de campos SharePoint → Supabase ────────────────────────────────────
+function mapSpToSupabase(spItem) {
+    const fields = spItem.fields || spItem;
+    const spItemId = spItem.id || fields.id;
+    
+    return {
+        ID: Number(spItemId),
+        sharepoint_id: String(spItemId),
+        Nit: fields.Nit ?? null,
+        Proveedor: fields.Proveedor ?? null,
+        Nro_Factura: fields.Nro_Factura ?? null,
+        Aprobacion_Doliente: fields.Aprobacion_Doliente ?? null,
+        Gestion_Contabilidad: fields.Gestion_Contabilidad ?? null,
+        Observaciones: fields.Observaciones ?? null,
+        Consecutivo: fields.Consecutivo ?? null,
+        Responsable_de_Autorizar: fields.Responsable_de_Autorizar ?? null,
+        FechaAprobacion: fields.FechaAprobacion ?? null,
+        centro_costos: fields.centro_costos ?? null,
+        // Nuevo nombre de columna: Valor_total (era "Valor total")
+        Valor_total: fields.Valor_x0020_total ?? fields["Valor total"] ?? fields.Valor_total ?? null,
+        tiene_anticipo: fields.tiene_anticipo ?? null,
+        Creado: fields.Created ?? fields.Creado ?? null,
+        // Nuevo nombre: Creado_por (era "Creado por")
+        Creado_por: fields.AuthorLookupId ? String(fields.AuthorLookupId) : (fields["Creado por"] ?? null),
+        CUFE: fields.CUFE ?? null,
+        InformeRecepcion: fields.InformeRecepcion ?? null,
+        FechaProcesado: fields.FechaProcesado ?? null,
+        DigitadoPor: fields.DigitadoPor ?? null,
+        // Nuevo nombre: Datos_adjuntos (era "Datos adjuntos")
+        Datos_adjuntos: fields.Attachments === true ? 1 : (Number(fields.Datos_adjuntos) || 0),
+        tablaCostos: fields.tablaCostos ?? null,
+        Procesado: fields.Procesado != null ? String(fields.Procesado) : null,
+        // Modificado ya tenía ese nombre
+        Modificado: fields.Modified ?? fields.Modificado ?? null,
+        // Nuevo nombre: Modificado_por (era "Modificado por")
+        Modificado_por: fields.EditorLookupId ? String(fields.EditorLookupId) : (fields["Modificado por"] ?? null),
+        fp: fields.fp ?? null,
+        documentos: fields.fp ?? fields.documentos ?? null,
+    };
+}
+
+// ─── Mapeo de campos Supabase → SharePoint ────────────────────────────────────
+function mapSupabaseToSp(sbItem) {
+    const payload = {};
+    if (sbItem.Proveedor != null)               payload.Proveedor = sbItem.Proveedor;
+    if (sbItem.Nit != null)                      payload.Nit = sbItem.Nit;
+    if (sbItem.Nro_Factura != null)              payload.Nro_Factura = sbItem.Nro_Factura;
+    if (sbItem.Aprobacion_Doliente != null)      payload.Aprobacion_Doliente = sbItem.Aprobacion_Doliente;
+    if (sbItem.Gestion_Contabilidad != null)     payload.Gestion_Contabilidad = sbItem.Gestion_Contabilidad;
+    if (sbItem.Observaciones != null)            payload.Observaciones = sbItem.Observaciones;
+    if (sbItem.Consecutivo != null)              payload.Consecutivo = sbItem.Consecutivo;
+    if (sbItem.Responsable_de_Autorizar != null) {
+        // En SharePoint, el responsable es un Lookup (Persona) y no se puede actualizar con un string.
+        // Se actualiza a través de su propio endpoint de asignación dedicada.
+    }
+    if (sbItem.centro_costos != null)            payload.centro_costos = sbItem.centro_costos;
+    if (sbItem.tiene_anticipo != null)           payload.tiene_anticipo = sbItem.tiene_anticipo;
+    if (sbItem.CUFE != null)                     payload.CUFE = sbItem.CUFE;
+    if (sbItem.InformeRecepcion != null)         payload.InformeRecepcion = sbItem.InformeRecepcion;
+    if (sbItem.FechaAprobacion != null)          payload.FechaAprobacion = sbItem.FechaAprobacion;
+    if (sbItem.fp != null)                       payload.fp = sbItem.fp;
+    if (sbItem.Procesado != null)               payload.Procesado = sbItem.Procesado === 'true';
+    // Valor total: SP usa el nombre interno "Valortotal"
+    if (sbItem.Valor_total != null)              payload.Valortotal = sbItem.Valor_total;
+    return payload;
+}
+
 async function runSync() {
-    console.log(`\n[${new Date().toISOString()}] Starting bidirectional sync...`);
+    console.log(`\n[${new Date().toISOString()}] Starting bidirectional sync (interval: ${SYNC_INTERVAL_MS/1000}s)...`);
     const syncStartTime = new Date();
     const lastSyncTime = getLastSyncTime();
     console.log(`Syncing changes since: ${lastSyncTime.toISOString()}`);
 
     try {
         const graphClient = await getGraphClient();
-        
-        // 1. Get Site and List IDs
-        const site = await graphClient.api(`/sites/${HOST}:/sites/${SITE_PATH}`).get();
-        const lists = await graphClient.api(`/sites/${site.id}/lists`).get();
-        const list = lists.value.find(l => l.name === LIST_NAME || l.displayName === LIST_NAME);
-        
-        if (!list) {
-            console.error('SharePoint list not found!');
-            return;
-        }
+        const { siteId, listId } = await getSiteAndListId(graphClient);
 
-        // 2. Fetch changes from SharePoint
+        // ── A: SharePoint → Supabase ──────────────────────────────────────────
         const spFilter = `fields/Modified ge '${lastSyncTime.toISOString()}'`;
-        console.log(`Checking SharePoint for updates...`);
-        const spChangesRes = await graphClient.api(`/sites/${site.id}/lists/${list.id}/items`)
-            .expand('fields')
+        const spChangesRes = await graphClient
+            .api(`/sites/${siteId}/lists/${listId}/items?expand=fields`)
+            .header('Prefer', 'HonorNonIndexedQueriesWarningMayFailRandomly')
             .filter(spFilter)
             .get();
         const spChanges = spChangesRes.value || [];
-        console.log(`Found ${spChanges.length} modified items in SharePoint.`);
+        console.log(`[SP→SB] Found ${spChanges.length} modified items in SharePoint.`);
 
-        // 3. Fetch changes from Supabase
-        console.log(`Checking Supabase for updates...`);
-        const { data: sbChanges, error: sbError } = await supabase
+        // ── B: Supabase → SharePoint ──────────────────────────────────────────
+        const { data: sbChanges = [], error: sbError } = await supabase
             .from('Registro_Facturas')
             .select('*')
             .gt('updated_at', lastSyncTime.toISOString());
-            
+
         if (sbError) {
             console.error('Error fetching from Supabase:', sbError.message);
             return;
         }
-        
-        console.log(`Found ${sbChanges.length} modified items in Supabase.`);
+        console.log(`[SB→SP] Found ${sbChanges.length} modified items in Supabase.`);
 
-        // Track items we've already synced to avoid duplicate work or loops in this cycle
         const processedSPIds = new Set();
 
-        // --- STEP A: Sync from SharePoint -> Supabase ---
+        // ── Paso A: SP → SB ───────────────────────────────────────────────────
         for (const spItem of spChanges) {
-            const spItemId = spItem.id;
-            const fields = spItem.fields;
-            processedSPIds.add(String(spItemId));
-            
-            // Map fields (same as migration script)
-            const invoiceData = {
-                ID: Number(spItemId),
-                sharepoint_id: String(spItemId),
-                Nit: fields.Nit || null,
-                Proveedor: fields.Proveedor || null,
-                Nro_Factura: fields.Nro_Factura || null,
-                Aprobacion_Doliente: fields.Aprobacion_Doliente || null,
-                Gestion_Contabilidad: fields.Gestion_Contabilidad || null,
-                Observaciones: fields.Observaciones || null,
-                Consecutivo: fields.Consecutivo || null,
-                Responsable_de_Autorizar: fields.Responsable_de_Autorizar || null,
-                FechaAprobacion: fields.FechaAprobacion || null,
-                centro_costos: fields.centro_costos || null,
-                "Valor total": fields["Valor total"] || fields["Valor_x0020_total"] || null,
-                tiene_anticipo: fields.tiene_anticipo || null,
-                Creado: fields.Created || null,
-                "Creado por": fields.AuthorLookupId || null,
-                CUFE: fields.CUFE || null,
-                InformeRecepcion: fields.InformeRecepcion || null,
-                FechaProcesado: fields.FechaProcesado || null,
-                DigitadoPor: fields.DigitadoPor || null,
-                Procesado: fields.Procesado || null,
-                Modificado: fields.Modified || null,
-                "Modificado por": fields.EditorLookupId || null,
-                fp: fields.fp || null
-            };
+            const spItemId = String(spItem.id);
+            processedSPIds.add(spItemId);
 
-            // Before upserting, check if this same item was also modified in Supabase recently
-            const conflictEntry = sbChanges.find(sb => sb.sharepoint_id === invoiceData.sharepoint_id);
+            const invoiceData = mapSpToSupabase(spItem);
+
+            // Resolución de conflictos: si SB es más reciente, SB gana
+            const conflictEntry = sbChanges.find(sb => String(sb.sharepoint_id) === spItemId);
             if (conflictEntry) {
-                // Conflict resolution: compare modified dates. We assume 'updated_at' for SB vs 'Modified' for SP
-                const spDate = new Date(invoiceData.Modificado);
-                const sbDate = new Date(conflictEntry.updated_at);
+                const spDate = new Date(invoiceData.Modificado || 0);
+                const sbDate = new Date(conflictEntry.updated_at || 0);
                 if (sbDate > spDate) {
-                    // Supabase is newer, skip updating SP -> SB, it will be handled in STEP B
-                    console.log(`[SP->SB] Skip ID: ${spItemId} (Supabase has newer changes)`);
+                    console.log(`[SP→SB] Skip ID: ${spItemId} (Supabase is newer by ${Math.round((sbDate - spDate)/1000)}s)`);
                     continue;
                 }
             }
 
-            console.log(`[SP->SB] Syncing SharePoint ID: ${spItemId} to Supabase...`);
-            const { error: upsertErr } = await supabase.from('Registro_Facturas').upsert(invoiceData, { onConflict: 'ID' });
-            if (upsertErr) {
-                console.error(`[SP->SB] Failed to sync ${spItemId}:`, upsertErr.message);
-            }
+            console.log(`[SP→SB] Upserting SP ID: ${spItemId}`);
+            const { error } = await supabase
+                .from('Registro_Facturas')
+                .upsert(invoiceData, { onConflict: 'ID' });
+            if (error) console.error(`[SP→SB] Failed for ${spItemId}:`, error.message);
         }
 
-        // --- STEP B: Sync from Supabase -> SharePoint ---
+        // ── Paso B: SB → SP ───────────────────────────────────────────────────
         for (const sbItem of sbChanges) {
             const spItemId = sbItem.sharepoint_id;
-            
-            // Skip if we already synced this item downwards because SP was newer
-            if (spItemId && processedSPIds.has(spItemId)) {
-                continue;
-            }
-
             if (!spItemId) {
-                console.log(`[SB->SP] Supabase ID ${sbItem.ID} has no sharepoint_id. Cannot sync backwards yet.`);
+                console.log(`[SB→SP] Supabase ID ${sbItem.ID} has no sharepoint_id. Skipping.`);
                 continue;
             }
+            if (processedSPIds.has(spItemId)) continue; // SP era más reciente, ya se procesó
 
-            console.log(`[SB->SP] Syncing Supabase changes for SP ID: ${spItemId} back to SharePoint...`);
-            
-            // Map Supabase fields back to SharePoint expected fields
-            const spUpdateFields = {
-                Proveedor: sbItem.Proveedor || "",
-                Nit: sbItem.Nit || "",
-                Nro_Factura: sbItem.Nro_Factura || "",
-                Aprobacion_Doliente: sbItem.Aprobacion_Doliente || "",
-                Gestion_Contabilidad: sbItem.Gestion_Contabilidad || "",
-                Observaciones: sbItem.Observaciones || "",
-                Consecutivo: sbItem.Consecutivo || "",
-                Responsable_de_Autorizar: sbItem.Responsable_de_Autorizar || "",
-                centro_costos: sbItem.centro_costos || "",
-                tiene_anticipo: sbItem.tiene_anticipo || null,
-                CUFE: sbItem.CUFE || "",
-                InformeRecepcion: sbItem.InformeRecepcion || "",
-                fp: sbItem.fp || "",
-                Procesado: sbItem.Procesado === 'true' ? true : (sbItem.Procesado === 'false' ? false : null)
-            };
+            const spUpdateFields = mapSupabaseToSp(sbItem);
+            if (Object.keys(spUpdateFields).length === 0) continue;
 
-            // Remove nulls to avoid Graph API errors
-            Object.keys(spUpdateFields).forEach(key => spUpdateFields[key] === null && delete spUpdateFields[key]);
-
+            console.log(`[SB→SP] Updating SP ID: ${spItemId}`);
             try {
-                // Graph API expects a PATCH with the fields object
-                await graphClient.api(`/sites/${site.id}/lists/${list.id}/items/${spItemId}/fields`)
+                await graphClient
+                    .api(`/sites/${siteId}/lists/${listId}/items/${spItemId}/fields`)
                     .patch(spUpdateFields);
-                console.log(`[SB->SP] Successfully updated SP ID: ${spItemId}`);
+                console.log(`[SB→SP] ✓ Updated SP ID: ${spItemId}`);
             } catch (spErr) {
-                console.error(`[SB->SP] Failed to update SP ID: ${spItemId}:`, spErr.message);
+                console.error(`[SB→SP] Failed for SP ID ${spItemId}:`, spErr.message);
             }
         }
 
-        // Save new standard sync time 
-        // We use the start time of this operation to ensure we don't miss anything that happened DURING the sync
         saveLastSyncTime(syncStartTime);
-        console.log(`Sync complete. Last sync time updated.`);
+        console.log(`✅ Sync complete. Next sync in ${SYNC_INTERVAL_MS/1000}s`);
 
     } catch (err) {
         console.error('Fatal error during sync:', err);
     }
 }
 
-// Run immediately and then poll every 60 seconds
+// Ejecutar inmediatamente y luego cada 5 minutos
 runSync();
-setInterval(runSync, 60000);
+setInterval(runSync, SYNC_INTERVAL_MS);
