@@ -39,6 +39,16 @@ interface InvoiceData {
     gestionContabilidad: string;
     responsableActual?: string;
     documentInfo?: any;
+    adjuntosUrl?: ManualAttachment[];
+}
+
+interface ManualAttachment {
+    name: string;
+    url: string;
+    path?: string;
+    type?: string;
+    size?: number;
+    uploadedAt?: string;
 }
 
 const parseSafeFloat = (val: any): number => {
@@ -63,6 +73,20 @@ const parseSafeFloat = (val: any): number => {
     }
     const res = parseFloat(s);
     return isNaN(res) ? 0 : res;
+};
+
+const normalizeManualAttachments = (value: any): ManualAttachment[] => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === "string") {
+        try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
+    }
+    return [];
 };
 
 export default function PublicApprovalPage() {
@@ -345,7 +369,10 @@ export default function PublicApprovalPage() {
                 body: JSON.stringify({
                     itemId,
                     userEmail: pendingResponsibleUser.email,
-                    userName: pendingResponsibleUser.name
+                    userName: pendingResponsibleUser.name,
+                    assignedByName: invoice?.responsableActual,
+                    invoiceNumber: invoice?.nroFactura,
+                    providerName: invoice?.proveedor
                 })
             });
 
@@ -650,6 +677,33 @@ export default function PublicApprovalPage() {
                                         </div>
                                     </div>
                                 </div>
+
+                                {normalizeManualAttachments(invoice?.adjuntosUrl).length > 0 && (
+                                    <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 p-8 space-y-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div>
+                                                <h3 className="text-sm font-black text-[#254153] uppercase tracking-wider">Adjuntos de la factura</h3>
+                                                <p className="text-xs font-bold text-gray-400 mt-1">Archivos cargados por contabilidad</p>
+                                            </div>
+                                            <Download className="h-5 w-5 text-[#254153]" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            {normalizeManualAttachments(invoice?.adjuntosUrl).map((attachment) => (
+                                                <a
+                                                    key={attachment.path || attachment.url}
+                                                    href={attachment.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-bold text-[#254153] hover:bg-[#254153]/5 transition-colors"
+                                                >
+                                                    <FileText className="h-5 w-5 text-blue-500 shrink-0" />
+                                                    <span className="truncate flex-1">{attachment.name}</span>
+                                                    <Download className="h-4 w-4 text-gray-400 shrink-0" />
+                                                </a>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Form and Actions */}
                                 <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 p-8 md:p-10">

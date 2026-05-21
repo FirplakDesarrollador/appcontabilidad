@@ -284,6 +284,9 @@ export default function PublicDocumentApprovalPage() {
                     itemId,
                     userEmail: pendingResponsibleUser.email,
                     userName: pendingResponsibleUser.name,
+                    assignedByName: document?.responsableActual,
+                    invoiceNumber: document?.nroFactura,
+                    providerName: document?.proveedor,
                     listName: 'Documento_Soporte'
                 })
             });

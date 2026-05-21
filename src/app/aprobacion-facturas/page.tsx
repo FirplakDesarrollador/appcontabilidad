@@ -12,6 +12,15 @@ import { useSidebar } from "@/context/SidebarContext";
 import { Menu } from "lucide-react";
 
 
+interface ManualAttachment {
+    name: string;
+    url: string;
+    path?: string;
+    type?: string;
+    size?: number;
+    uploadedAt?: string;
+}
+
 interface SharePointInvoice {
     id: string;
     Proveedor?: string;
@@ -26,6 +35,7 @@ interface SharePointInvoice {
     Created?: string;
     Documento_x0020_PDF?: string;
     FechaAprobacion?: string;
+    adjuntos_url?: ManualAttachment[] | string | null;
     [key: string]: any;
 }
 
@@ -81,6 +91,8 @@ export default function InvoicesPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [sapStatus, setSapStatus] = useState<'loading' | 'found' | 'not_found' | 'error' | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [manualAttachmentFiles, setManualAttachmentFiles] = useState<File[]>([]);
+    const [uploadingManualAttachments, setUploadingManualAttachments] = useState(false);
 
 
     const [columnFilters, setColumnFilters] = useState({
@@ -121,6 +133,20 @@ export default function InvoicesPage() {
 
     const [dataSource, setDataSource] = useState<'cache' | 'sharepoint' | 'loading'>('loading');
 
+    const normalizeManualAttachments = (value: any): ManualAttachment[] => {
+        if (!value) return [];
+        if (Array.isArray(value)) return value;
+        if (typeof value === "string") {
+            try {
+                const parsed = JSON.parse(value);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch {
+                return [];
+            }
+        }
+        return [];
+    };
+
     const normalizeInvoices = (items: any[]) => items.map((item: any) => {
         let documentInfo = null;
         if (item.documentos || item.fp) {
@@ -137,10 +163,46 @@ export default function InvoicesPage() {
             Proveedor: item.Proveedor || "N/A",
             Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
             FechaAprobacion: item.FechaAprobacion || null,
+            adjuntos_url: normalizeManualAttachments(item.adjuntos_url),
             documentInfo,
             Attachments: item.Attachments || !!item.documentos || !!item.fp
         };
     });
+
+    const handleUploadManualAttachments = async () => {
+        if (!selectedInvoice || manualAttachmentFiles.length === 0) return;
+
+        setUploadingManualAttachments(true);
+        try {
+            const formData = new FormData();
+            formData.append("invoiceNumber", selectedInvoice.Nro_Factura || String(selectedInvoice.id));
+            manualAttachmentFiles.forEach((file) => formData.append("files", file));
+
+            const res = await fetch(`/api/facturas/${selectedInvoice.id}/adjuntos`, {
+                method: "POST",
+                body: formData,
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || "Error al cargar adjuntos");
+
+            const attachments = normalizeManualAttachments(data.attachments);
+            setPendingInvoices(prev => prev.map(inv =>
+                inv.id === selectedInvoice.id ? { ...inv, adjuntos_url: attachments } : inv
+            ));
+            setProcessedInvoices(prev => prev.map(inv =>
+                inv.id === selectedInvoice.id ? { ...inv, adjuntos_url: attachments } : inv
+            ));
+            setSelectedInvoice({ ...selectedInvoice, adjuntos_url: attachments });
+            setManualAttachmentFiles([]);
+            alert("Adjuntos cargados correctamente");
+        } catch (error: any) {
+            console.error("Error uploading manual attachments:", error);
+            alert(error.message || "Error al cargar adjuntos");
+        } finally {
+            setUploadingManualAttachments(false);
+        }
+    };
 
     const fetchInvoices = async (refresh: boolean = false) => {
         try {
@@ -271,7 +333,10 @@ export default function InvoicesPage() {
                 body: JSON.stringify({
                     itemId: selectedInvoice.id,
                     userEmail: pendingResponsibleUser.email,
-                    userName: pendingResponsibleUser.name
+                    userName: pendingResponsibleUser.name,
+                    assignedByName: selectedInvoice.Responsable_de_Autorizar,
+                    invoiceNumber: selectedInvoice.Nro_Factura,
+                    providerName: selectedInvoice.Proveedor
                 })
             });
 
@@ -1451,6 +1516,61 @@ export default function InvoicesPage() {
                                                 </div>
                                             </div>
                                         )}
+
+                                        <div className="bg-white p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div>
+                                                    <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Adjuntos manuales</h4>
+                                                    <p className="text-[10px] text-gray-400 font-bold mt-1">Excel, PDF, imagenes o Word</p>
+                                                </div>
+                                                <Paperclip className="h-5 w-5 text-[#254153]" />
+                                            </div>
+
+                                            {normalizeManualAttachments(selectedInvoice.adjuntos_url).length > 0 ? (
+                                                <div className="space-y-2">
+                                                    {normalizeManualAttachments(selectedInvoice.adjuntos_url).map((attachment) => (
+                                                        <a
+                                                            key={attachment.path || attachment.url}
+                                                            href={attachment.url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm font-bold text-[#254153] hover:bg-[#254153]/5 transition-colors"
+                                                        >
+                                                            <FileText className="h-4 w-4 text-blue-500 shrink-0" />
+                                                            <span className="truncate flex-1">{attachment.name}</span>
+                                                            <span className="text-[10px] text-gray-400 uppercase">Abrir</span>
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs font-bold text-gray-300 italic">No hay adjuntos manuales cargados.</p>
+                                            )}
+
+                                            <div className="space-y-3">
+                                                <input
+                                                    type="file"
+                                                    multiple
+                                                    accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,image/*"
+                                                    onChange={(event) => setManualAttachmentFiles(Array.from(event.target.files || []))}
+                                                    className="block w-full text-xs font-bold text-gray-500 file:mr-4 file:rounded-xl file:border-0 file:bg-[#254153]/10 file:px-4 file:py-2 file:text-xs file:font-black file:text-[#254153] hover:file:bg-[#254153]/15"
+                                                />
+                                                {manualAttachmentFiles.length > 0 && (
+                                                    <div className="rounded-xl bg-gray-50 px-3 py-2 text-[11px] font-bold text-gray-500">
+                                                        {manualAttachmentFiles.length} archivo(s) seleccionado(s)
+                                                    </div>
+                                                )}
+                                                <Button
+                                                    type="button"
+                                                    onClick={handleUploadManualAttachments}
+                                                    disabled={uploadingManualAttachments || manualAttachmentFiles.length === 0}
+                                                    isLoading={uploadingManualAttachments}
+                                                    className="w-full h-10 text-xs"
+                                                >
+                                                    <CloudUpload className="h-4 w-4 mr-2" />
+                                                    Cargar adjuntos
+                                                </Button>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Estados y Responsables */}

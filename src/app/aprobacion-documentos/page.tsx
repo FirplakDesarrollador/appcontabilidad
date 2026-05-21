@@ -217,6 +217,9 @@ export default function SupportDocumentsPage() {
                     itemId: selectedDoc.id,
                     userEmail: pendingResponsibleUser.email,
                     userName: pendingResponsibleUser.name,
+                    assignedByName: selectedDoc.Responsable_de_Autorizar,
+                    invoiceNumber: selectedDoc.Nro_Factura,
+                    providerName: selectedDoc.Proveedor,
                     listName: 'Documento_Soporte'
                 })
             });

@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGraphClient } from '@/lib/sharepoint';
+import { sendReassignmentNotification } from '@/lib/sendReassignmentNotification';
 
 export async function POST(req: NextRequest) {
     try {
-        const { itemId, userEmail, userName, listName = 'Registro_de_Facturas' } = await req.json();
+        const {
+            itemId,
+            userEmail,
+            userName,
+            listName = 'Registro_de_Facturas',
+            assignedByName,
+            invoiceNumber,
+            providerName
+        } = await req.json();
 
         if (!itemId || !userEmail) {
 
@@ -85,7 +94,17 @@ export async function POST(req: NextRequest) {
             throw new Error('No se pudo actualizar el responsable en ningún campo conocido de SharePoint usando el ID del usuario.');
         }
 
-        return NextResponse.json({ success: true });
+        const notificationSent = await sendReassignmentNotification({
+            itemId,
+            recipientEmail: userEmail,
+            recipientName: userName,
+            assignedByName,
+            invoiceNumber,
+            providerName,
+            listName
+        });
+
+        return NextResponse.json({ success: true, notificationSent });
     } catch (error: any) {
         console.error('Error updating responsible:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
