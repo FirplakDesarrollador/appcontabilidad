@@ -25,6 +25,13 @@ export interface SapDraftPayload {
     proveedorName?: string; // Provider Name from SharePoint
 }
 
+interface SapBusinessPartner {
+    CardCode?: string;
+    CardName?: string;
+    FederalTaxID?: string;
+    CardType?: string;
+}
+
 // Custom HTTPS agent that skips certificate validation (SAP uses self-signed certs)
 const insecureAgent = new https.Agent({ rejectUnauthorized: false });
 
@@ -152,7 +159,9 @@ export async function createSapDraft(payload: SapDraftPayload) {
             nitWithDash = `${cleanNit.substring(0, 8)}-${cleanNit.substring(8)}`;
         }
 
-        const bpUrl = `${baseUrl}/BusinessPartners?$filter=FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}'&$select=CardCode,CardName,FederalTaxID,CardType`;
+        const nitFilter = `(FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}')`;
+        const vendorCodeFilter = `(startswith(CardCode,'AC') or startswith(CardCode,'PN'))`;
+        const bpUrl = `${baseUrl}/BusinessPartners?$filter=${nitFilter} and ${vendorCodeFilter}&$select=CardCode,CardName,FederalTaxID,CardType`;
         const bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
 
         if (bpRes.status !== 200) {
@@ -163,12 +172,21 @@ export async function createSapDraft(payload: SapDraftPayload) {
             throw new Error(`Supplier with NIT ${nit} not found in SAP. Verifique que el proveedor exista y el NIT sea correcto.`);
         }
 
-        // Priorizar coincidencia de tipo Proveedor (CardType 'S' o 'sSupplier')
-        const allBPs = bpRes.data.value;
-        const vendorMatch = allBPs.find((v: any) => v.CardType === 'sSupplier' || v.CardType === 'S');
-        
-        // Si hay varios y encontramos un proveedor, usamos ese. Si no, tomamos el primero (comportamiento original pero con log).
-        const match = vendorMatch || allBPs[0];
+        // Solo aceptar proveedores con prefijo SAP permitido: AC o PN.
+        const allBPs = bpRes.data.value as SapBusinessPartner[];
+        const vendorMatch = allBPs.find((v) => {
+            const candidateCardCode = String(v.CardCode || '').toUpperCase();
+            const isAllowedPrefix = candidateCardCode.startsWith('AC') || candidateCardCode.startsWith('PN');
+            const isSupplier = v.CardType === 'sSupplier' || v.CardType === 'S';
+            return isAllowedPrefix && isSupplier;
+        });
+
+        if (!vendorMatch) {
+            const candidates = allBPs.map((v) => `${v.CardCode || 'N/A'} (${v.CardType || 'sin tipo'})`).join(', ');
+            throw new Error(`Supplier with NIT ${nit} not found in SAP with allowed prefix AC/PN. Candidates ignored: ${candidates || 'none'}`);
+        }
+
+        const match = vendorMatch;
         
         const cardCode = match.CardCode;
         const cardName = match.CardName;

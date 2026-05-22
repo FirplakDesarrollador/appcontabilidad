@@ -204,6 +204,38 @@ export default function InvoicesPage() {
         }
     };
 
+    const handleDeleteManualAttachment = async (attachment: ManualAttachment) => {
+        if (!selectedInvoice) return;
+        const confirmed = window.confirm(`¿Quitar el adjunto "${attachment.name}" de esta factura?`);
+        if (!confirmed) return;
+
+        try {
+            const res = await fetch(`/api/facturas/${selectedInvoice.id}/adjuntos`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    path: attachment.path,
+                    url: attachment.url,
+                }),
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || "Error al quitar adjunto");
+
+            const attachments = normalizeManualAttachments(data.attachments);
+            setPendingInvoices(prev => prev.map(inv =>
+                inv.id === selectedInvoice.id ? { ...inv, adjuntos_url: attachments } : inv
+            ));
+            setProcessedInvoices(prev => prev.map(inv =>
+                inv.id === selectedInvoice.id ? { ...inv, adjuntos_url: attachments } : inv
+            ));
+            setSelectedInvoice({ ...selectedInvoice, adjuntos_url: attachments });
+        } catch (error: any) {
+            console.error("Error deleting manual attachment:", error);
+            alert(error.message || "Error al quitar adjunto");
+        }
+    };
+
     const fetchInvoices = async (refresh: boolean = false) => {
         try {
             setLoading(true);
@@ -1529,17 +1561,28 @@ export default function InvoicesPage() {
                                             {normalizeManualAttachments(selectedInvoice.adjuntos_url).length > 0 ? (
                                                 <div className="space-y-2">
                                                     {normalizeManualAttachments(selectedInvoice.adjuntos_url).map((attachment) => (
-                                                        <a
+                                                        <div
                                                             key={attachment.path || attachment.url}
-                                                            href={attachment.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm font-bold text-[#254153] hover:bg-[#254153]/5 transition-colors"
+                                                            className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm font-bold text-[#254153]"
                                                         >
                                                             <FileText className="h-4 w-4 text-blue-500 shrink-0" />
                                                             <span className="truncate flex-1">{attachment.name}</span>
-                                                            <span className="text-[10px] text-gray-400 uppercase">Abrir</span>
-                                                        </a>
+                                                            <a
+                                                                href={attachment.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="rounded-lg px-2 py-1 text-[10px] text-gray-400 uppercase hover:bg-white hover:text-[#254153] transition-colors"
+                                                            >
+                                                                Abrir
+                                                            </a>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteManualAttachment(attachment)}
+                                                                className="rounded-lg px-2 py-1 text-[10px] uppercase text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                            >
+                                                                Quitar
+                                                            </button>
+                                                        </div>
                                                     ))}
                                                 </div>
                                             ) : (

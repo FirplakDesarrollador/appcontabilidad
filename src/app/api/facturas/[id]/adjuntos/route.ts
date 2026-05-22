@@ -120,3 +120,62 @@ export async function POST(
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+
+export async function DELETE(
+    req: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const { id } = await params;
+        const { path, url } = await req.json();
+
+        if (!id || (!path && !url)) {
+            return NextResponse.json({ error: "Missing invoice id or attachment reference" }, { status: 400 });
+        }
+
+        const { data: currentInvoice, error: fetchError } = await supabase
+            .from("Registro_Facturas")
+            .select("ID, adjuntos_url")
+            .or(`ID.eq.${id},sharepoint_id.eq.${id}`)
+            .maybeSingle();
+
+        if (fetchError) throw fetchError;
+        if (!currentInvoice) {
+            return NextResponse.json({ error: "Factura no encontrada en Supabase" }, { status: 404 });
+        }
+
+        const existingAttachments = normalizeAttachments(currentInvoice.adjuntos_url);
+        const attachmentToRemove = existingAttachments.find((attachment) =>
+            (path && attachment.path === path) || (url && attachment.url === url)
+        );
+
+        const adjuntos_url = existingAttachments.filter((attachment) =>
+            !((path && attachment.path === path) || (url && attachment.url === url))
+        );
+
+        const { error: updateError } = await supabase
+            .from("Registro_Facturas")
+            .update({ adjuntos_url })
+            .eq("ID", currentInvoice.ID);
+
+        if (updateError) throw updateError;
+
+        if (attachmentToRemove?.path) {
+            const { error: removeError } = await supabase.storage
+                .from(BUCKET_NAME)
+                .remove([attachmentToRemove.path]);
+
+            if (removeError) {
+                console.warn("Attachment metadata removed, but storage object deletion failed:", removeError.message);
+            }
+        }
+
+        return NextResponse.json({
+            success: true,
+            attachments: adjuntos_url,
+        });
+    } catch (error: any) {
+        console.error("Error deleting invoice attachment:", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}

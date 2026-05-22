@@ -429,11 +429,12 @@ export default function PublicDocumentApprovalPage() {
                                                     const isNoAplica = d.centroCostos?.toLowerCase().includes("no aplica");
 
                                                     if (isNoAplica) {
-                                                        // Mostrar cuentas que empiezan por 0 y 22 para No aplica
+                                                        // Mostrar cuentas permitidas para No aplica
                                                         return cuentasList
                                                             .filter((c: any) => 
                                                                 c.Título?.startsWith("0") || 
-                                                                c.Título?.startsWith("22")
+                                                                c.Título?.startsWith("22") ||
+                                                                c.Título?.startsWith("1465")
                                                             )
                                                             .map((c: any) => ({
                                                                 value: c.Título,

@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+interface SapBusinessPartner {
+    CardCode?: string;
+    CardName?: string;
+    CardType?: string;
+}
+
 export async function POST(req: NextRequest) {
     // Force bypass of SSL certificate validation
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -31,7 +37,7 @@ export async function POST(req: NextRequest) {
         const cookies = loginRes.headers.get('set-cookie') || '';
 
         // 2. SEARCH BUSINESS PARTNER
-        const bpUrl = `${loginUrl.replace('/Login', '')}/BusinessPartners?$filter=FederalTaxID eq '${nit}'&$select=CardCode,CardName`;
+        const bpUrl = `${loginUrl.replace('/Login', '')}/BusinessPartners?$filter=FederalTaxID eq '${nit}' and (startswith(CardCode,'AC') or startswith(CardCode,'PN'))&$select=CardCode,CardName,CardType`;
         const bpRes = await fetch(bpUrl, {
             headers: { 'Cookie': `B1SESSION=${sessionId}; ${cookies}` }
         });
@@ -41,11 +47,13 @@ export async function POST(req: NextRequest) {
         }
 
         const bpData = await bpRes.json();
-        const found = bpData.value && bpData.value.length > 0;
+        const bpList = (bpData.value || []) as SapBusinessPartner[];
+        const supplier = bpList.find((bp) => bp.CardType === 'sSupplier' || bp.CardType === 'S');
+        const found = !!supplier;
 
         return NextResponse.json({ 
             found,
-            bp: found ? bpData.value[0] : null
+            bp: supplier || null
         });
 
     } catch (error: any) {
