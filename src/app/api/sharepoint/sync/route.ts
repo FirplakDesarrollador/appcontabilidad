@@ -86,7 +86,7 @@ export async function POST(req: Request) {
             const invoiceData: any = {
                 ID: Number(spItemId),
                 sharepoint_id: String(spItemId),
-                Nit: fields.Nit ?? null,
+                Nit: fields.Nit ?? fields.Title ?? fields.LinkTitle ?? null,
                 Proveedor: fields.Proveedor ?? null,
                 Nro_Factura: fields.Nro_Factura ?? null,
                 Aprobacion_Doliente: fields.Aprobacion_Doliente ?? null,

@@ -31,6 +31,7 @@ interface SharePointInvoice {
     Aprobacion_Doliente?: string;
     Gestion_Contabilidad?: string;
     Consecutivo?: string;
+    Observaciones?: string;
     OData__RegistrationDate?: string;
     Created?: string;
     Documento_x0020_PDF?: string;
@@ -101,7 +102,10 @@ export default function InvoicesPage() {
         amount: "",
         responsible: "",
         status: "",
-        contabilidad: ""
+        contabilidad: "",
+        nit: "",
+        consecutivo: "",
+        observaciones: ""
     });
 
     // Opciones para los filtros dropdown
@@ -603,7 +607,9 @@ export default function InvoicesPage() {
         const matchesSearch = !searchTerm ||
             inv.Nro_Factura?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             inv.Proveedor?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            inv.Nit?.toLowerCase().includes(searchTerm.toLowerCase());
+            inv.Nit?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            inv.Consecutivo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            inv.Observaciones?.toLowerCase().includes(searchTerm.toLowerCase());
 
         const matchesTab = activeTab === 'pending' ? isPending(inv) : isProcessed(inv);
         const matchesResponsable = selectedResponsable === "all" || inv.Responsable_de_Autorizar === selectedResponsable;
@@ -611,16 +617,19 @@ export default function InvoicesPage() {
         // Filtros por columna (Excel-style)
         const matchesColInvoice = !columnFilters.invoice || inv.Nro_Factura?.toLowerCase().includes(columnFilters.invoice.toLowerCase());
         const matchesColProvider = !columnFilters.provider || 
-            inv.Proveedor?.toLowerCase().includes(columnFilters.provider.toLowerCase()) || 
-            inv.Nit?.toLowerCase().includes(columnFilters.provider.toLowerCase());
+            inv.Proveedor?.toLowerCase().includes(columnFilters.provider.toLowerCase());
         const matchesColAmount = !columnFilters.amount || String(inv.Monto).includes(columnFilters.amount);
         const matchesColResponsible = !columnFilters.responsible || inv.Responsable_de_Autorizar?.toLowerCase().includes(columnFilters.responsible.toLowerCase());
         const matchesColStatus = !columnFilters.status || (inv.Aprobacion_Doliente || "Pendiente").toLowerCase().includes(columnFilters.status.toLowerCase());
         const matchesColContabilidad = !columnFilters.contabilidad || (inv.Gestion_Contabilidad || "Pendiente").toLowerCase().includes(columnFilters.contabilidad.toLowerCase());
+        const matchesColNit = !columnFilters.nit || (inv.Nit || "").toLowerCase().includes(columnFilters.nit.toLowerCase());
+        const matchesColConsecutivo = !columnFilters.consecutivo || (inv.Consecutivo || "").toLowerCase().includes(columnFilters.consecutivo.toLowerCase());
+        const matchesColObservaciones = !columnFilters.observaciones || (inv.Observaciones || "").toLowerCase().includes(columnFilters.observaciones.toLowerCase());
 
         return matchesSearch && matchesTab && matchesResponsable && 
-               matchesColInvoice && matchesColProvider && matchesColAmount && 
-               matchesColResponsible && matchesColStatus && matchesColContabilidad;
+                matchesColInvoice && matchesColProvider && matchesColAmount && 
+               matchesColResponsible && matchesColStatus && matchesColContabilidad &&
+               matchesColNit && matchesColConsecutivo && matchesColObservaciones;
     });
 
     return (
@@ -801,13 +810,16 @@ export default function InvoicesPage() {
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-gray-50/50 border-b border-gray-100">
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Factura</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">NIT</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Proveedor</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Factura</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Valor total</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Responsable</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Estado</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">G. Contabilidad</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Consecutivo</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Fecha Aprobación</th>
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Observaciones</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Datos adjuntos</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Acciones</th>
                                     </tr>
@@ -815,15 +827,11 @@ export default function InvoicesPage() {
                                         <td className="px-3 py-2">
                                             <input 
                                                 type="text" 
-                                                list="list-invoice"
                                                 placeholder="Filtrar..."
                                                 className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.invoice}
-                                                onChange={(e) => setColumnFilters({...columnFilters, invoice: e.target.value})}
+                                                value={columnFilters.nit}
+                                                onChange={(e) => setColumnFilters({...columnFilters, nit: e.target.value})}
                                             />
-                                            <datalist id="list-invoice">
-                                                {filterOptions.invoices.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
                                         </td>
                                         <td className="px-3 py-2">
                                             <input 
@@ -836,6 +844,19 @@ export default function InvoicesPage() {
                                             />
                                             <datalist id="list-provider">
                                                 {filterOptions.providers.map(opt => <option key={opt} value={opt} />)}
+                                            </datalist>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                list="list-invoice"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.invoice}
+                                                onChange={(e) => setColumnFilters({...columnFilters, invoice: e.target.value})}
+                                            />
+                                            <datalist id="list-invoice">
+                                                {filterOptions.invoices.map(opt => <option key={opt} value={opt} />)}
                                             </datalist>
                                         </td>
                                         <td className="px-3 py-2">
@@ -886,7 +907,25 @@ export default function InvoicesPage() {
                                                 {filterOptions.contabilidades.map(opt => <option key={opt} value={opt} />)}
                                             </datalist>
                                         </td>
+                                        <td className="px-3 py-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.consecutivo}
+                                                onChange={(e) => setColumnFilters({...columnFilters, consecutivo: e.target.value})}
+                                            />
+                                        </td>
                                         <td className="px-3 py-2" />
+                                        <td className="px-3 py-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Filtrar..."
+                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
+                                                value={columnFilters.observaciones}
+                                                onChange={(e) => setColumnFilters({...columnFilters, observaciones: e.target.value})}
+                                            />
+                                        </td>
                                         <td className="px-3 py-2" />
                                         <td className="px-3 py-2" />
                                     </tr>
@@ -896,19 +935,23 @@ export default function InvoicesPage() {
                                         {loading ? (
                                             Array.from({ length: 8 }).map((_, i) => (
                                                 <tr key={`skeleton-${i}`} className="animate-pulse">
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-24" /></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-40" /></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-24 ml-auto" /></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-32" /></td>
                                                     <td className="px-6 py-5"><div className="h-7 bg-gray-100 rounded-full w-24" /></td>
                                                     <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-24" /></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-16" /></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-28" /></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-40" /></td>
+                                                    <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-24" /></td>
                                                     <td className="px-6 py-5 text-right"><div className="h-8 bg-gray-100 rounded-lg w-16 ml-auto" /></td>
                                                 </tr>
                                             ))
                                         ) : filteredInvoices.length === 0 ? (
                                             <tr>
-                                                <td colSpan={8} className="px-6 py-20 text-center">
+                                                <td colSpan={12} className="px-6 py-20 text-center">
                                                     <div className="flex flex-col items-center gap-3 opacity-30">
                                                         <Search className="h-12 w-12 text-[#254153]" />
                                                         <p className="text-lg font-bold text-[#254153]">No se encontraron resultados</p>
@@ -925,12 +968,14 @@ export default function InvoicesPage() {
                                                     className="hover:bg-[#f8fafc] transition-colors group"
                                                 >
                                                     <td className="px-6 py-5">
-                                                        <div className="font-bold text-[#254153] leading-none">{inv.Nro_Factura || "S/N"}</div>
-                                                        <div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {inv.id}</div>
+                                                        <div className="text-xs font-bold text-gray-600">{inv.Nit || "N/A"}</div>
                                                     </td>
                                                     <td className="px-6 py-5">
                                                         <div className="text-sm font-bold text-gray-800">{inv.Proveedor || "N/A"}</div>
-                                                        <div className="text-[11px] text-gray-500 mt-0.5 font-medium">NIT: {inv.Nit || "N/A"}</div>
+                                                    </td>
+                                                    <td className="px-6 py-5">
+                                                        <div className="font-bold text-[#254153] leading-none">{inv.Nro_Factura || "S/N"}</div>
+                                                        <div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {inv.id}</div>
                                                     </td>
                                                     <td className="px-6 py-5 text-right px-10">
                                                         <div className="text-sm font-extrabold text-[#254153]">{formatCurrency(inv.Monto)}</div>
@@ -952,8 +997,16 @@ export default function InvoicesPage() {
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-5">
+                                                        <div className="text-xs font-bold text-gray-600">{inv.Consecutivo || "N/A"}</div>
+                                                    </td>
+                                                    <td className="px-6 py-5">
                                                         <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">
                                                             {inv.FechaAprobacion ? new Date(inv.FechaAprobacion).toLocaleString() : "Sin fecha"}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-5 min-w-[220px]">
+                                                        <div className="max-w-[260px] truncate text-xs font-medium text-gray-500" title={inv.Observaciones || ""}>
+                                                            {inv.Observaciones || "Sin observaciones"}
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-5">

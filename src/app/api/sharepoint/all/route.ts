@@ -102,7 +102,7 @@ export async function GET(req: Request) {
             }
 
             // Servir desde Supabase (siempre rápido)
-            const columns = 'ID, Nit, Proveedor, Nro_Factura, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url';
+            const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url';
             const fetchLimit = limit > 0 ? limit : 1000;
 
             const { data, error } = await supabase
@@ -143,7 +143,7 @@ export async function GET(req: Request) {
 
             if (!refresh) {
                 console.log(`[API] Fetching PROCESSED from Supabase cache (offset=${offset}, limit=${limit})...`);
-                const columns = 'ID, Nit, Proveedor, Nro_Factura, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url';
+                const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url';
                 const fetchLimit = limit > 0 ? limit : 1000;
 
                 const { data, error } = await supabase

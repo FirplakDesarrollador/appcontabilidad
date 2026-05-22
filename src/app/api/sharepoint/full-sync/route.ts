@@ -35,7 +35,7 @@ export async function POST(req: Request) {
                 return {
                     ID: Number(item.id),
                     sharepoint_id: String(item.id),
-                    Nit: item.Nit ?? null,
+                    Nit: item.Nit ?? item.Title ?? item.LinkTitle ?? null,
                     Proveedor: item.Proveedor ?? null,
                     Nro_Factura: item.Nro_Factura ?? null,
                     Aprobacion_Doliente: item.Aprobacion_Doliente ?? null,
