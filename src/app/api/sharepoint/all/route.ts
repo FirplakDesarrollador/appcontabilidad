@@ -13,6 +13,41 @@ const PENDING_CACHE_TTL_MS = 3 * 60 * 1000;
 let lastPendingSync: number = 0;
 let pendingSyncInProgress = false;
 
+function mapSharePointInvoiceToSupabase(item: any) {
+    const hasAttachmentsFlag = item.Attachments === true || Number(item.Datos_adjuntos) > 0 || !!item.fp || !!item.documentos;
+
+    return {
+        ID: Number(item.id),
+        sharepoint_id: String(item.id),
+        Nit: item.Nit ?? item.Title ?? item.LinkTitle ?? null,
+        Proveedor: item.Proveedor ?? null,
+        Nro_Factura: item.Nro_Factura ?? null,
+        Aprobacion_Doliente: item.Aprobacion_Doliente ?? null,
+        Gestion_Contabilidad: item.Gestion_Contabilidad ?? null,
+        Observaciones: item.Observaciones ?? null,
+        Consecutivo: item.Consecutivo ?? null,
+        Responsable_de_Autorizar: item.Responsable_de_Autorizar ?? null,
+        FechaAprobacion: item.FechaAprobacion ?? null,
+        centro_costos: item.centro_costos ?? null,
+        Valor_total: item.Valortotal ?? item.Valor_x0020_total ?? item["Valor total"] ?? item.Valor_total ?? null,
+        tiene_anticipo: item.tiene_anticipo ?? null,
+        Creado: item.Created ?? item.Creado ?? null,
+        Creado_por: item.AuthorLookupId ? String(item.AuthorLookupId) : (item["Creado por"] ?? item.Creado_por ?? null),
+        CUFE: item.CUFE ?? null,
+        InformeRecepcion: item.InformeRecepcion ?? null,
+        FechaProcesado: item.FechaProcesado ?? null,
+        DigitadoPor: item.DigitadoPor ?? null,
+        Datos_adjuntos: hasAttachmentsFlag ? 1 : 0,
+        tablaCostos: item.tablaCostos ?? null,
+        Procesado: item.Procesado != null ? String(item.Procesado) : null,
+        Modificado: item.Modified ?? item.Modificado ?? null,
+        Modificado_por: item.EditorLookupId ? String(item.EditorLookupId) : (item["Modificado por"] ?? item.Modificado_por ?? null),
+        fp: item.fp ?? null,
+        documentos: item.fp ?? item.documentos ?? null,
+        updated_at: new Date().toISOString()
+    };
+}
+
 /**
  * Sincroniza en segundo plano los ítems "Por Aprobar" entre SharePoint y Supabase.
  * Se dispara sin bloquear la respuesta HTTP → el usuario recibe los datos de Supabase
@@ -26,6 +61,26 @@ async function syncPendingFromSharePointInBackground() {
         const sharepointFilter = "fields/Aprobacion_Doliente eq 'Por Aprobar'";
         const spItems = await fetchAllSharePointItems('Registro_de_Facturas', 5000, sharepointFilter);
         const spIds = new Set(spItems.map((i: any) => String(i.id)));
+
+        if (spItems.length > 0) {
+            const batchSize = 100;
+            let synced = 0;
+
+            for (let i = 0; i < spItems.length; i += batchSize) {
+                const chunk = spItems.slice(i, i + batchSize).map(mapSharePointInvoiceToSupabase);
+                const { error } = await supabase
+                    .from('Registro_Facturas')
+                    .upsert(chunk, { onConflict: 'ID' });
+
+                if (error) {
+                    console.error(`[BG Sync] Error upserting pending batch ${Math.floor(i / batchSize) + 1}:`, error.message);
+                } else {
+                    synced += chunk.length;
+                }
+            }
+
+            console.log(`[BG Sync] Upserted ${synced} pending records from SharePoint.`);
+        }
 
         // Obtener los IDs que Supabase tiene como "Por Aprobar"
         const { data: supabasePending } = await supabase
@@ -86,11 +141,6 @@ export async function GET(req: Request) {
             const cacheStale = cacheAge > PENDING_CACHE_TTL_MS;
 
             // Contar pendientes en Supabase (rápido)
-            const { count: pendingCount } = await supabase
-                .from('Registro_Facturas')
-                .select('ID', { count: 'exact', head: true })
-                .eq('Aprobacion_Doliente', 'Por Aprobar');
-
             // Si refresh explícito, esperar la sincronización antes de responder
             if (refresh) {
                 console.log('[API] Explicit refresh requested — syncing from SharePoint...');
@@ -112,17 +162,22 @@ export async function GET(req: Request) {
                 .order('ID', { ascending: false })
                 .range(offset, offset + fetchLimit - 1);
 
-            // Obtener processedCount en paralelo (ya lo tenemos del count anterior)
-            const { count: processedCount } = await supabase
-                .from('Registro_Facturas')
-                .select('ID', { count: 'exact', head: true })
-                .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado');
+            const [pendingCountRes, processedCountRes] = await Promise.all([
+                supabase
+                    .from('Registro_Facturas')
+                    .select('ID', { count: 'exact', head: true })
+                    .eq('Aprobacion_Doliente', 'Por Aprobar'),
+                supabase
+                    .from('Registro_Facturas')
+                    .select('ID', { count: 'exact', head: true })
+                    .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado')
+            ]);
 
             return NextResponse.json({
                 success: true,
                 total: data?.length || 0,
-                pendingCount: pendingCount || 0,
-                processedCount: processedCount || 0,
+                pendingCount: pendingCountRes.count || 0,
+                processedCount: processedCountRes.count || 0,
                 items: data || [],
                 source: 'cache',
                 syncStatus: refresh ? 'synced' : (cacheStale ? 'syncing' : 'fresh'),

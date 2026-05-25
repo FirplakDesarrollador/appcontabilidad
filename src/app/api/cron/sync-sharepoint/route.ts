@@ -85,9 +85,11 @@ export async function GET(req: Request) {
 
         console.log('[CRON-SYNC] Initiating bidirectional delta sync...');
         
-        // 1. Determine last sync interval (5.5 minutes ago to ensure overlap)
-        const lastSyncTime = new Date(Date.now() - 5.5 * 60 * 1000);
-        console.log(`[CRON-SYNC] Syncing changes since: ${lastSyncTime.toISOString()}`);
+        // 1. Determine last sync interval (5.5 minutes ago to ensure overlap, 7 days if manual)
+        const isManual = searchParams.get('manual') === 'true';
+        const minutesBack = isManual ? 7 * 24 * 60 : 5.5;
+        const lastSyncTime = new Date(Date.now() - minutesBack * 60 * 1000);
+        console.log(`[CRON-SYNC] Syncing changes since: ${lastSyncTime.toISOString()} (manual: ${isManual})`);
 
         const graphClient = await getGraphClient();
         

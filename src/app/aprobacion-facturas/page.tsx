@@ -88,6 +88,7 @@ export default function InvoicesPage() {
     const [providersSearch, setProvidersSearch] = useState("");
     const [loadingProviders, setLoadingProviders] = useState(false);
     const [syncingId, setSyncingId] = useState<string | null>(null);
+    const [isSyncingSharePoint, setIsSyncingSharePoint] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [sapStatus, setSapStatus] = useState<'loading' | 'found' | 'not_found' | 'error' | null>(null);
@@ -262,6 +263,30 @@ export default function InvoicesPage() {
             console.error("Error fetching invoices:", error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleRefreshInvoices = async () => {
+        setIsSyncingSharePoint(true);
+        try {
+            const response = await fetch("/api/supabase/sync-sharepoint", {
+                method: "POST",
+            });
+            const data = await response.json();
+
+            if (!response.ok || data.success === false) {
+                throw new Error(data.error || "No se pudo ejecutar la sincronizacion");
+            }
+
+            await fetchInvoices(true);
+            if (activeTab === "processed") {
+                await fetchHistory(true);
+            }
+        } catch (error: unknown) {
+            console.error("Error syncing SharePoint from Supabase function:", error);
+            alert(error instanceof Error ? error.message : "Error al actualizar las facturas");
+        } finally {
+            setIsSyncingSharePoint(false);
         }
     };
 
@@ -717,12 +742,12 @@ export default function InvoicesPage() {
                             <Button
                                 variant="outline"
 
-                                onClick={() => fetchInvoices(true)}
-                                disabled={loading}
+                                onClick={handleRefreshInvoices}
+                                disabled={loading || isSyncingSharePoint}
                                 className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm"
                             >
-                                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                                Actualizar
+                                {loading || isSyncingSharePoint ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                                {isSyncingSharePoint ? "Actualizando..." : "Actualizar"}
                             </Button>
                         </div>
                     </div>
@@ -810,6 +835,7 @@ export default function InvoicesPage() {
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-gray-50/50 border-b border-gray-100">
+                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Acciones</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">NIT</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Proveedor</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Factura</th>
@@ -821,9 +847,9 @@ export default function InvoicesPage() {
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Fecha Aprobación</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Observaciones</th>
                                         <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Datos adjuntos</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Acciones</th>
                                     </tr>
                                     <tr className="bg-white border-b border-gray-50">
+                                        <td className="px-3 py-2" />
                                         <td className="px-3 py-2">
                                             <input 
                                                 type="text" 
@@ -927,7 +953,6 @@ export default function InvoicesPage() {
                                             />
                                         </td>
                                         <td className="px-3 py-2" />
-                                        <td className="px-3 py-2" />
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
@@ -935,6 +960,7 @@ export default function InvoicesPage() {
                                         {loading ? (
                                             Array.from({ length: 8 }).map((_, i) => (
                                                 <tr key={`skeleton-${i}`} className="animate-pulse">
+                                                    <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-28" /></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-24" /></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-40" /></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
@@ -946,7 +972,6 @@ export default function InvoicesPage() {
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-28" /></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-40" /></td>
                                                     <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-24" /></td>
-                                                    <td className="px-6 py-5 text-right"><div className="h-8 bg-gray-100 rounded-lg w-16 ml-auto" /></td>
                                                 </tr>
                                             ))
                                         ) : filteredInvoices.length === 0 ? (
@@ -967,6 +992,42 @@ export default function InvoicesPage() {
                                                     key={inv.id}
                                                     className="hover:bg-[#f8fafc] transition-colors group"
                                                 >
+                                                    <td className="px-6 py-5">
+                                                        <div className="flex items-center justify-start gap-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                onClick={() => handleCopyLink(inv)}
+                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
+                                                                title="Copiar Link PÃºblico"
+                                                            >
+                                                                <Copy className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                onClick={() => handleManualSapSync(inv)}
+                                                                disabled={syncingId === inv.id}
+                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50"
+                                                                title="Sincronizar con SAP Manualmente"
+                                                            >
+                                                                {syncingId === inv.id ? (
+                                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                                ) : (
+                                                                    <CloudUpload className="h-3.5 w-3.5" />
+                                                                )}
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                onClick={() => {
+                                                                    setSelectedInvoice(inv);
+                                                                    setIsModalOpen(true);
+                                                                }}
+                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
+                                                                title="Ver Detalle"
+                                                            >
+                                                                <Search className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                        </div>
+                                                    </td>
                                                     <td className="px-6 py-5">
                                                         <div className="text-xs font-bold text-gray-600">{inv.Nit || "N/A"}</div>
                                                     </td>
@@ -1025,7 +1086,7 @@ export default function InvoicesPage() {
                                                             <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>
                                                         )}
                                                     </td>
-                                                    <td className="px-6 py-5 text-right">
+                                                    <td className="hidden">
                                                         <div className="flex items-center justify-end gap-2">
                                                             <Button
                                                                 variant="outline"

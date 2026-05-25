@@ -68,9 +68,21 @@ Deno.serve(async (req: Request) => {
         if (!list) throw new Error('SharePoint list not found!');
         const listId = list.id;
 
+        let reqBody: any = {};
+        if (req.method === "POST") {
+            try {
+                reqBody = await req.json();
+            } catch (e) {
+                // Ignore parsing error
+            }
+        }
+
         // Use 6 minutes as interval to ensure overlap with 5 minute cron
-        const lastSyncTime = new Date(Date.now() - 6 * 60 * 1000);
-        console.log(`Syncing changes since: ${lastSyncTime.toISOString()}`);
+        // If triggered manually from the UI, look back 24 hours to ensure we don't miss anything
+        const isManual = reqBody.source === "aprobacion-facturas" || reqBody.manual;
+        const minutesBack = isManual ? 24 * 60 : 6;
+        const lastSyncTime = new Date(Date.now() - minutesBack * 60 * 1000);
+        console.log(`Syncing changes since: ${lastSyncTime.toISOString()} (manual: ${isManual})`);
 
         const spFilter = `fields/Modified ge '${lastSyncTime.toISOString()}'`;
         const spChangesRes = await graphFetch(`/sites/${siteId}/lists/${listId}/items?expand=fields&$filter=${spFilter}`);
