@@ -20,8 +20,8 @@ import {
     Plus,
     Trash2,
     Download,
-    Eye,
-    X
+    X,
+    Home
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
@@ -94,6 +94,7 @@ export default function PublicApprovalPage() {
     const itemId = params.id as string;
 
     const [invoice, setInvoice] = useState<InvoiceData | null>(null);
+    const [initialResponsable, setInitialResponsable] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null); // 'Aprobado' or 'Rechazado'
@@ -237,6 +238,7 @@ export default function PublicApprovalPage() {
 
             if (data.error) throw new Error(data.error);
             setInvoice(data);
+            setInitialResponsable(prev => prev === null ? (data.responsableActual || "") : prev);
             
             // Default distribution from SharePoint if available, otherwise default to total
             if (data.distribuciones) {
@@ -439,7 +441,7 @@ export default function PublicApprovalPage() {
                             
                             <div className="flex flex-col gap-4">
                                 <Button 
-                                    onClick={() => window.location.href = `/externo/pendientes?responsable=${encodeURIComponent(invoice?.responsableActual || "")}`}
+                                    onClick={() => window.location.href = `/externo/pendientes?responsable=${encodeURIComponent(initialResponsable || invoice?.responsableActual || "")}`}
                                     className="w-full h-16 bg-[#254153] hover:bg-[#1a2e3b] text-white font-black text-sm rounded-2xl shadow-xl shadow-[#254153]/20 flex items-center justify-center gap-2 group transition-all"
                                 >
                                     <span>Ver pendientes por aprobar</span>
@@ -469,18 +471,27 @@ export default function PublicApprovalPage() {
                                     <p className="text-gray-500 text-sm">Portal externo de aprobación</p>
                                 </div>
                             </div>
-                            <Button
-                                onClick={handleDownload}
-                                disabled={downloadLoading}
-                                className="md:ml-auto flex items-center justify-center gap-2 px-6 py-3 bg-[#254153]/5 border-2 border-[#254153]/10 rounded-2xl text-[#254153] text-sm font-bold hover:bg-[#254153] hover:text-white transition-all shadow-sm group"
-                            >
-                                {downloadLoading ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Download className="h-4 w-4" />
-                                )}
-                                {downloadLoading ? "Buscando..." : `Descargar Factura ${invoice?.nroFactura ? `#${invoice.nroFactura}` : ""}`}
-                            </Button>
+                            <div className="md:ml-auto flex items-center gap-3">
+                                <Button
+                                    onClick={() => window.location.href = `/externo/pendientes?responsable=${encodeURIComponent(initialResponsable || invoice?.responsableActual || "")}`}
+                                    className="flex items-center justify-center gap-2 px-6 py-3 bg-white border-2 border-[#254153]/10 rounded-2xl text-[#254153] text-sm font-bold hover:bg-gray-50 transition-all shadow-sm group"
+                                >
+                                    <Home className="h-4 w-4" />
+                                    Inicio
+                                </Button>
+                                <Button
+                                    onClick={handleDownload}
+                                    disabled={downloadLoading}
+                                    className="flex items-center justify-center gap-2 px-6 py-3 bg-[#254153]/5 border-2 border-[#254153]/10 rounded-2xl text-[#254153] text-sm font-bold hover:bg-[#254153] hover:text-white transition-all shadow-sm group"
+                                >
+                                    {downloadLoading ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Download className="h-4 w-4" />
+                                    )}
+                                    {downloadLoading ? "Buscando..." : `Descargar Factura ${invoice?.nroFactura ? `#${invoice.nroFactura}` : ""}`}
+                                </Button>
+                            </div>
                         </div>
 
                         {/* Layout Grid */}

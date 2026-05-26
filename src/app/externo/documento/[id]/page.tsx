@@ -58,6 +58,7 @@ export default function PublicDocumentApprovalPage() {
     const itemId = params.id as string;
 
     const [document, setDocument] = useState<DocumentData | null>(null);
+    const [initialResponsable, setInitialResponsable] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null); 
@@ -183,6 +184,7 @@ export default function PublicDocumentApprovalPage() {
             const data = await res.json();
             if (data.error) throw new Error(data.error);
             setDocument(data);
+            setInitialResponsable(prev => prev === null ? (data.responsableActual || "") : prev);
             // Default distribution from SharePoint if available, otherwise default to total
             if (data.distribuciones) {
                 try {
@@ -328,7 +330,7 @@ export default function PublicDocumentApprovalPage() {
                             <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-8" />
                             <h2 className="text-3xl font-bold mb-4">¡Listo!</h2>
                             <p className="text-gray-600 mb-10 text-lg">{successMessage}</p>
-                            <Button onClick={() => window.location.href = `/externo/pendientes?responsable=${encodeURIComponent(document?.responsableActual || "")}`} className="w-full bg-[#254153] text-white">Ver mis pendientes</Button>
+                            <Button onClick={() => window.location.href = `/externo/pendientes?responsable=${encodeURIComponent(initialResponsable || document?.responsableActual || "")}`} className="w-full bg-[#254153] text-white">Ver mis pendientes</Button>
                         </motion.div>
                     </div>
                 ) : (
