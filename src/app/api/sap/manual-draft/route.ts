@@ -37,7 +37,10 @@ export async function POST(req: NextRequest) {
                 Nit: String(nitValue),
                 Responsable_de_Autorizar: spItem.Responsable_de_Autorizar,
                 Observaciones: spItem.Observaciones || 'Sincronización manual desde portal de aprobación',
-                centro_costos: spItem.tablaCostos || spItem.centro_costos || spItem.Centro_x0020_de_x0020_costos || "[]",
+                centro_costos: (typeof spItem.centro_costos === 'string' && spItem.centro_costos)
+                    || (typeof spItem.Centro_x0020_de_x0020_costos === 'string' && spItem.Centro_x0020_de_x0020_costos)
+                    || (typeof spItem.tablaCostos === 'string' && spItem.tablaCostos)
+                    || "[]",
                 "Valor total": String(montoValue),
                 tiene_anticipo: spItem.tiene_anticipo === 't' || spItem.tiene_anticipo === true || spItem.tiene_anticipo === 'true' || spItem.Tiene_x0020_anticipo === 't',
                 Consecutivo: spItem.Consecutivo || String(invoiceId)
@@ -55,11 +58,26 @@ export async function POST(req: NextRequest) {
         const proveedorReal = invoice.Proveedor || "Proveedor Desconocido";
 
         // 3. Prepare distribution lines
-        let distribuciones = [];
+        let distribuciones: any[] = [];
         try {
-            const raw = typeof invoice.centro_costos === 'string' 
-                ? JSON.parse(invoice.centro_costos) 
-                : (invoice.centro_costos || []);
+            let raw = invoice.centro_costos;
+            
+            // Parse if it's a string
+            if (typeof raw === 'string') {
+                raw = JSON.parse(raw);
+            }
+            
+            // If still a string after first parse (double-encoded), parse again
+            if (typeof raw === 'string') {
+                raw = JSON.parse(raw);
+            }
+            
+            // Ensure it's an array
+            if (!Array.isArray(raw)) {
+                raw = raw ? [raw] : [];
+            }
+            
+            console.log("[Manual SAP Draft] Raw distribution array:", JSON.stringify(raw, null, 2));
             
             // Normalize to what createSapDraft expects (centroCostos)
             distribuciones = raw.map((d: any) => ({
@@ -68,9 +86,37 @@ export async function POST(req: NextRequest) {
                 valor: d.valor || d.Valor || d.monto || 0
             }));
             
-            console.log(`[Manual SAP Draft] Normalized ${distribuciones.length} distribution lines (Dimension 1 mapping).`);
+            console.log(`[Manual SAP Draft] Normalized ${distribuciones.length} distribution lines from SharePoint.`);
         } catch (e) {
-            console.error("[Manual SAP Draft] Error parsing centro_costos:", e);
+            console.error("[Manual SAP Draft] Error parsing centro_costos from SharePoint:", e);
+        }
+
+        // Fallback: try reading from Supabase if SharePoint didn't have distribuciones
+        if (distribuciones.length === 0) {
+            try {
+                console.log(`[Manual SAP Draft] Trying Supabase fallback for invoice ${invoiceId}...`);
+                const { data: supaRecord } = await supabase
+                    .from('Registro_Facturas')
+                    .select('distribuciones, centro_costos')
+                    .eq('sharepoint_id', String(invoiceId))
+                    .single();
+                
+                if (supaRecord) {
+                    let rawSupa = supaRecord.distribuciones || supaRecord.centro_costos;
+                    if (typeof rawSupa === 'string') rawSupa = JSON.parse(rawSupa);
+                    if (typeof rawSupa === 'string') rawSupa = JSON.parse(rawSupa);
+                    if (!Array.isArray(rawSupa)) rawSupa = rawSupa ? [rawSupa] : [];
+                    
+                    distribuciones = rawSupa.map((d: any) => ({
+                        centroCostos: d.centroCostos || d.centroCosto || d.centro_costos || '',
+                        cuenta: d.cuenta || d.Cuenta || '',
+                        valor: d.valor || d.Valor || d.monto || 0
+                    }));
+                    console.log(`[Manual SAP Draft] Got ${distribuciones.length} lines from Supabase fallback.`);
+                }
+            } catch (supaErr) {
+                console.error("[Manual SAP Draft] Supabase fallback error:", supaErr);
+            }
         }
 
         if (distribuciones.length === 0) {
@@ -83,6 +129,7 @@ export async function POST(req: NextRequest) {
         // 4. Trigger SAP Draft Creation
         let sapResult = null;
         try {
+            console.log("[Manual SAP Draft] Payload distribuciones:", JSON.stringify(distribuciones, null, 2));
             sapResult = await createSapDraft({
                 nit: invoice.Nit!,
                 total: invoice["Valor total"]!,

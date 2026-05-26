@@ -177,7 +177,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
         const vendorMatch = allBPs.find((v) => {
             const candidateCardCode = String(v.CardCode || '').toUpperCase();
             const isAllowedPrefix = candidateCardCode.startsWith('AC') || candidateCardCode.startsWith('PN');
-            const isSupplier = v.CardType === 'sSupplier' || v.CardType === 'S';
+            const isSupplier = v.CardType === 'sSupplier' || v.CardType === 'cSupplier' || v.CardType === 'S';
             return isAllowedPrefix && isSupplier;
         });
 
@@ -211,10 +211,11 @@ export async function createSapDraft(payload: SapDraftPayload) {
 
             let allArticulos: any[] = [];
             if (uniqueAccountCodes.length > 0) {
+                const numericCodes = uniqueAccountCodes.map(c => parseInt(c, 10)).filter(n => !isNaN(n));
                 const { data, error: articulosError } = await supabase
                     .from('Articulos')
                     .select('ItemCode, Dscription, TaxCode, AcctCode')
-                    .in('AcctCode', uniqueAccountCodes);
+                    .in('AcctCode', numericCodes);
                 
                 if (articulosError) {
                     console.error('Error fetching articles from Supabase:', articulosError);
@@ -241,7 +242,10 @@ export async function createSapDraft(payload: SapDraftPayload) {
                 }
 
                 // Find mapped article from bulk result
-                const mappedArticulo = allArticulos.find(a => String(a.AcctCode) === accountCode);
+                // Compare as strings since AcctCode comes from a BIGINT DB column
+                const mappedArticulo = allArticulos.find(a => String(a.AcctCode) === String(accountCode));
+                console.log(`SAP Draft: Mapping dist account ${accountCode} -> found item: ${mappedArticulo?.ItemCode}`);
+                
                 const itemCode = mappedArticulo?.ItemCode || "";
                 const itemDescription = mappedArticulo?.Dscription || `${docTypeDesc} ${nroFactura}`;
                 const taxCode = mappedArticulo?.TaxCode || "IVADEX";
@@ -285,12 +289,12 @@ export async function createSapDraft(payload: SapDraftPayload) {
         };
 
         // If we have a sequence ID from SharePoint, use it as Manual DocNum
-        if (itemId) {
-            draftBody.Series = -1; // Manual
-            draftBody.HandWritten = "tYES";
-            draftBody.DocNum = parseInt(itemId.toString(), 10);
-            console.log(`SAP Draft [${nroFactura}]: Consecutivo Manual [${draftBody.DocNum}] - ${cardName}`);
-        }
+        // if (itemId) {
+        //     draftBody.Series = -1; // Manual
+        //     draftBody.HandWritten = "tYES";
+        //     draftBody.DocNum = parseInt(itemId.toString(), 10);
+        //     console.log(`SAP Draft [${nroFactura}]: Consecutivo Manual [${draftBody.DocNum}] - ${cardName}`);
+        // }
 
         console.log(`SAP Draft [${nroFactura}]: Creating draft with ${documentLines.length} lines...`);
 

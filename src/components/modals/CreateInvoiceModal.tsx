@@ -40,6 +40,8 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
 
     const [isDuplicate, setIsDuplicate] = useState(false);
     const [duplicateMessage, setDuplicateMessage] = useState("");
+    const [isLookingUpResponsable, setIsLookingUpResponsable] = useState(false);
+    const [autoFilledResponsable, setAutoFilledResponsable] = useState(false);
 
     const providerDropdownRef = useRef<HTMLDivElement>(null);
     const userDropdownRef = useRef<HTMLDivElement>(null);
@@ -194,6 +196,7 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
         setError(null);
         setUserSearch("");
         setProviderSearch("");
+        setAutoFilledResponsable(false);
         onClose();
     };
 
@@ -300,10 +303,37 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                                             <button
                                                                 key={`${p.numero_identificacion}-${idx}`}
                                                                 type="button"
-                                                                onClick={() => {
+                                                                onClick={async () => {
                                                                     setFormData({...formData, proveedor: p.razon_social, nit: p.numero_identificacion});
                                                                     setProviderSearch(p.razon_social);
                                                                     setShowProviderResults(false);
+                                                                    // Auto-lookup responsible person
+                                                                    try {
+                                                                        setIsLookingUpResponsable(true);
+                                                                        setAutoFilledResponsable(false);
+                                                                        const res = await fetch(`/api/providers/responsable?nit=${encodeURIComponent(p.numero_identificacion)}`);
+                                                                        const data = await res.json();
+                                                                        if (data.found && data.responsable) {
+                                                                            // Search for this user by name to get their email
+                                                                            const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(data.responsable)}`);
+                                                                            const userData = await userRes.json();
+                                                                            const users = userData.users || [];
+                                                                            if (users.length > 0) {
+                                                                                // Find exact or closest match
+                                                                                const exactMatch = users.find((u: any) => u.name.toLowerCase() === data.responsable.toLowerCase()) || users[0];
+                                                                                setFormData(prev => ({...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: exactMatch.email}));
+                                                                                setUserSearch(exactMatch.name);
+                                                                                setAutoFilledResponsable(true);
+                                                                            } else {
+                                                                                // User not found in AD, just show the name
+                                                                                setUserSearch(data.responsable);
+                                                                            }
+                                                                        }
+                                                                    } catch (e) {
+                                                                        console.error('Error looking up responsable:', e);
+                                                                    } finally {
+                                                                        setIsLookingUpResponsable(false);
+                                                                    }
                                                                 }}
                                                                 className="w-full px-4 py-2.5 text-left hover:bg-blue-50/50 border-b border-gray-50 last:border-0 transition-colors flex flex-col"
                                                             >
@@ -379,20 +409,28 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
 
                                 {/* Responsable */}
                                 <div className="md:col-span-2 space-y-1.5 relative" ref={userDropdownRef}>
-                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Responsable de Autorizar</label>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1 flex items-center gap-2">
+                                        Responsable de Autorizar
+                                        {autoFilledResponsable && (
+                                            <span className="text-[9px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-black">✓ Asignado automáticamente</span>
+                                        )}
+                                    </label>
                                     <div className="relative group">
-                                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                                        <User className={`absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 transition-colors ${autoFilledResponsable ? 'text-emerald-500' : 'text-gray-400 group-focus-within:text-blue-500'}`} />
                                         <input
                                             type="text"
                                             value={userSearch}
                                             onChange={(e) => {
                                                 setUserSearch(e.target.value);
+                                                setAutoFilledResponsable(false);
                                                 if (e.target.value === "") setFormData({...formData, responsableEmail: ""});
                                             }}
-                                            className="w-full pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-[#254153]"
+                                            className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-[#254153] ${
+                                                autoFilledResponsable ? 'bg-emerald-50/50 border-emerald-200' : 'bg-gray-50 border-gray-100'
+                                            }`}
                                             placeholder="Buscar por nombre o correo..."
                                         />
-                                        {isSearchingUsers && (
+                                        {(isSearchingUsers || isLookingUpResponsable) && (
                                             <div className="absolute right-3 top-1/2 -translate-y-1/2">
                                                 <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
                                             </div>
