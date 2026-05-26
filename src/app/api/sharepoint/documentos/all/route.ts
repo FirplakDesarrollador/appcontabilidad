@@ -40,14 +40,49 @@ export async function GET(req: Request) {
             }
         }
 
-        let sharepointFilter = '';
-        if (pending) {
-            // En SharePoint usamos el nombre interno de la columna
-            sharepointFilter = "fields/AprobacionDoliente eq 'Por Aprobar' or fields/AprobacionDoliente eq 'Pendiente'";
+        console.log(`[API] Fetching all support documents from SharePoint to refresh cache (Direct)...`);
+        let items = await fetchAllSharePointItems('Documento_Soporte', limit || 5000, '');
+
+        // Cache the fetched items in Supabase
+        if (items.length > 0) {
+            try {
+                const upsertData = items.map((item: any) => ({
+                    id: Number(item.id),
+                    sharepoint_id: String(item.id),
+                    nit: item.Title || "N/A",
+                    proveedor: item.tsic || "N/A",
+                    valor_total: item.Valortotal || 0,
+                    consecutivo: item.Consecutivo_Doc_Soporte ? String(item.Consecutivo_Doc_Soporte) : "S/N",
+                    aprobacion_doliente: item.AprobacionDoliente || "Pendiente",
+                    gestion_contabilidad: item.Gestion_Contabilidad || "Pendiente",
+                    observaciones: item.Observaciones || null,
+                    responsable_nombre: item.Responsable_de_Autorizar || "Sin asignar",
+                    tiene_anticipo: item.tiene_anticipo || null,
+                    centro_costos: item.centro_costos || null,
+                    updated_at: new Date().toISOString()
+                }));
+
+                const { error: upsertErr } = await supabase
+                    .from('Documento_Soporte')
+                    .upsert(upsertData, { onConflict: 'id' });
+
+                if (upsertErr) {
+                    console.error('[API] Failed to update cache for documents:', upsertErr.message);
+                } else {
+                    console.log(`[API] Cached ${upsertData.length} documents in Supabase`);
+                }
+            } catch (err) {
+                console.error('[API] Error updating cache in Supabase:', err);
+            }
         }
 
-        console.log(`[API] Fetching support documents from SharePoint (Direct)...`);
-        let items = await fetchAllSharePointItems('Documento_Soporte', limit || 5000, sharepointFilter);
+        // Apply in-memory filtering for pending documents if requested
+        if (pending) {
+            items = items.filter((item: any) => {
+                const status = (item.AprobacionDoliente || "Pendiente").toLowerCase();
+                return status.includes("pendiente") || status.includes("por aprobar");
+            });
+        }
 
         // Enforce limit if specified
         if (limit > 0 && items.length > limit) {

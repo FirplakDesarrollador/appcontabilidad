@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGraphClient } from '@/lib/sharepoint';
 import { sendReassignmentNotification } from '@/lib/sendReassignmentNotification';
+import { supabase } from '@/lib/supabaseClient';
+
 
 export async function POST(req: NextRequest) {
     try {
@@ -92,6 +94,32 @@ export async function POST(req: NextRequest) {
 
         if (!updated) {
             throw new Error('No se pudo actualizar el responsable en ningún campo conocido de SharePoint usando el ID del usuario.');
+        }
+
+        // Sync responsible to Supabase cache immediately
+        try {
+            if (listName === 'Documento_Soporte') {
+                await supabase
+                    .from('Documento_Soporte')
+                    .update({
+                        responsable_id: userEmail,
+                        responsable_nombre: userName,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', Number(itemId));
+                console.log(`Supabase Documento_Soporte responsible updated for item ${itemId}`);
+            } else {
+                await supabase
+                    .from('Registro_Facturas')
+                    .update({
+                        Responsable_de_Autorizar: userName,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('ID', Number(itemId));
+                console.log(`Supabase Registro_Facturas responsible updated for item ${itemId}`);
+            }
+        } catch (supaErr) {
+            console.error('Failed to update Supabase cache for reassignment:', supaErr);
         }
 
         const notificationSent = await sendReassignmentNotification({

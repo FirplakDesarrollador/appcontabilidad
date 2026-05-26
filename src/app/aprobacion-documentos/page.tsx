@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { useSidebar } from "@/context/SidebarContext";
 import { Menu } from "lucide-react";
+import { CreateSupportDocumentModal } from "@/components/modals/CreateSupportDocumentModal";
 
 interface SharePointDocument {
     id: string;
@@ -38,6 +39,7 @@ export default function SupportDocumentsPage() {
     const [isSearchingUsers, setIsSearchingUsers] = useState(false);
     const [isUpdatingResponsible, setIsUpdatingResponsible] = useState(false);
     const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     
     // For auto-approval (using same providers table)
     const [isProvidersSidebarOpen, setIsProvidersSidebarOpen] = useState(false);
@@ -468,6 +470,12 @@ export default function SupportDocumentsPage() {
                                 {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
                                 Sincronizar SharePoint
                             </Button>
+                            <Button
+                                onClick={() => setIsCreateModalOpen(true)}
+                                className="bg-[#254153] hover:bg-[#1a2f3d] text-white rounded-xl h-11 px-4 font-bold shadow-sm transition-all"
+                            >
+                                Crear documento soporte
+                            </Button>
                         </div>
                     </div>
 
@@ -741,6 +749,12 @@ export default function SupportDocumentsPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            <CreateSupportDocumentModal
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                onSuccess={() => fetchDocuments(true)}
+            />
         </div>
     );
 }

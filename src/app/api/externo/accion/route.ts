@@ -61,13 +61,14 @@ export async function POST(req: NextRequest) {
             updatePayload.Valortotal = cleanValor;
         }
 
+        let jsonDist = "";
         if (distribuciones && Array.isArray(distribuciones) && distribuciones.length > 0) {
             const centroCostosArray = distribuciones.map((d: any) => ({
                 centroCosto: d.centroCosto || d.centroCostos || "",
                 cuenta: d.cuenta || "",
                 valor: d.valor ? String(d.valor) : "0"
             }));
-            const jsonDist = JSON.stringify(centroCostosArray);
+            jsonDist = JSON.stringify(centroCostosArray);
             updatePayload.centro_costos = jsonDist;
         }
 
@@ -83,30 +84,58 @@ export async function POST(req: NextRequest) {
 
         // Sync to Supabase for immediate feedback
         try {
-            const supabaseUpdate: any = {
-                Aprobacion_Doliente: action,
-                updated_at: new Date().toISOString()
-            };
-            if (updatePayload.FechaAprobacion) {
-                supabaseUpdate.FechaAprobacion = updatePayload.FechaAprobacion;
-            }
-            if (cleanValor !== null) {
-                supabaseUpdate["Valor_total"] = cleanValor;
-            }
-            if (observaciones) {
-                supabaseUpdate.Observaciones = observaciones;
-            }
-            if (updatePayload.centro_costos) {
-                supabaseUpdate.centro_costos = updatePayload.centro_costos;
-                supabaseUpdate.tablaCostos = jsonDist; // Keep full version in Supabase
-            }
+            if (isDocSoporte) {
+                const supabaseUpdate: any = {
+                    aprobacion_doliente: action,
+                    updated_at: new Date().toISOString()
+                };
+                if (cleanValor !== null) {
+                    supabaseUpdate.valor_total = cleanValor;
+                }
+                if (observaciones) {
+                    supabaseUpdate.observaciones = observaciones;
+                }
+                if (anticipo) {
+                    supabaseUpdate.tiene_anticipo = anticipo;
+                }
+                if (updatePayload.centro_costos) {
+                    supabaseUpdate.centro_costos = updatePayload.centro_costos;
+                }
 
-            await supabase
-                .from('Registro_Facturas')
-                .update(supabaseUpdate)
-                .eq('ID', Number(itemId));
-            
-            console.log(`Supabase cache updated for item ${itemId}`);
+                const { error: supaErr } = await supabase
+                    .from('Documento_Soporte')
+                    .update(supabaseUpdate)
+                    .eq('id', Number(itemId));
+                
+                if (supaErr) throw supaErr;
+                console.log(`Supabase cache updated for Documento_Soporte item ${itemId}`);
+            } else {
+                const supabaseUpdate: any = {
+                    Aprobacion_Doliente: action,
+                    updated_at: new Date().toISOString()
+                };
+                if (updatePayload.FechaAprobacion) {
+                    supabaseUpdate.FechaAprobacion = updatePayload.FechaAprobacion;
+                }
+                if (cleanValor !== null) {
+                    supabaseUpdate["Valor_total"] = cleanValor;
+                }
+                if (observaciones) {
+                    supabaseUpdate.Observaciones = observaciones;
+                }
+                if (updatePayload.centro_costos) {
+                    supabaseUpdate.centro_costos = updatePayload.centro_costos;
+                    supabaseUpdate.tablaCostos = jsonDist; // Keep full version in Supabase
+                }
+
+                const { error: supaErr } = await supabase
+                    .from('Registro_Facturas')
+                    .update(supabaseUpdate)
+                    .eq('ID', Number(itemId));
+                
+                if (supaErr) throw supaErr;
+                console.log(`Supabase cache updated for Registro_Facturas item ${itemId}`);
+            }
         } catch (supaErr) {
             console.error('Failed to update Supabase cache:', supaErr);
         }
