@@ -276,7 +276,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
 
         // 4. CREATE DRAFT (oPurchaseInvoices)
         const displayProveedor = proveedorName || cardName || 'N/A';
-        const finalComments = `Proveedor: ${displayProveedor} | Factura: ${nroFactura} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`;
+        const finalComments = `Proveedor: ${displayProveedor} | Factura: ${nroFactura} | ID: ${itemId || 'N/A'} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`;
         
         const draftBody: any = {
             DocObjectCode: "oPurchaseInvoices",
@@ -289,12 +289,12 @@ export async function createSapDraft(payload: SapDraftPayload) {
         };
 
         // If we have a sequence ID from SharePoint, use it as Manual DocNum
-        // if (itemId) {
-        //     draftBody.Series = -1; // Manual
-        //     draftBody.HandWritten = "tYES";
-        //     draftBody.DocNum = parseInt(itemId.toString(), 10);
-        //     console.log(`SAP Draft [${nroFactura}]: Consecutivo Manual [${draftBody.DocNum}] - ${cardName}`);
-        // }
+        if (itemId) {
+            draftBody.Series = -1; // Manual
+            draftBody.HandWritten = "tYES";
+            draftBody.DocNum = parseInt(itemId.toString(), 10);
+            console.log(`SAP Draft [${nroFactura}]: Consecutivo Manual [${draftBody.DocNum}] - ${cardName}`);
+        }
 
         console.log(`SAP Draft [${nroFactura}]: Creating draft with ${documentLines.length} lines...`);
 
