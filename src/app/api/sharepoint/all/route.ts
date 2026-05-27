@@ -53,67 +53,19 @@ function mapSharePointInvoiceToSupabase(item: any) {
  * Se dispara sin bloquear la respuesta HTTP → el usuario recibe los datos de Supabase
  * inmediatamente, y la próxima carga ya tendrá el estado actualizado.
  */
-async function syncPendingFromSharePointInBackground() {
+async function syncPendingFromSharePointInBackground(reqUrl: string) {
     if (pendingSyncInProgress) return;
     pendingSyncInProgress = true;
     try {
-        console.log('[BG Sync] Starting background pending sync from SharePoint...');
-        const sharepointFilter = "fields/Aprobacion_Doliente eq 'Por Aprobar'";
-        const spItems = await fetchAllSharePointItems('Registro_de_Facturas', 5000, sharepointFilter);
-        const spIds = new Set(spItems.map((i: any) => String(i.id)));
-
-        if (spItems.length > 0) {
-            const batchSize = 100;
-            let synced = 0;
-
-            for (let i = 0; i < spItems.length; i += batchSize) {
-                const chunk = spItems.slice(i, i + batchSize).map(mapSharePointInvoiceToSupabase);
-                const { error } = await supabase
-                    .from('Registro_Facturas')
-                    .upsert(chunk, { onConflict: 'ID' });
-
-                if (error) {
-                    console.error(`[BG Sync] Error upserting pending batch ${Math.floor(i / batchSize) + 1}:`, error.message);
-                } else {
-                    synced += chunk.length;
-                }
-            }
-
-            console.log(`[BG Sync] Upserted ${synced} pending records from SharePoint.`);
-        }
-
-        // Obtener los IDs que Supabase tiene como "Por Aprobar"
-        const { data: supabasePending } = await supabase
-            .from('Registro_Facturas')
-            .select('ID, sharepoint_id')
-            .eq('Aprobacion_Doliente', 'Por Aprobar');
-
-        const staleIds: string[] = [];
-        for (const row of supabasePending || []) {
-            const spId = String(row.sharepoint_id || row.ID);
-            if (!spIds.has(spId)) {
-                // Este registro ya no está "Por Aprobar" en SharePoint → actualizar en Supabase
-                staleIds.push(row.ID);
-            }
-        }
-
-        if (staleIds.length > 0) {
-            console.log(`[BG Sync] Found ${staleIds.length} stale pending records. Marking as sync-needed...`);
-            // Sincronizar el estado correcto desde SharePoint para cada uno
-            // (En lote: los que ya no están pendientes en SP los marcamos como "Aprobado" provisional
-            //  hasta que el sync completo actualice el valor exacto)
-            // Nota: esto es seguro porque el único estado que desaparece de "Por Aprobar" en SP
-            // es cuando pasan a "Aprobado" o "Rechazado".
-            // Para saber el estado exacto, buscarlos en la respuesta completa de SP sería costoso.
-            // Alternativa rápida: marcarlos como "Procesado" para sacarlos de la vista de pendientes.
-            // El sync completo del cron job actualizará el valor exacto.
-            await supabase
-                .from('Registro_Facturas')
-                .update({ Aprobacion_Doliente: 'Aprobado', Gestion_Contabilidad: 'Procesado' })
-                .in('ID', staleIds);
-            console.log(`[BG Sync] Updated ${staleIds.length} stale records in Supabase.`);
+        console.log('[BG Sync] Triggering background delta sync...');
+        const baseUrl = new URL(reqUrl).origin;
+        const syncUrl = `${baseUrl}/api/cron/sync-sharepoint`;
+        
+        const response = await fetch(syncUrl, { method: 'GET' });
+        if (!response.ok) {
+            console.error('[BG Sync] Failed to execute background delta sync:', response.statusText);
         } else {
-            console.log('[BG Sync] Supabase is in sync with SharePoint (pending).');
+            console.log('[BG Sync] Background delta sync completed successfully.');
         }
 
         lastPendingSync = Date.now();
@@ -144,11 +96,11 @@ export async function GET(req: Request) {
             // Si refresh explícito, esperar la sincronización antes de responder
             if (refresh) {
                 console.log('[API] Explicit refresh requested — syncing from SharePoint...');
-                await syncPendingFromSharePointInBackground();
+                await syncPendingFromSharePointInBackground(req.url);
             } else if (cacheStale && !pendingSyncInProgress) {
                 // Caché expirado → disparar sync en fondo SIN bloquear la respuesta
                 console.log(`[API] Cache stale (${Math.round(cacheAge / 1000)}s) — triggering background sync...`);
-                syncPendingFromSharePointInBackground(); // fire-and-forget
+                syncPendingFromSharePointInBackground(req.url); // fire-and-forget
             }
 
             // Servir desde Supabase (siempre rápido)

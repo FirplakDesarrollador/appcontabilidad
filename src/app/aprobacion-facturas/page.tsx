@@ -269,8 +269,8 @@ export default function InvoicesPage() {
     const handleRefreshInvoices = async () => {
         setIsSyncingSharePoint(true);
         try {
-            const response = await fetch("/api/sharepoint/full-sync", {
-                method: "POST",
+            const response = await fetch("/api/cron/sync-sharepoint?manual=true", {
+                method: "GET",
             });
             const data = await response.json();
 
