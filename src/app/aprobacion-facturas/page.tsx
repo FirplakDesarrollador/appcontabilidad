@@ -269,7 +269,7 @@ export default function InvoicesPage() {
     const handleRefreshInvoices = async () => {
         setIsSyncingSharePoint(true);
         try {
-            const response = await fetch("/api/supabase/sync-sharepoint", {
+            const response = await fetch("/api/sharepoint/full-sync", {
                 method: "POST",
             });
             const data = await response.json();
