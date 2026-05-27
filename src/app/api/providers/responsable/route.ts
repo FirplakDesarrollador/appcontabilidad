@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Connect to the "Servicios y comercial" Supabase project where Proveedores_con_Responsable lives
-const supabaseServicios = createClient(
-    process.env.SERVICIOS_SUPABASE_URL || "",
-    process.env.SERVICIOS_SUPABASE_KEY || ""
-);
-
 export async function GET(req: NextRequest) {
+    const supabaseUrl = process.env.SERVICIOS_SUPABASE_URL;
+    const supabaseKey = process.env.SERVICIOS_SUPABASE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+        console.error("Missing SERVICIOS_SUPABASE_URL or SERVICIOS_SUPABASE_KEY");
+        return NextResponse.json({ error: "Configuración de Supabase faltante" }, { status: 500 });
+    }
+
+    // Connect to the "Servicios y comercial" Supabase project where Proveedores_con_Responsable lives
+    const supabaseServicios = createClient(supabaseUrl, supabaseKey);
+
     const { searchParams } = new URL(req.url);
     const nit = searchParams.get("nit");
 

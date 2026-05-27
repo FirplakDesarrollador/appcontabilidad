@@ -45,28 +45,24 @@ async function run() {
 
     const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
     const siteId = siteResponse.id;
-    console.log("Site ID:", siteId);
 
     const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-    const list = listsResponse.value.find(l => l.name === 'Documento_Soporte' || l.displayName === 'Documento_Soporte');
+    
+    const list = listsResponse.value.find(l => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
+    
+    if (!list) {
+        console.log("Could not find Registro_de_Facturas list.");
+        return;
+    }
+    
     console.log("List Name:", list.name, "List ID:", list.id);
 
-    // Get columns
-    const columnsResponse = await client.api(`/sites/${siteId}/lists/${list.id}/columns`).get();
-    console.log("\n--- COLUMNS ---");
-    columnsResponse.value.forEach(col => {
-        if (col.lookup || col.name.includes("Responsable") || col.name.includes("Aprobar") || col.name.includes("Doliente")) {
-            console.log(`Column Name: ${col.name}, DisplayName: ${col.displayName}, Type: ${col.lookup ? 'Lookup' : 'Other'}`);
-        }
-    });
-
-    // Fetch one item fields
-    const itemsResponse = await client.api(`/sites/${siteId}/lists/${list.id}/items?expand=fields&top=1`).get();
-    if (itemsResponse.value.length > 0) {
-        console.log("\n--- FIRST ITEM FIELDS ---");
-        console.log(JSON.stringify(itemsResponse.value[0].fields, null, 2));
-    } else {
-        console.log("No items found in Documento_Soporte list.");
+    try {
+        const item = await client.api(`/sites/${siteId}/lists/${list.id}/items/49925?expand=fields`).get();
+        console.log("\n--- ITEM 49925 FIELDS ---");
+        console.log(JSON.stringify(item.fields, null, 2));
+    } catch (e) {
+        console.error("Error fetching item 49925:", e.message);
     }
 }
 
