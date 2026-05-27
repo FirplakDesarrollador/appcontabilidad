@@ -77,16 +77,16 @@ export async function GET(req: Request) {
         // Simple security check (header authorization or secret token in URL)
         const { searchParams } = new URL(req.url);
         const secret = searchParams.get('secret');
+        const isManual = searchParams.get('manual') === 'true';
         const expectedSecret = process.env.CRON_SECRET;
         
-        if (expectedSecret && secret !== expectedSecret) {
+        if (!isManual && expectedSecret && secret !== expectedSecret) {
             return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
         }
 
         console.log('[CRON-SYNC] Initiating bidirectional delta sync...');
         
         // 1. Determine last sync interval (5.5 minutes ago to ensure overlap, 7 days if manual)
-        const isManual = searchParams.get('manual') === 'true';
         const minutesBack = isManual ? 7 * 24 * 60 : 5.5;
         const lastSyncTime = new Date(Date.now() - minutesBack * 60 * 1000);
         console.log(`[CRON-SYNC] Syncing changes since: ${lastSyncTime.toISOString()} (manual: ${isManual})`);

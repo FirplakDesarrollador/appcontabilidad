@@ -59,7 +59,8 @@ async function syncPendingFromSharePointInBackground(reqUrl: string) {
     try {
         console.log('[BG Sync] Triggering background delta sync...');
         const baseUrl = new URL(reqUrl).origin;
-        const syncUrl = `${baseUrl}/api/cron/sync-sharepoint`;
+        const secret = process.env.CRON_SECRET || '';
+        const syncUrl = `${baseUrl}/api/cron/sync-sharepoint?secret=${secret}`;
         
         const response = await fetch(syncUrl, { method: 'GET' });
         if (!response.ok) {
@@ -104,7 +105,7 @@ export async function GET(req: Request) {
             }
 
             // Servir desde Supabase (siempre rápido)
-            const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url';
+            const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url, centro_costos, tablaCostos';
             const fetchLimit = limit > 0 ? limit : 1000;
 
             const { data, error } = await supabase
@@ -150,7 +151,7 @@ export async function GET(req: Request) {
 
             if (!refresh) {
                 console.log(`[API] Fetching PROCESSED from Supabase cache (offset=${offset}, limit=${limit})...`);
-                const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url';
+                const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url, centro_costos, tablaCostos';
                 const fetchLimit = limit > 0 ? limit : 1000;
 
                 const { data, error } = await supabase

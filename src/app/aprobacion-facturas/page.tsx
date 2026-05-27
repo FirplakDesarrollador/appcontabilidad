@@ -57,6 +57,28 @@ function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode
 
 export default function InvoicesPage() {
     const { toggleSidebar } = useSidebar();
+    const [colWidths, setColWidths] = useState<Record<string, number>>({ 'C. Costos / Cuenta': 100 });
+
+    const handleResize = (e: React.MouseEvent, col: string) => {
+        e.preventDefault();
+        const startX = e.pageX;
+        const thElement = (e.target as HTMLElement).closest('th');
+        const startWidth = colWidths[col] || thElement?.offsetWidth || 150;
+        
+        const onMouseMove = (moveEvent: MouseEvent) => {
+            const newWidth = Math.max(50, startWidth + (moveEvent.pageX - startX));
+            setColWidths(prev => ({ ...prev, [col]: newWidth }));
+        };
+        
+        const onMouseUp = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        };
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    };
+
     const [pendingInvoices, setPendingInvoices] = useState<SharePointInvoice[]>([]);
     const [processedInvoices, setProcessedInvoices] = useState<SharePointInvoice[]>([]);
     const [pendingCount, setPendingCount] = useState(0);
@@ -565,7 +587,7 @@ export default function InvoicesPage() {
     };
 
     const handleManualSapSync = async (inv: SharePointInvoice) => {
-        if (!confirm(`¿Estás seguro de crear un documento preliminar en SAP para la factura ${inv.Nro_Factura}?`)) return;
+        if (!confirm(`Â¿Estás seguro de crear un documento preliminar en SAP para la factura ${inv.Nro_Factura}?`)) return;
         
         setSyncingId(inv.id);
         try {
@@ -577,16 +599,50 @@ export default function InvoicesPage() {
 
             const data = await res.json();
             if (data.success) {
-                alert(`✅ Preliminar SAP creado exitosamente\nDocEntry: ${data.sap.draftId}`);
+                alert(`âœ… Preliminar SAP creado exitosamente\nDocEntry: ${data.sap.draftId}`);
             } else {
-                alert(`❌ Error al crear preliminar SAP: ${data.error}`);
+                alert(`âŒ Error al crear preliminar SAP: ${data.error}`);
             }
         } catch (error) {
             console.error("Error manual SAP sync:", error);
-            alert("❌ Error de conexión al sincronizar con SAP. Revisa la consola.");
+            alert("âŒ Error de conexión al sincronizar con SAP. Revisa la consola.");
         } finally {
             setSyncingId(null);
         }
+    };
+
+    const formatCostCenter = (costCenterStr: any, tableCostStr: any) => {
+        if (!costCenterStr && !tableCostStr) return "Sin asignar";
+        
+        if (costCenterStr) {
+            try {
+                const parsed = typeof costCenterStr === 'string' ? JSON.parse(costCenterStr) : costCenterStr;
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    return (
+                        <div className="flex flex-col gap-1.5 py-1">
+                            {parsed.map((p, i) => (
+                                <div key={i} className="whitespace-normal break-words leading-tight bg-gray-50/50 rounded p-1">
+                                    <span className="text-[#254153] font-extrabold">{p.centroCosto?.split(' - ')[0] || ''}</span>
+                                    <span className="text-gray-300 mx-1.5">|</span>
+                                    <span className="text-gray-600">{p.cuenta || ''}</span>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                }
+            } catch (e) {
+                return <div className="whitespace-normal break-words leading-tight">{String(costCenterStr)}</div>;
+            }
+        }
+        
+        if (tableCostStr) {
+            if (typeof tableCostStr === 'object' && tableCostStr.Url) {
+                return "Ver tabla adjunta";
+            }
+            return <div className="whitespace-normal break-words leading-tight">{String(tableCostStr)}</div>;
+        }
+        
+        return "Sin asignar";
     };
 
     const formatCurrency = (value: any) => {
@@ -835,18 +891,20 @@ export default function InvoicesPage() {
                             <table className="w-full text-left border-collapse">
                                 <thead>
                                     <tr className="bg-gray-50/50 border-b border-gray-100">
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Acciones</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">NIT</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Proveedor</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Factura</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Valor total</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Responsable</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Estado</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">G. Contabilidad</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Consecutivo</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Fecha Aprobación</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Observaciones</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Datos adjuntos</th>
+                                        <th style={{ width: colWidths['Acciones'], minWidth: colWidths['Acciones'], maxWidth: colWidths['Acciones'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Acciones<div onMouseDown={(e) => handleResize(e, 'Acciones')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['NIT'], minWidth: colWidths['NIT'], maxWidth: colWidths['NIT'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">NIT<div onMouseDown={(e) => handleResize(e, 'NIT')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Proveedor'], minWidth: colWidths['Proveedor'], maxWidth: colWidths['Proveedor'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Proveedor<div onMouseDown={(e) => handleResize(e, 'Proveedor')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Factura'], minWidth: colWidths['Factura'], maxWidth: colWidths['Factura'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Factura<div onMouseDown={(e) => handleResize(e, 'Factura')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Valor total'], minWidth: colWidths['Valor total'], maxWidth: colWidths['Valor total'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right relative">Valor total<div onMouseDown={(e) => handleResize(e, 'Valor total')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Responsable'], minWidth: colWidths['Responsable'], maxWidth: colWidths['Responsable'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Responsable<div onMouseDown={(e) => handleResize(e, 'Responsable')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Estado'], minWidth: colWidths['Estado'], maxWidth: colWidths['Estado'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Estado<div onMouseDown={(e) => handleResize(e, 'Estado')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['G. Contabilidad'], minWidth: colWidths['G. Contabilidad'], maxWidth: colWidths['G. Contabilidad'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">G. Contabilidad<div onMouseDown={(e) => handleResize(e, 'G. Contabilidad')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Consecutivo'], minWidth: colWidths['Consecutivo'], maxWidth: colWidths['Consecutivo'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Consecutivo<div onMouseDown={(e) => handleResize(e, 'Consecutivo')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Fecha Creación'], minWidth: colWidths['Fecha Creación'], maxWidth: colWidths['Fecha Creación'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Fecha Creación<div onMouseDown={(e) => handleResize(e, 'Fecha Creación')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['C. Costos / Cuenta'], minWidth: colWidths['C. Costos / Cuenta'], maxWidth: colWidths['C. Costos / Cuenta'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">C. Costos / Cuenta<div onMouseDown={(e) => handleResize(e, 'C. Costos / Cuenta')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Fecha Aprobación'], minWidth: colWidths['Fecha Aprobación'], maxWidth: colWidths['Fecha Aprobación'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Fecha Aprobación<div onMouseDown={(e) => handleResize(e, 'Fecha Aprobación')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Observaciones'], minWidth: colWidths['Observaciones'], maxWidth: colWidths['Observaciones'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Observaciones<div onMouseDown={(e) => handleResize(e, 'Observaciones')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Datos adjuntos'], minWidth: colWidths['Datos adjuntos'], maxWidth: colWidths['Datos adjuntos'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap relative">Datos adjuntos<div onMouseDown={(e) => handleResize(e, 'Datos adjuntos')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
                                     </tr>
                                     <tr className="bg-white border-b border-gray-50">
                                         <td className="px-3 py-2" />
@@ -998,7 +1056,7 @@ export default function InvoicesPage() {
                                                                 variant="outline"
                                                                 onClick={() => handleCopyLink(inv)}
                                                                 className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
-                                                                title="Copiar Link PÃºblico"
+                                                                title="Copiar Link Píºblico"
                                                             >
                                                                 <Copy className="h-3.5 w-3.5" />
                                                             </Button>
@@ -1060,13 +1118,23 @@ export default function InvoicesPage() {
                                                     <td className="px-6 py-5">
                                                         <div className="text-xs font-bold text-gray-600">{inv.Consecutivo || "N/A"}</div>
                                                     </td>
+                                                    <td className="px-6 py-5 max-w-0">
+                                                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">
+                                                            {(inv.Creado || inv.Created) ? new Date(inv.Creado || inv.Created).toLocaleString() : "Sin fecha"}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-5 max-w-0">
+                                                        <div className="text-[10px] font-bold text-gray-500 w-full">
+                                                            {formatCostCenter(inv.centro_costos, inv.tablaCostos)}
+                                                        </div>
+                                                    </td>
                                                     <td className="px-6 py-5">
                                                         <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">
                                                             {inv.FechaAprobacion ? new Date(inv.FechaAprobacion).toLocaleString() : "Sin fecha"}
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-5 min-w-[220px]">
-                                                        <div className="max-w-[260px] truncate text-xs font-medium text-gray-500" title={inv.Observaciones || ""}>
+                                                    <td className="px-6 py-5 max-w-0 min-w-[220px]">
+                                                        <div className="w-full text-xs font-medium text-gray-500">
                                                             {inv.Observaciones || "Sin observaciones"}
                                                         </div>
                                                     </td>
@@ -1752,7 +1820,7 @@ export default function InvoicesPage() {
                                                                 <Edit2 className="h-3 w-3 text-gray-300 group-hover:text-blue-500 transition-colors" />
                                                             </div>
                                                             {pendingResponsibleUser && (
-                                                                <p className="text-[9px] font-bold text-blue-400 uppercase tracking-tighter">⚠️ Cambio pendiente por guardar</p>
+                                                                <p className="text-[9px] font-bold text-blue-400 uppercase tracking-tighter">âš ï¸ Cambio pendiente por guardar</p>
                                                             )}
                                                         </div>
                                                     ) : (
