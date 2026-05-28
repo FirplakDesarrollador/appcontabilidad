@@ -160,7 +160,8 @@ export async function POST(req: NextRequest) {
                     nroFactura: nroFactura || itemId,
                     docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA',
                     itemId: consecutivoReal,
-                    proveedorName: proveedorReal
+                    proveedorName: proveedorReal,
+                    seriesName: isDocSoporte ? 'DSE3' : undefined
                 });
             } catch (sapErr: any) {
                 console.error('Failed to trigger SAP Draft registration:', sapErr.message);

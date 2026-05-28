@@ -23,6 +23,7 @@ export interface SapDraftPayload {
     docTypeDesc?: string;
     itemId?: string | number; // SharePoint Sequence ID
     proveedorName?: string; // Provider Name from SharePoint
+    seriesName?: string; // Optional Series Name for SAP auto-numbering
 }
 
 interface SapBusinessPartner {
@@ -275,7 +276,22 @@ export async function createSapDraft(payload: SapDraftPayload) {
             throw new Error('No valid distribution lines provided for SAP Draft');
         }
 
-        // 4. CREATE DRAFT (oPurchaseInvoices)
+        // 4. GET SERIES ID IF PROVIDED
+        let internalSeriesId = -1;
+        if (payload.seriesName) {
+            console.log(`SAP Draft [${nroFactura}]: Buscando ID para la serie '${payload.seriesName}'...`);
+            // Document 18 corresponds to oPurchaseInvoices (Factura de Proveedores) which applies to Drafts of this type
+            const seriesUrl = `${baseUrl}/Series?$filter=Name eq '${payload.seriesName}' and Document eq '18'`;
+            const seriesRes = await sapRequestWithRetry(seriesUrl, { headers: authHeaders });
+            if (seriesRes.status === 200 && seriesRes.data.value && seriesRes.data.value.length > 0) {
+                internalSeriesId = seriesRes.data.value[0].Series;
+                console.log(`SAP Draft [${nroFactura}]: Found Series ID ${internalSeriesId} for '${payload.seriesName}'`);
+            } else {
+                console.warn(`SAP Draft [${nroFactura}]: Series Name '${payload.seriesName}' not found for Document 18. Falling back to manual.`);
+            }
+        }
+
+        // 5. CREATE DRAFT (oPurchaseInvoices)
         const displayProveedor = proveedorName || cardName || 'N/A';
         const finalComments = `Proveedor: ${displayProveedor} | Factura: ${nroFactura} | ID: ${itemId || 'N/A'} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`;
         
@@ -289,8 +305,12 @@ export async function createSapDraft(payload: SapDraftPayload) {
             DocumentLines: documentLines
         };
 
-        // If we have a sequence ID from SharePoint, use it as Manual DocNum
-        if (itemId) {
+        if (internalSeriesId !== -1) {
+            // Usa numeración automática con la serie especificada (por ejemplo DSE3)
+            draftBody.Series = internalSeriesId;
+            console.log(`SAP Draft [${nroFactura}]: Asignando Serie Automática [${payload.seriesName} -> ID ${internalSeriesId}]`);
+        } else if (itemId) {
+            // Si no hay serie válida, pero hay ID de SharePoint, usa numeración manual (como en Facturas)
             draftBody.Series = -1; // Manual
             draftBody.HandWritten = "tYES";
             draftBody.DocNum = parseInt(itemId.toString(), 10);
