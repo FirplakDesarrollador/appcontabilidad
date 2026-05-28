@@ -113,7 +113,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
         proveedorName
     } = payload;
 
-    if (!nit || !total) {
+    if (!nit || total === undefined || total === null) {
         throw new Error('Missing required SAP data (NIT or Total)');
     }
 
