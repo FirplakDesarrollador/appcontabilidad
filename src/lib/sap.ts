@@ -299,7 +299,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
 
         console.log(`SAP Draft [${nroFactura}]: Creating draft with ${documentLines.length} lines...`);
 
-        const createDraftRes = await sapRequestWithRetry(draftUrl, {
+        let createDraftRes = await sapRequestWithRetry(draftUrl, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
@@ -307,6 +307,25 @@ export async function createSapDraft(payload: SapDraftPayload) {
             },
             body: JSON.stringify(draftBody),
         });
+
+        // FALLBACK PARA 502 PROXY ERROR:
+        // A veces el Service Layer se cae (502) si se envía un DocNum duplicado en Series manual (-1).
+        // Si recibimos 502, reintentamos la creación permitiendo que SAP asigne el DocNum automáticamente.
+        if (createDraftRes.status === 502 && draftBody.Series === -1) {
+            console.warn(`SAP Draft [${nroFactura}]: 502 Proxy Error detectado. Reintentando sin DocNum manual para evitar conflictos...`);
+            delete draftBody.Series;
+            delete draftBody.HandWritten;
+            delete draftBody.DocNum;
+            
+            createDraftRes = await sapRequestWithRetry(draftUrl, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    ...authHeaders
+                },
+                body: JSON.stringify(draftBody),
+            });
+        }
 
         if (createDraftRes.status !== 201 && createDraftRes.status !== 200) {
             const sapError = createDraftRes.data?.error?.message?.value || JSON.stringify(createDraftRes.data);

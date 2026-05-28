@@ -153,9 +153,9 @@ export async function POST(req: NextRequest) {
 
                 sapResult = await createSapDraft({
                     nit: nit || "",
-                    total: valor || "0",
+                    total: cleanValor !== null ? cleanValor : (valor || "0"),
                     distribuciones: distribuciones || [],
-                    anticipo: anticipo || 'f',
+                    anticipo: anticipo === 'Con anticipo' ? 't' : 'f',
                     observations: observaciones || 'Aprobado vía portal externo',
                     nroFactura: nroFactura || itemId,
                     docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA',
