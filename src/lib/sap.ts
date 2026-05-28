@@ -249,18 +249,19 @@ export async function createSapDraft(payload: SapDraftPayload) {
                 const itemCode = mappedArticulo?.ItemCode || "";
                 const itemDescription = mappedArticulo?.Dscription || `${docTypeDesc} ${nroFactura}`;
                 const taxCode = mappedArticulo?.TaxCode || "IVADEX";
+                const numericValor = Number(dist.valor) || 0;
 
                 documentLines.push({
-                    ItemCode: itemCode || undefined,
-                    ItemDescription: itemDescription,
-                    AccountCode: accountCode,
+                    ItemCode: itemCode ? String(itemCode).substring(0, 50) : undefined,
+                    ItemDescription: String(itemDescription).substring(0, 100),
+                    AccountCode: String(accountCode).substring(0, 50),
                     ...(costCenter ? { 
-                        CostingCode: costCenter,
-                        U_CentroCostos: costCenter
+                        CostingCode: String(costCenter).substring(0, 8),
+                        U_CentroCostos: String(costCenter).substring(0, 30)
                     } : {}),
-                    UnitPrice: dist.valor || "0",
-                    LineTotal: dist.valor || "0",
-                    VatGroup: taxCode,
+                    UnitPrice: numericValor,
+                    LineTotal: numericValor,
+                    VatGroup: String(taxCode).substring(0, 8),
                 });
             }
         }
@@ -281,8 +282,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
         const draftBody: any = {
             DocObjectCode: "oPurchaseInvoices",
             DocType: "dDocument_Items",
-            CardCode: cardCode,
-            NumAtCard: nroFactura || '',
+            CardCode: String(cardCode).substring(0, 50),
+            NumAtCard: String(nroFactura || '').substring(0, 100),
             DocDate: new Date().toISOString().split('T')[0],
             Comments: finalComments.substring(0, 250), // SAP limit is usually 250
             DocumentLines: documentLines
