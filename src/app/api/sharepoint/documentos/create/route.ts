@@ -177,11 +177,12 @@ export async function POST(req: NextRequest) {
             if (responsableEmail) {
                 const webhookUrl = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/aeb6cb48c08d4b2284e6195f1af861a5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=HeQc9SianqYpHVdBvGopK5kUtWrdUHkCuQhvWupbAZs";
                 
+                const docUrl = `https://appcontabilidad.vercel.app/externo/documento/${newItemId}`;
                 const payload = {
                     titulo: `Nuevo Documento Soporte - ${proveedor}`,
                     contenido: `Se ha creado un nuevo documento soporte para el proveedor ${proveedor} (NIT: ${nit}). Por favor, revisa el documento y procede con su aprobación.`,
                     responsable: responsableEmail,
-                    link: `https://appcontabilidad.vercel.app/externo/documento/${newItemId}`
+                    link: `<a href="${docUrl}">${docUrl}</a>`
                 };
 
                 console.log('[Webhook] Sending notification to Power Automate:', payload);
