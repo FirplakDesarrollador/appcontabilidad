@@ -172,6 +172,36 @@ export async function POST(req: NextRequest) {
             console.error('Error fatal al sincronizar con Supabase:', supabaseCatchError);
         }
 
+        // 5. Notificación webhook Power Automate
+        try {
+            if (responsableEmail) {
+                const webhookUrl = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/aeb6cb48c08d4b2284e6195f1af861a5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=HeQc9SianqYpHVdBvGopK5kUtWrdUHkCuQhvWupbAZs";
+                
+                const payload = {
+                    titulo: `Nuevo Documento Soporte - ${proveedor}`,
+                    contenido: `Se ha creado un nuevo documento soporte para el proveedor ${proveedor} (NIT: ${nit}). Por favor, revisa el documento y procede con su aprobación.`,
+                    responsable: responsableEmail,
+                    link: `https://appcontabilidad.vercel.app/externo/documento/${newItemId}`
+                };
+
+                console.log('[Webhook] Sending notification to Power Automate:', payload);
+                
+                const webhookRes = await fetch(webhookUrl, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!webhookRes.ok) {
+                    console.error('[Webhook] Failed with status:', webhookRes.status);
+                }
+            }
+        } catch (webhookError) {
+            console.error('[Webhook] Error sending notification:', webhookError);
+        }
+
         return NextResponse.json({ 
             success: true, 
             item: newItem

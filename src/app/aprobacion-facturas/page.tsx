@@ -552,7 +552,7 @@ export default function InvoicesPage() {
         });
     };
 
-    const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
+    const handleAction = async (action: string) => {
         if (!selectedInvoice) return;
         setActionLoading(action);
         try {
@@ -643,6 +643,41 @@ export default function InvoicesPage() {
         }
         
         return "Sin asignar";
+    };
+
+    const renderCostCenterForModal = (costCenterStr: any, tableCostStr: any) => {
+        if (!costCenterStr && !tableCostStr) return <span className="text-gray-400 italic">Sin asignar</span>;
+        
+        if (costCenterStr) {
+            try {
+                const parsed = typeof costCenterStr === 'string' ? JSON.parse(costCenterStr) : costCenterStr;
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    return (
+                        <div className="flex flex-col gap-2">
+                            {parsed.map((p: any, i: number) => (
+                                <div key={i} className="flex flex-col bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                    <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Centro de Costo</div>
+                                    <div className="text-sm font-black text-[#254153] mb-2 cursor-text select-text">{p.centroCosto || 'N/A'}</div>
+                                    <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Cuenta</div>
+                                    <div className="text-sm font-black text-[#254153] cursor-text select-text">{p.cuenta || 'N/A'}</div>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                }
+            } catch (e) {
+                return <div className="text-sm font-bold text-[#254153] whitespace-pre-wrap cursor-text select-text">{String(costCenterStr)}</div>;
+            }
+        }
+        
+        if (tableCostStr) {
+            if (typeof tableCostStr === 'object' && tableCostStr.Url) {
+                return <a href={tableCostStr.Url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm font-bold">Ver tabla adjunta</a>;
+            }
+            return <div className="text-sm font-bold text-[#254153] whitespace-pre-wrap cursor-text select-text">{String(tableCostStr)}</div>;
+        }
+        
+        return <span className="text-gray-400 italic">Sin asignar</span>;
     };
 
     const formatCurrency = (value: any) => {
@@ -1644,9 +1679,9 @@ export default function InvoicesPage() {
                             initial={{ opacity: 0, scale: 0.95, y: 20 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                            className="bg-white rounded-[32px] shadow-2xl w-full max-w-4xl relative overflow-hidden border border-white/20"
+                            className="bg-white rounded-[32px] shadow-2xl w-full max-w-4xl relative overflow-hidden border border-white/20 flex flex-col max-h-[95vh]"
                         >
-                            <div className="p-8">
+                            <div className="p-8 overflow-y-auto custom-scrollbar">
                                 <div className="flex justify-between items-start mb-8">
                                     <div className="flex items-center gap-4">
                                         <div className="h-14 w-14 bg-blue-50 rounded-2xl flex items-center justify-center shadow-inner">
@@ -1699,6 +1734,13 @@ export default function InvoicesPage() {
                                                         {selectedInvoice.FechaAprobacion ? new Date(selectedInvoice.FechaAprobacion).toLocaleString() : "Pendiente"}
                                                     </p>
                                                 </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Centro de Costos y Cuenta</h4>
+                                            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                                                {renderCostCenterForModal(selectedInvoice.centro_costos, selectedInvoice.tablaCostos)}
                                             </div>
                                         </div>
 
@@ -1885,8 +1927,16 @@ export default function InvoicesPage() {
                                                     )}
                                                 </div>
                                                 <div>
-                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Gestión Contabilidad</p>
-                                                    <p className="font-bold text-gray-600">{selectedInvoice.Gestion_Contabilidad || "Pendiente"}</p>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Gestión Contabilidad</p>
+                                                    <select
+                                                        value={selectedInvoice.Gestion_Contabilidad || "Por Procesar"}
+                                                        onChange={(e) => handleAction(e.target.value)}
+                                                        disabled={!!actionLoading}
+                                                        className="w-full h-10 px-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254153]/20 transition-all cursor-pointer hover:border-[#254153]/30"
+                                                    >
+                                                        <option value="Por Procesar">Por Procesar</option>
+                                                        <option value="Procesado">Procesado</option>
+                                                    </select>
                                                 </div>
                                             </div>
                                         </div>
@@ -1908,6 +1958,19 @@ export default function InvoicesPage() {
                                             ) : (
                                                 <div className="flex-1" />
                                             )}
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => handleManualSapSync(selectedInvoice)}
+                                                disabled={syncingId === selectedInvoice.id}
+                                                className="h-14 rounded-2xl px-6 border-gray-100 font-bold text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 transition-all flex items-center justify-center gap-2"
+                                            >
+                                                {syncingId === selectedInvoice.id ? (
+                                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                                ) : (
+                                                    <CloudUpload className="h-5 w-5" />
+                                                )}
+                                                Cargar a SAP
+                                            </Button>
                                             <Button 
                                                 variant="outline" 
                                                 className="h-14 rounded-2xl px-8 border-gray-100 font-bold text-gray-500 hover:bg-gray-50"
