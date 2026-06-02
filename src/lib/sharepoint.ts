@@ -63,7 +63,7 @@ async function getCachedListId(client: Client, siteId: string, listName: string)
 }
 
 /** Obtiene el mapa de usuarios con caché de 30 minutos. */
-async function getCachedUserMap(client: Client, siteId: string): Promise<Map<string, string>> {
+export async function getCachedUserMap(client: Client, siteId: string): Promise<Map<string, string>> {
     const now = Date.now();
     if (globalUserMap && (now - lastUserFetch < USER_CACHE_TTL)) return globalUserMap;
 

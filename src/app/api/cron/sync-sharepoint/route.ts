@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getGraphClient } from '@/lib/sharepoint';
+import { getGraphClient, getCachedUserMap } from '@/lib/sharepoint';
 
 const HOST = 'firplaksa.sharepoint.com';
 const SITE_PATH = 'FPKContabilidad';
@@ -15,8 +15,13 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // 2 minutos
 
 // SharePoint → Supabase Mapper
-function mapSpToSupabase(fields: any, spItemId: any) {
+function mapSpToSupabase(fields: any, spItemId: any, userMap?: Map<string, string> | null) {
     const hasAttachmentsFlag = fields.Attachments === true || Number(fields.Datos_adjuntos) > 0 || !!fields.fp || !!fields.documentos;
+    const lookupId = fields.ResponsabledeAutorizarLookupId
+        || fields.ResponsableAprobarLookupId
+        || fields.Responsable_de_AutorizarLookupId;
+    const responsable = lookupId && userMap ? (userMap.get(String(lookupId)) || null) : (fields.Responsable_de_Autorizar ?? null);
+
     return {
         ID: Number(spItemId),
         sharepoint_id: String(spItemId),
@@ -27,7 +32,7 @@ function mapSpToSupabase(fields: any, spItemId: any) {
         Gestion_Contabilidad: fields.Gestion_Contabilidad ?? null,
         Observaciones: fields.Observaciones ?? null,
         Consecutivo: fields.Consecutivo ?? null,
-        Responsable_de_Autorizar: fields.Responsable_de_Autorizar ?? null,
+        Responsable_de_Autorizar: responsable,
         FechaAprobacion: fields.FechaAprobacion ?? null,
         centro_costos: fields.centro_costos ?? null,
         Valor_total: fields.Valortotal ?? fields.Valor_x0020_total ?? fields["Valor total"] ?? fields.Valor_total ?? null,
@@ -122,6 +127,8 @@ export async function GET(req: Request) {
         if (sbError) throw sbError;
         console.log(`[CRON-SYNC] Found ${sbChanges.length} modified items in Supabase.`);
 
+        const userMap = await getCachedUserMap(graphClient, siteId);
+
         const stats = { sp_to_sb: 0, sb_to_sp: 0, errors: 0, skipped: 0 };
         const processedSPIds = new Set<string>();
 
@@ -130,7 +137,7 @@ export async function GET(req: Request) {
             const spItemId = String(spItem.id);
             processedSPIds.add(spItemId);
             
-            const invoiceData = mapSpToSupabase(spItem.fields, spItemId);
+            const invoiceData = mapSpToSupabase(spItem.fields, spItemId, userMap);
             
             // Check collision
             const conflictEntry = sbChanges.find(sb => String(sb.sharepoint_id) === spItemId);

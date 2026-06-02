@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useState, useRef } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     CheckCircle2,
@@ -20,11 +20,13 @@ import {
     Plus,
     Trash2,
     Download,
+    Upload,
     X,
     Home
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import * as XLSX from "xlsx";
 
 
 interface InvoiceData {
@@ -108,7 +110,13 @@ export default function PublicApprovalPage() {
     const [sapBpLoading, setSapBpLoading] = useState(false);
     const [sapBpFound, setSapBpFound] = useState<boolean | null>(null);
 
-
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isUploadingExcel, setIsUploadingExcel] = useState(false);
+    
+    const searchParams = useSearchParams();
+    const isReadOnlyMode = searchParams.get("readonly") === "true";
+    const isProcessed = invoice?.aprobacionDoliente === 'Aprobado' || invoice?.aprobacionDoliente === 'Rechazado';
+    const isReadOnly = isReadOnlyMode || isProcessed;
 
     const [centrosCostosList, setCentrosCostosList] = useState<any[]>([]);
     const [cuentasList, setCuentasList] = useState<any[]>([]);
@@ -267,6 +275,14 @@ export default function PublicApprovalPage() {
             if (data.valorTotal) {
                 setEditableTotal(data.valorTotal);
             }
+
+            if (data.observaciones) {
+                setObservaciones(data.observaciones);
+            }
+
+            if (data.anticipo) {
+                setAnticipo(data.anticipo);
+            }
         } catch (err: any) {
             setError(err.message || "No se pudo cargar la información de la factura");
         }
@@ -290,6 +306,93 @@ export default function PublicApprovalPage() {
         }
     };
 
+    const handleDownloadTemplate = () => {
+        const wsData = [
+            ["Centro de Costos", "Cuenta", "Valor"]
+        ];
+        
+        // Agregar algunas filas vacías de ejemplo
+        for (let i = 0; i < 5; i++) {
+            wsData.push(["", "", ""]);
+        }
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+        // Adjust column widths
+        ws['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 15 }];
+        
+        XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
+
+
+
+        XLSX.writeFile(wb, `Plantilla_Distribucion_${invoice?.nroFactura || 'Factura'}.xlsx`);
+    };
+
+    const handleUploadTemplate = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploadingExcel(true);
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                
+                // Asumimos que la plantilla está en la primera hoja
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                
+                const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+                
+                // La primera fila son los encabezados, empezamos desde la segunda
+                const nuevasDistribuciones = [];
+                for (let i = 1; i < data.length; i++) {
+                    const row = data[i];
+                    // Si la fila está completamente vacía, la ignoramos
+                    if (!row || row.length === 0 || (!row[0] && !row[1] && !row[2])) continue;
+
+                    let ccInput = row[0] ? String(row[0]).trim() : "";
+                    
+                    if (ccInput && centrosCostosList && centrosCostosList.length > 0) {
+                        // Buscar si el texto ingresado coincide exactamente con un código o con el nombre
+                        const matched = centrosCostosList.find(c => 
+                            (c.codigo && String(c.codigo).trim() === ccInput) || 
+                            (c.Título && c.Título.toLowerCase() === ccInput.toLowerCase()) ||
+                            // También por si acaso ingresó "1234 - Nombre" y queremos que coincida
+                            (`${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === ccInput)
+                        );
+
+                        if (matched) {
+                            ccInput = `${matched.codigo ? matched.codigo + ' - ' : ''}${matched.Título}`;
+                        }
+                    }
+
+                    nuevasDistribuciones.push({
+                        centroCostos: ccInput,
+                        cuenta: row[1] ? String(row[1]).trim() : "",
+                        valor: row[2] ? String(row[2]).trim() : ""
+                    });
+                }
+
+                if (nuevasDistribuciones.length > 0) {
+                    setDistribuciones(nuevasDistribuciones);
+                    alert(`Se cargaron ${nuevasDistribuciones.length} filas desde el Excel.`);
+                } else {
+                    alert("No se encontraron datos válidos en el archivo Excel.");
+                }
+            } catch (err) {
+                console.error("Error leyendo Excel:", err);
+                alert("Error al leer el archivo Excel. Asegúrate de que sea el formato correcto.");
+            } finally {
+                setIsUploadingExcel(false);
+                // Reset file input
+                if (fileInputRef.current) fileInputRef.current.value = "";
+            }
+        };
+        reader.readAsBinaryString(file);
+    };
 
     const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
         try {
@@ -718,7 +821,6 @@ export default function PublicApprovalPage() {
 
                                 {/* Form and Actions */}
                                 <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 p-8 md:p-10">
-                                    {(!invoice?.aprobacionDoliente || invoice.aprobacionDoliente === 'Pendiente' || invoice.aprobacionDoliente === 'Por Aprobar') ? (
                                         <div className="space-y-8">
                                             <div className="space-y-4">
                                                 <label className="text-sm font-bold text-[#254153]">¿Tiene anticipo o no la factura?</label>
@@ -728,24 +830,25 @@ export default function PublicApprovalPage() {
                                                         { id: 'sin-anticipo', label: 'Sin anticipo', value: 'Sin anticipo' },
                                                         { id: 'con-tarjeta', label: 'Compra con tarjeta', value: 'Compra con tarjeta' }
                                                     ].map((opt) => (
-                                                        <label
-                                                            key={opt.id}
-                                                            className={`flex items-center justify-center p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
-                                                                anticipo === opt.value
-                                                                    ? 'border-[#254153] bg-[#254153]/5 text-[#254153]'
-                                                                    : 'border-gray-50 bg-gray-50/30 text-gray-500 hover:border-gray-200'
-                                                            }`}
-                                                        >
-                                                            <input
-                                                                type="radio"
-                                                                name="anticipo"
-                                                                value={opt.value}
-                                                                checked={anticipo === opt.value}
-                                                                onChange={(e) => setAnticipo(e.target.value)}
-                                                                className="sr-only"
-                                                            />
-                                                            <span className="text-xs font-bold text-center leading-tight">{opt.label}</span>
-                                                        </label>
+                                                            <label
+                                                                key={opt.id}
+                                                                className={`flex items-center justify-center p-3.5 rounded-2xl border-2 transition-all ${
+                                                                    anticipo === opt.value
+                                                                        ? 'border-[#254153] bg-[#254153]/5 text-[#254153]'
+                                                                        : 'border-gray-50 bg-gray-50/30 text-gray-500'
+                                                                } ${isReadOnly ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:border-gray-200'}`}
+                                                            >
+                                                                <input
+                                                                    type="radio"
+                                                                    name="anticipo"
+                                                                    value={opt.value}
+                                                                    checked={anticipo === opt.value}
+                                                                    onChange={(e) => setAnticipo(e.target.value)}
+                                                                    className="sr-only"
+                                                                    disabled={!!actionLoading || isReadOnly}
+                                                                />
+                                                                <span className="text-xs font-bold text-center leading-tight">{opt.label}</span>
+                                                            </label>
                                                     ))}
                                                 </div>
                                             </div>
@@ -757,32 +860,68 @@ export default function PublicApprovalPage() {
                                                     onChange={(e) => setObservaciones(e.target.value)}
                                                     className="w-full rounded-2xl border border-gray-200 p-5 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all resize-none h-28 text-sm text-gray-700 placeholder-gray-400"
                                                     placeholder="Añade observaciones (opcional)..."
-                                                    disabled={!!actionLoading}
+                                                    disabled={!!actionLoading || isReadOnly}
                                                 />
                                             </div>
 
                                             <div className="space-y-5">
-                                                <div className="flex items-center justify-between">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                                     <label className="text-sm font-bold text-[#254153]">Distribución Contable</label>
-                                                    <Button 
-                                                        variant="outline" 
-                                                        onClick={() => {
-                                                            const totalInvoice = parseFloat(invoice?.valorTotal || "0");
-                                                            const currentDistTotal = distribuciones.reduce((s, d) => s + (parseFloat(d.valor) || 0), 0);
-                                                            const remaining = Math.max(0, totalInvoice - currentDistTotal);
-                                                            setDistribuciones([...distribuciones, { centroCostos: '', cuenta: '', valor: remaining > 0 ? remaining.toString() : '' }]);
-                                                        }}
-                                                        className="h-9 py-0 px-4 text-xs font-bold border-[#254153]/10 text-[#254153] bg-[#254153]/5 hover:bg-[#254153] hover:text-white rounded-xl transition-all"
-                                                        disabled={!!actionLoading}
-                                                    >
-                                                        <Plus className="h-4 w-4 mr-1" /> Agregar Fila
-                                                    </Button>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        {!isReadOnly && (
+                                                            <>
+                                                                <Button 
+                                                                    variant="outline" 
+                                                                    onClick={handleDownloadTemplate}
+                                                                    className="h-9 py-0 px-3 text-xs font-bold border-[#254153]/10 text-[#254153] hover:bg-gray-50 transition-all"
+                                                                    disabled={!!actionLoading}
+                                                                >
+                                                                    <Download className="h-3.5 w-3.5 mr-1.5" /> Descargar Plantilla
+                                                                </Button>
+                                                                
+                                                                <input 
+                                                                    type="file" 
+                                                                    ref={fileInputRef} 
+                                                                    onChange={handleUploadTemplate} 
+                                                                    accept=".xlsx, .xls" 
+                                                                    className="hidden" 
+                                                                />
+                                                                <Button 
+                                                                    variant="outline" 
+                                                                    onClick={() => fileInputRef.current?.click()}
+                                                                    className="h-9 py-0 px-3 text-xs font-bold border-[#254153]/10 text-[#254153] hover:bg-gray-50 transition-all"
+                                                                    disabled={!!actionLoading || isUploadingExcel}
+                                                                >
+                                                                    {isUploadingExcel ? (
+                                                                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                                                                    ) : (
+                                                                        <Upload className="h-3.5 w-3.5 mr-1.5" />
+                                                                    )} 
+                                                                    Cargar Plantilla
+                                                                </Button>
+
+                                                                <Button 
+                                                                    variant="outline" 
+                                                                    onClick={() => {
+                                                                        const totalInvoice = parseFloat(invoice?.valorTotal || "0");
+                                                                        const currentDistTotal = distribuciones.reduce((s, d) => s + (parseFloat(d.valor) || 0), 0);
+                                                                        const remaining = Math.max(0, totalInvoice - currentDistTotal);
+                                                                        setDistribuciones([...distribuciones, { centroCostos: '', cuenta: '', valor: remaining > 0 ? remaining.toString() : '' }]);
+                                                                    }}
+                                                                    className="h-9 py-0 px-4 text-xs font-bold border-[#254153]/10 text-[#254153] bg-[#254153]/5 hover:bg-[#254153] hover:text-white rounded-xl transition-all"
+                                                                    disabled={!!actionLoading}
+                                                                >
+                                                                    <Plus className="h-4 w-4 mr-1" /> Agregar Fila
+                                                                </Button>
+                                                            </>
+                                                        )}
+                                                    </div>
                                                 </div>
 
                                                 <div className="space-y-4">
                                                     {distribuciones.map((distribucion, index) => (
                                                         <div key={index} className="space-y-3 p-5 bg-gray-50 rounded-2xl border border-gray-100 relative group transition-all hover:bg-white hover:shadow-md">
-                                                            {distribuciones.length > 1 && (
+                                                            {distribuciones.length > 1 && !isReadOnly && (
                                                                 <button 
                                                                     onClick={() => setDistribuciones(distribuciones.filter((_, i) => i !== index))}
                                                                     className="absolute -top-3 -right-3 h-8 w-8 bg-white border border-red-100 text-red-500 rounded-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-md z-10"
@@ -814,7 +953,7 @@ export default function PublicApprovalPage() {
                                                                             setDistribuciones(newDist);
                                                                         }}
                                                                         placeholder="Selecciona CC..."
-                                                                        disabled={!!actionLoading}
+                                                                        disabled={!!actionLoading || isReadOnly}
                                                                     />
                                                                 </div>
 
@@ -858,7 +997,7 @@ export default function PublicApprovalPage() {
                                                                                 setDistribuciones(newDist);
                                                                             }}
                                                                             placeholder="Selecciona Cuenta..."
-                                                                            disabled={!!actionLoading || !distribucion.centroCostos}
+                                                                            disabled={!!actionLoading || !distribucion.centroCostos || isReadOnly}
                                                                         />
                                                                     </div>
 
@@ -880,23 +1019,25 @@ export default function PublicApprovalPage() {
                                                                                     setDistribuciones(newDist);
                                                                                 }}
                                                                                 className="w-full rounded-xl border border-gray-200 pl-9 pr-12 py-2.5 text-sm text-gray-900 font-bold outline-none focus:border-[#254153] focus:ring-2 focus:ring-[#254153]/10 bg-white"
-                                                                                disabled={!!actionLoading}
+                                                                                disabled={!!actionLoading || isReadOnly}
                                                                             />
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    const totalInvoice = parseSafeFloat(editableTotal);
-                                                                                    const otherDistTotal = distribuciones.reduce((s, d, i) => i === index ? s : s + parseSafeFloat(d.valor), 0);
-                                                                                    const remaining = Math.max(0, totalInvoice - otherDistTotal);
-                                                                                    const newDist = [...distribuciones];
-                                                                                    newDist[index].valor = remaining.toString();
-                                                                                    setDistribuciones(newDist);
-                                                                                }}
-                                                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase text-[#254153] bg-[#254153]/5 px-2 py-1 rounded-lg hover:bg-[#254153] hover:text-white transition-all"
-                                                                                disabled={!!actionLoading}
-                                                                                title="Completar el valor restante de la factura"
-                                                                            >
-                                                                                Fin
-                                                                            </button>
+                                                                            {(!isReadOnly) && (
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        const totalInvoice = parseSafeFloat(editableTotal);
+                                                                                        const otherDistTotal = distribuciones.reduce((s, d, i) => i === index ? s : s + parseSafeFloat(d.valor), 0);
+                                                                                        const remaining = Math.max(0, totalInvoice - otherDistTotal);
+                                                                                        const newDist = [...distribuciones];
+                                                                                        newDist[index].valor = remaining.toString();
+                                                                                        setDistribuciones(newDist);
+                                                                                    }}
+                                                                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase text-[#254153] bg-[#254153]/5 px-2 py-1 rounded-lg hover:bg-[#254153] hover:text-white transition-all"
+                                                                                    disabled={!!actionLoading}
+                                                                                    title="Completar el valor restante de la factura"
+                                                                                >
+                                                                                    Fin
+                                                                                </button>
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -922,48 +1063,46 @@ export default function PublicApprovalPage() {
                                             </div>
 
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
-                                                <Button
-                                                    className="h-16 rounded-3xl bg-[#254153] hover:bg-[#1a2e3b] text-base font-black shadow-xl shadow-[#254153]/20 transition-all hover:scale-[1.02] active:scale-[0.98] order-2 sm:order-1"
-                                                    disabled={!!actionLoading}
-                                                    onClick={() => handleAction('Aprobado')}
-                                                >
-                                                    {actionLoading === 'Aprobado' ? (
-                                                        <Loader2 className="h-6 w-6 animate-spin mr-3" />
-                                                    ) : (
-                                                        <CheckCircle2 className="h-6 w-6 mr-3" />
-                                                    )}
-                                                    Aprobar Factura
-                                                </Button>
-                                                <Button
-                                                    variant="outline"
-                                                    className="h-16 rounded-3xl border-2 border-red-50 text-red-500 hover:bg-red-50 hover:border-red-100 hover:text-red-700 text-base font-black transition-all hover:scale-[1.02] active:scale-[0.98] order-1 sm:order-2"
-                                                    disabled={!!actionLoading}
-                                                    onClick={() => {
-                                                        if (confirm("¿Estás seguro que deseas rechazar esta factura?")) {
-                                                            handleAction('Rechazado');
-                                                        }
-                                                    }}
-                                                >
-                                                    {actionLoading === 'Rechazado' ? (
-                                                        <Loader2 className="h-6 w-6 animate-spin mr-3" />
-                                                    ) : (
-                                                        <XCircle className="h-6 w-6 mr-3" />
-                                                    )}
-                                                    Rechazar
-                                                </Button>
+                                                {!isReadOnly && (
+                                                    <>
+                                                        <Button
+                                                            className="h-16 rounded-3xl bg-[#254153] hover:bg-[#1a2e3b] text-base font-black shadow-xl shadow-[#254153]/20 transition-all hover:scale-[1.02] active:scale-[0.98] order-2 sm:order-1"
+                                                            disabled={!!actionLoading || isReadOnly}
+                                                            onClick={() => handleAction('Aprobado')}
+                                                        >
+                                                            {actionLoading === 'Aprobado' ? (
+                                                                <Loader2 className="h-6 w-6 animate-spin mr-3" />
+                                                            ) : (
+                                                                <CheckCircle2 className="h-6 w-6 mr-3" />
+                                                            )}
+                                                            Aprobar Factura
+                                                        </Button>
+                                                        <Button
+                                                            variant="outline"
+                                                            className="h-16 rounded-3xl border-2 border-red-50 text-red-500 hover:bg-red-50 hover:border-red-100 hover:text-red-700 text-base font-black transition-all hover:scale-[1.02] active:scale-[0.98] order-1 sm:order-2"
+                                                            disabled={!!actionLoading || isReadOnly}
+                                                            onClick={() => {
+                                                                if (confirm("¿Estás seguro que deseas rechazar esta factura?")) {
+                                                                    handleAction('Rechazado');
+                                                                }
+                                                            }}
+                                                        >
+                                                            {actionLoading === 'Rechazado' ? (
+                                                                <Loader2 className="h-6 w-6 animate-spin mr-3" />
+                                                            ) : (
+                                                                <XCircle className="h-6 w-6 mr-3" />
+                                                            )}
+                                                            Rechazar
+                                                        </Button>
+                                                    </>
+                                                )}
+                                                {isReadOnly && (
+                                                    <div className="col-span-1 sm:col-span-2 text-center text-sm font-bold text-gray-400 mt-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                                        Esta factura ya fue procesada y no puede ser modificada.
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div className="text-center p-10 bg-gray-50 rounded-[32px] border border-gray-100">
-                                            <div className="bg-white h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
-                                                <CheckCircle2 className="h-8 w-8 text-green-500" />
-                                            </div>
-                                            <p className="text-gray-700 font-bold mb-2">Ya Procesado</p>
-                                            <p className="text-gray-500 text-sm font-medium italic">
-                                                Esta factura ya fue gestionada y no admite más cambios desde este acceso externo.
-                                            </p>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
 

@@ -86,7 +86,9 @@ export async function GET(
             responsableActual: invoice.Responsable_de_Autorizar || "No asignado",
             documentInfo,
             adjuntosUrl: supabaseInvoice?.adjuntos_url || [],
-            distribuciones: invoice.centro_costos || null
+            distribuciones: invoice.centro_costos || null,
+            observaciones: invoice.Observaciones || "",
+            anticipo: invoice.tiene_anticipo || ""
         });
 
     } catch (error: any) {

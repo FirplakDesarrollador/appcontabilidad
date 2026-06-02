@@ -85,11 +85,45 @@ function saveLastSyncTime(date) {
     writeFileSync(path, JSON.stringify({ lastSyncTime: date.toISOString() }));
 }
 
+// ─── Caché de usuarios en memoria para sync-engine ───────────────────────────
+let globalUserMap = null;
+let lastUserFetch = 0;
+const USER_CACHE_TTL = 30 * 60 * 1000; // 30 minutos
+
+async function getCachedUserMap(client, siteId) {
+    const now = Date.now();
+    if (globalUserMap && (now - lastUserFetch < USER_CACHE_TTL)) return globalUserMap;
+    const userMap = new Map();
+    try {
+        console.log("[Sync] Fetching User Information List...");
+        let userNextLink = `/sites/${siteId}/lists('User Information List')/items?$select=id,fields&$expand=fields($select=Title)&$top=500`;
+        while (userNextLink) {
+            const userResponse = await client.api(userNextLink).get();
+            for (const u of userResponse.value) {
+                if (u.fields?.Title) userMap.set(String(u.id), u.fields.Title);
+            }
+            userNextLink = userResponse['@odata.nextLink'] ? userResponse['@odata.nextLink'].split('v1.0')[1] : null;
+        }
+        globalUserMap = userMap;
+        lastUserFetch = now;
+        console.log(`[Sync] Loaded ${userMap.size} users into cache`);
+    } catch (e) {
+        console.warn('[Sync] Could not load User Information List:', e.message);
+        if (!globalUserMap) globalUserMap = new Map();
+    }
+    return globalUserMap;
+}
+
 // ─── Mapeo de campos SharePoint → Supabase ────────────────────────────────────
-function mapSpToSupabase(spItem) {
+function mapSpToSupabase(spItem, userMap) {
     const fields = spItem.fields || spItem;
     const spItemId = spItem.id || fields.id;
     
+    const lookupId = fields.ResponsabledeAutorizarLookupId
+        || fields.ResponsableAprobarLookupId
+        || fields.Responsable_de_AutorizarLookupId;
+    const responsable = lookupId && userMap ? (userMap.get(String(lookupId)) || null) : (fields.Responsable_de_Autorizar ?? null);
+
     return {
         ID: Number(spItemId),
         sharepoint_id: String(spItemId),
@@ -100,7 +134,7 @@ function mapSpToSupabase(spItem) {
         Gestion_Contabilidad: fields.Gestion_Contabilidad ?? null,
         Observaciones: fields.Observaciones ?? null,
         Consecutivo: fields.Consecutivo ?? null,
-        Responsable_de_Autorizar: fields.Responsable_de_Autorizar ?? null,
+        Responsable_de_Autorizar: responsable,
         FechaAprobacion: fields.FechaAprobacion ?? null,
         centro_costos: fields.centro_costos ?? null,
         // Nuevo nombre de columna: Valor_total (era "Valor total")
@@ -161,6 +195,7 @@ async function runSync() {
     try {
         const graphClient = await getGraphClient();
         const { siteId, listId } = await getSiteAndListId(graphClient);
+        const userMap = await getCachedUserMap(graphClient, siteId);
 
         // ── A: SharePoint → Supabase ──────────────────────────────────────────
         const spFilter = `fields/Modified ge '${lastSyncTime.toISOString()}'`;
@@ -191,7 +226,7 @@ async function runSync() {
             const spItemId = String(spItem.id);
             processedSPIds.add(spItemId);
 
-            const invoiceData = mapSpToSupabase(spItem);
+            const invoiceData = mapSpToSupabase(spItem, userMap);
 
             // Resolución de conflictos: si SB es más reciente, SB gana
             const conflictEntry = sbChanges.find(sb => String(sb.sharepoint_id) === spItemId);

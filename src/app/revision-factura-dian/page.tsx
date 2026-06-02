@@ -25,6 +25,7 @@ export default function RevisionFacturaDianPage() {
     const [comparisonResult, setComparisonResult] = useState<{ headers: string[], data: any[][] } | null>(null);
     const [allInvoiceNumbers, setAllInvoiceNumbers] = useState<Set<string>>(new Set());
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+    const [responsablesMap, setResponsablesMap] = useState<Record<string, string>>({});
 
     const STORAGE_KEY = "revision_factura_dian_progress";
 
@@ -156,6 +157,7 @@ export default function RevisionFacturaDianPage() {
             
             // Re-fetch everything after sync
             await fetchFacturas();
+            await fetchFacturasPendientes();
             alert(`Sincronización completada: ${totalProcessedTotal} facturas procesadas.`);
         } catch (err: any) {
             console.error("Error during manual sync:", err);
@@ -176,6 +178,43 @@ export default function RevisionFacturaDianPage() {
 
             if (error) throw error;
             setFacturasPendientes(data || []);
+
+            // Fetch matching responsible persons from SharePoint list cache (Registro_Facturas)
+            if (data && data.length > 0) {
+                const searchNumbers: string[] = [];
+                data.forEach(item => {
+                    const folio = (item.Folio || "").trim();
+                    const prefijo = (item.Prefijo || "").trim();
+                    if (folio) {
+                        searchNumbers.push(folio);
+                        if (prefijo) {
+                            searchNumbers.push(`${prefijo}${folio}`);
+                            searchNumbers.push(`${prefijo}-${folio}`);
+                        }
+                    }
+                });
+
+                if (searchNumbers.length > 0) {
+                    const { data: matched, error: matchError } = await supabase
+                        .from("Registro_Facturas")
+                        .select("Nro_Factura, Responsable_de_Autorizar")
+                        .in("Nro_Factura", searchNumbers);
+
+                    if (!matchError && matched) {
+                        const newMap: Record<string, string> = {};
+                        const normalize = (val: string) => 
+                            val.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/([a-z])0+/g, '$1').replace(/^0+/, '');
+
+                        matched.forEach(item => {
+                            if (item.Nro_Factura && item.Responsable_de_Autorizar) {
+                                const norm = normalize(item.Nro_Factura);
+                                newMap[norm] = item.Responsable_de_Autorizar;
+                            }
+                        });
+                        setResponsablesMap(newMap);
+                    }
+                }
+            }
         } catch (err: any) {
             console.error("Error fetching facturas pendientes:", err);
         } finally {
@@ -455,42 +494,54 @@ export default function RevisionFacturaDianPage() {
                                             <th className="px-6 py-3">CUFE</th>
                                             <th className="px-6 py-3">NIT</th>
                                             <th className="px-6 py-3">Fecha Emisión</th>
+                                            <th className="px-6 py-3">Responsable</th>
                                             <th className="px-6 py-3 text-right">Total</th>
                                             <th className="px-6 py-3 text-center w-20">Acciones</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50">
-                                        {facturasPendientes.map((factura) => (
-                                            <tr key={factura.ID} className="hover:bg-gray-50/30 transition-colors">
-                                                <td className="px-6 py-3 font-medium text-[#254153]">
-                                                    {factura.Prefijo}{factura.Folio}
-                                                </td>
-                                                <td className="px-6 py-3 text-gray-500">{factura.Nombre_Emisor}</td>
-                                                <td className="px-6 py-3 min-w-[250px]">
-                                                    <input 
-                                                        readOnly 
-                                                        value={factura["CUFE/CUDE"] || ""} 
-                                                        className="w-full bg-gray-50/50 border border-gray-100 rounded px-2 py-1 text-[10px] font-mono text-gray-500 focus:outline-none focus:border-[#254153] transition-colors cursor-text"
-                                                        onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
-                                                        title="Haz clic para seleccionar y copiar"
-                                                    />
-                                                </td>
-                                                <td className="px-6 py-3 text-gray-500">{factura.NIT_Emisor}</td>
-                                                <td className="px-6 py-3 text-gray-500">{factura.Fecha_Emision}</td>
-                                                <td className="px-6 py-3 text-right font-bold text-[#254153]">
-                                                    ${Number(factura.Total).toLocaleString('es-CO')}
-                                                </td>
-                                                <td className="px-6 py-3 text-center">
-                                                    <button
-                                                        onClick={() => handleDeleteSaved(factura.ID)}
-                                                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Eliminar factura"
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {facturasPendientes.map((factura) => {
+                                            const fullInvoice = `${factura.Prefijo || ''}${factura.Folio || ''}`.trim();
+                                            const folioOnly = (factura.Folio || "").trim();
+                                            const normalize = (val: string) => 
+                                                val.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/([a-z])0+/g, '$1').replace(/^0+/, '');
+                                            const normFull = normalize(fullInvoice);
+                                            const normFolio = normalize(folioOnly);
+                                            const responsable = responsablesMap[normFull] || responsablesMap[normFolio] || "Sin asignar";
+
+                                            return (
+                                                <tr key={factura.ID} className="hover:bg-gray-50/30 transition-colors">
+                                                    <td className="px-6 py-3 font-medium text-[#254153]">
+                                                        {factura.Prefijo}{factura.Folio}
+                                                    </td>
+                                                    <td className="px-6 py-3 text-gray-500">{factura.Nombre_Emisor}</td>
+                                                    <td className="px-6 py-3 min-w-[250px]">
+                                                        <input 
+                                                            readOnly 
+                                                            value={factura["CUFE/CUDE"] || ""} 
+                                                            className="w-full bg-gray-50/50 border border-gray-100 rounded px-2 py-1 text-[10px] font-mono text-gray-500 focus:outline-none focus:border-[#254153] transition-colors cursor-text"
+                                                            onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
+                                                            title="Haz clic para seleccionar y copiar"
+                                                        />
+                                                    </td>
+                                                    <td className="px-6 py-3 text-gray-500">{factura.NIT_Emisor}</td>
+                                                    <td className="px-6 py-3 text-gray-500">{factura.Fecha_Emision}</td>
+                                                    <td className="px-6 py-3 text-gray-500 font-medium">{responsable}</td>
+                                                    <td className="px-6 py-3 text-right font-bold text-[#254153]">
+                                                        ${Number(factura.Total).toLocaleString('es-CO')}
+                                                    </td>
+                                                    <td className="px-6 py-3 text-center">
+                                                        <button
+                                                            onClick={() => handleDeleteSaved(factura.ID)}
+                                                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                            title="Eliminar factura"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
