@@ -10,6 +10,11 @@ import { Switch } from "@/components/ui/Switch";
 import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
 import { useSidebar } from "@/context/SidebarContext";
 import { Menu } from "lucide-react";
+import { AgGridReact } from 'ag-grid-react';
+import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
+
+// Configure AG Grid v35+ Modules
+ModuleRegistry.registerModules([AllCommunityModule]);
 
 
 interface ManualAttachment {
@@ -733,6 +738,47 @@ export default function InvoicesPage() {
         });
     }, [filteredInvoices, sortOrder]);
 
+    const colDefs = useMemo(() => [
+        {
+            headerName: 'Acciones',
+            field: 'id',
+            width: 160,
+            pinned: 'left',
+            filter: false,
+            sortable: false,
+            cellRenderer: (params: any) => {
+                const inv = params.data;
+                if (!inv) return null;
+                return (
+                    <div className="flex items-center justify-start gap-2 h-full">
+                        <Button variant="outline" onClick={() => handleCopyLink(inv)} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Copiar Link Público">
+                            <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" onClick={() => handleManualSapSync(inv)} disabled={syncingId === inv.id} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50" title="Sincronizar con SAP Manualmente">
+                            {syncingId === inv.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button variant="outline" onClick={() => { setSelectedInvoice(inv); setIsModalOpen(true); }} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Ver Detalle">
+                            <Search className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
+                );
+            }
+        },
+        { headerName: 'NIT', field: 'Nit', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'Proveedor', field: 'Proveedor', width: 250, cellRenderer: (p: any) => <div className="text-sm font-bold text-gray-800 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'Factura', field: 'Nro_Factura', width: 160, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="font-bold text-[#254153] leading-none">{p.value || "S/N"}</div><div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {p.data?.id}</div></div> },
+        { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
+        { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
+        { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
+        { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Pendiente"}</div> },
+        { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'Fecha Creación', field: 'Creado', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{(p.value || p.data?.Created) ? new Date(p.value || p.data?.Created).toLocaleString() : "Sin fecha"}</div> },
+        { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{formatCostCenter(p.value, p.data?.tablaCostos)}</div> },
+        { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
+        { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || "Sin observaciones"}</div> },
+        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{(p.data?.documentInfo || p.data?.Attachments) ? <a href={`/api/sharepoint/attachment-redirect?itemId=${p.data?.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
+    ], [syncingId]);
+
     return (
         <div className="min-h-screen bg-[#f8fafc] flex">
             <Sidebar />
@@ -905,330 +951,31 @@ export default function InvoicesPage() {
                         </button>
                     </div>
 
-                    {/* Tabla de Facturas */}
-                    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-visible w-full min-w-max">
-                        <div className="overflow-visible min-h-[400px]">
-                            <table className="w-full text-left border-collapse">
-                                <thead className="sticky top-0 z-20 shadow-sm">
-                                    <tr className="bg-gray-50 border-b border-gray-200">
-                                        <th style={{ width: colWidths['Acciones'], minWidth: colWidths['Acciones'], maxWidth: colWidths['Acciones'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Acciones<div onMouseDown={(e) => handleResize(e, 'Acciones')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['NIT'], minWidth: colWidths['NIT'], maxWidth: colWidths['NIT'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">NIT<div onMouseDown={(e) => handleResize(e, 'NIT')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['Proveedor'], minWidth: colWidths['Proveedor'], maxWidth: colWidths['Proveedor'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Proveedor<div onMouseDown={(e) => handleResize(e, 'Proveedor')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['Factura'], minWidth: colWidths['Factura'], maxWidth: colWidths['Factura'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Factura<div onMouseDown={(e) => handleResize(e, 'Factura')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['Valor total'], minWidth: colWidths['Valor total'], maxWidth: colWidths['Valor total'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right relative">Valor total<div onMouseDown={(e) => handleResize(e, 'Valor total')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['Responsable'], minWidth: colWidths['Responsable'], maxWidth: colWidths['Responsable'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Responsable<div onMouseDown={(e) => handleResize(e, 'Responsable')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['Estado'], minWidth: colWidths['Estado'], maxWidth: colWidths['Estado'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Estado<div onMouseDown={(e) => handleResize(e, 'Estado')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['G. Contabilidad'], minWidth: colWidths['G. Contabilidad'], maxWidth: colWidths['G. Contabilidad'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">G. Contabilidad<div onMouseDown={(e) => handleResize(e, 'G. Contabilidad')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['Consecutivo'], minWidth: colWidths['Consecutivo'], maxWidth: colWidths['Consecutivo'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Consecutivo<div onMouseDown={(e) => handleResize(e, 'Consecutivo')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['Fecha Creación'], minWidth: colWidths['Fecha Creación'], maxWidth: colWidths['Fecha Creación'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Fecha Creación<div onMouseDown={(e) => handleResize(e, 'Fecha Creación')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['C. Costos / Cuenta'], minWidth: colWidths['C. Costos / Cuenta'], maxWidth: colWidths['C. Costos / Cuenta'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">C. Costos / Cuenta<div onMouseDown={(e) => handleResize(e, 'C. Costos / Cuenta')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['Fecha Aprobación'], minWidth: colWidths['Fecha Aprobación'], maxWidth: colWidths['Fecha Aprobación'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">
-                                            <button 
-                                                onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : (prev === 'asc' ? null : 'desc'))}
-                                                className="flex items-center gap-1 hover:text-[#254153] transition-colors"
-                                                title="Ordenar por fecha de aprobación"
-                                            >
-                                                Fecha Aprobación
-                                                <ArrowUpDown className={`h-3 w-3 ${sortOrder ? 'text-[#254153]' : ''}`} />
-                                            </button>
-                                            <div onMouseDown={(e) => handleResize(e, 'Fecha Aprobación')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" />
-                                        </th>
-                                        <th style={{ width: colWidths['Observaciones'], minWidth: colWidths['Observaciones'], maxWidth: colWidths['Observaciones'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Observaciones<div onMouseDown={(e) => handleResize(e, 'Observaciones')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['Datos adjuntos'], minWidth: colWidths['Datos adjuntos'], maxWidth: colWidths['Datos adjuntos'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap relative">Datos adjuntos<div onMouseDown={(e) => handleResize(e, 'Datos adjuntos')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                    </tr>
-                                    <tr className="bg-white border-b border-gray-100">
-                                        <td className="px-3 py-2" />
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.nit}
-                                                onChange={(e) => setColumnFilters({...columnFilters, nit: e.target.value})}
-                                            />
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                list="list-provider"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.provider}
-                                                onChange={(e) => setColumnFilters({...columnFilters, provider: e.target.value})}
-                                            />
-                                            <datalist id="list-provider">
-                                                {filterOptions.providers.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                list="list-invoice"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.invoice}
-                                                onChange={(e) => setColumnFilters({...columnFilters, invoice: e.target.value})}
-                                            />
-                                            <datalist id="list-invoice">
-                                                {filterOptions.invoices.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.amount}
-                                                onChange={(e) => setColumnFilters({...columnFilters, amount: e.target.value})}
-                                            />
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                list="list-responsible"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.responsible}
-                                                onChange={(e) => setColumnFilters({...columnFilters, responsible: e.target.value})}
-                                            />
-                                            <datalist id="list-responsible">
-                                                {filterOptions.responsibles.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                list="list-status"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.status}
-                                                onChange={(e) => setColumnFilters({...columnFilters, status: e.target.value})}
-                                            />
-                                            <datalist id="list-status">
-                                                {filterOptions.statuses.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                list="list-contabilidad"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.contabilidad}
-                                                onChange={(e) => setColumnFilters({...columnFilters, contabilidad: e.target.value})}
-                                            />
-                                            <datalist id="list-contabilidad">
-                                                {filterOptions.contabilidades.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.consecutivo}
-                                                onChange={(e) => setColumnFilters({...columnFilters, consecutivo: e.target.value})}
-                                            />
-                                        </td>
-                                        <td className="px-3 py-2" />
-                                        <td className="px-3 py-2">
-                                            <input
-                                                type="text"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.observaciones}
-                                                onChange={(e) => setColumnFilters({...columnFilters, observaciones: e.target.value})}
-                                            />
-                                        </td>
-                                        <td className="px-3 py-2" />
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-50">
-                                    <AnimatePresence mode="popLayout">
-                                        {loading ? (
-                                            Array.from({ length: 8 }).map((_, i) => (
-                                                <tr key={`skeleton-${i}`} className="animate-pulse">
-                                                    <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-28" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-24" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-40" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-24 ml-auto" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-32" /></td>
-                                                    <td className="px-6 py-5"><div className="h-7 bg-gray-100 rounded-full w-24" /></td>
-                                                    <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-24" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-16" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-28" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-40" /></td>
-                                                    <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-24" /></td>
-                                                </tr>
-                                            ))
-                                        ) : sortedInvoices.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={12} className="px-6 py-20 text-center">
-                                                    <div className="flex flex-col items-center gap-3 opacity-30">
-                                                        <Search className="h-12 w-12 text-[#254153]" />
-                                                        <p className="text-lg font-bold text-[#254153]">No se encontraron resultados</p>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            sortedInvoices.map((inv, idx) => (
-                                                <motion.tr
-                                                    initial={{ opacity: 0, y: 10 }}
-                                                    animate={{ opacity: 1, y: 0 }}
-                                                    transition={{ delay: idx * 0.03 }}
-                                                    key={inv.id}
-                                                    className="hover:bg-[#f8fafc] transition-colors group"
-                                                >
-                                                    <td className="px-6 py-5">
-                                                        <div className="flex items-center justify-start gap-2">
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => handleCopyLink(inv)}
-                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
-                                                                title="Copiar Link Píºblico"
-                                                            >
-                                                                <Copy className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => handleManualSapSync(inv)}
-                                                                disabled={syncingId === inv.id}
-                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50"
-                                                                title="Sincronizar con SAP Manualmente"
-                                                            >
-                                                                {syncingId === inv.id ? (
-                                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                                ) : (
-                                                                    <CloudUpload className="h-3.5 w-3.5" />
-                                                                )}
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => {
-                                                                    setSelectedInvoice(inv);
-                                                                    setIsModalOpen(true);
-                                                                }}
-                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
-                                                                title="Ver Detalle"
-                                                            >
-                                                                <Search className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="text-xs font-bold text-gray-600">{inv.Nit || "N/A"}</div>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="text-sm font-bold text-gray-800">{inv.Proveedor || "N/A"}</div>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="font-bold text-[#254153] leading-none">{inv.Nro_Factura || "S/N"}</div>
-                                                        <div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {inv.id}</div>
-                                                    </td>
-                                                    <td className="px-6 py-5 text-right px-10">
-                                                        <div className="text-sm font-extrabold text-[#254153]">{formatCurrency(inv.Monto)}</div>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="text-xs font-semibold text-gray-600">{inv.Responsable_de_Autorizar || "Sin asignar"}</div>
-                                                        <div className="text-[10px] text-gray-400 font-medium">
-                                                            {inv.Created ? new Date(inv.Created).toLocaleDateString() : ""}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(inv.Aprobacion_Doliente)}`}>
-                                                            {inv.Aprobacion_Doliente || "Pendiente"}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <span className="text-[10px] font-bold text-gray-600 uppercase tracking-tight">
-                                                            {inv.Gestion_Contabilidad || "Pendiente"}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="text-xs font-bold text-gray-600">{inv.Consecutivo || "N/A"}</div>
-                                                    </td>
-                                                    <td className="px-6 py-5 max-w-0">
-                                                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">
-                                                            {(inv.Creado || inv.Created) ? new Date(inv.Creado || inv.Created).toLocaleString() : "Sin fecha"}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-5 max-w-0">
-                                                        <div className="text-[10px] font-bold text-gray-500 w-full">
-                                                            {formatCostCenter(inv.centro_costos, inv.tablaCostos)}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight">
-                                                            {inv.FechaAprobacion ? new Date(inv.FechaAprobacion).toLocaleString() : "Sin fecha"}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-5 max-w-0 min-w-[220px]">
-                                                        <div className="w-full text-xs font-medium text-gray-500">
-                                                            {inv.Observaciones || "Sin observaciones"}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        {(inv.documentInfo || inv.Attachments) ? (
-                                                            <a
-                                                                href={`/api/sharepoint/attachment-redirect?itemId=${inv.id}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50"
-                                                                title="Ver Documento Adjunto"
-                                                            >
-                                                                <FileText className="h-3.5 w-3.5" />
-                                                                <span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span>
-                                                            </a>
-                                                        ) : (
-                                                            <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="hidden">
-                                                        <div className="flex items-center justify-end gap-2">
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => handleCopyLink(inv)}
-                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
-                                                                title="Copiar Link Público"
-                                                            >
-                                                                <Copy className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => handleManualSapSync(inv)}
-                                                                disabled={syncingId === inv.id}
-                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50"
-                                                                title="Sincronizar con SAP Manualmente"
-                                                            >
-                                                                {syncingId === inv.id ? (
-                                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                                ) : (
-                                                                    <CloudUpload className="h-3.5 w-3.5" />
-                                                                )}
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => {
-                                                                    setSelectedInvoice(inv);
-                                                                    setIsModalOpen(true);
-                                                                }}
-                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
-                                                                title="Ver Detalle"
-                                                            >
-                                                                <Search className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                        </div>
-                                                    </td>
-                                                </motion.tr>
-                                            ))
-                                        )}
-                                    </AnimatePresence>
-                                </tbody>
-                            </table>
+                    {/* Tabla de Facturas AG Grid */}
+                    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
+                        <div className="w-full" style={{ minHeight: '400px' }}>
+                            <AgGridReact
+                                theme={themeQuartz}
+                                rowData={sortedInvoices}
+                                columnDefs={colDefs}
+                                defaultColDef={{
+                                    sortable: true,
+                                    filter: true,
+                                    resizable: true,
+                                    floatingFilter: true,
+                                    suppressMovable: false,
+                                }}
+                                domLayout="autoHeight"
+                                rowHeight={70}
+                                headerHeight={60}
+                                floatingFiltersHeight={50}
+                                animateRows={true}
+                                pagination={false}
+                                overlayLoadingTemplate='<span class="ag-overlay-loading-center text-gray-500 font-bold">Cargando facturas...</span>'
+                                overlayNoRowsTemplate='<span class="ag-overlay-loading-center text-gray-500 font-bold">No se encontraron resultados</span>'
+                            />
                         </div>
-                        </div>
-
+                    </div>
                     {/* Paginación - Eliminada para carga completa */}
                     {!loading && filteredInvoices.length > 0 && (
                         <div className="flex items-center justify-between pt-4">
