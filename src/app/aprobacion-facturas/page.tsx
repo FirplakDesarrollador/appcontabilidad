@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
@@ -97,6 +97,8 @@ export default function InvoicesPage() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const [activeTab, setActiveTab] = useState<'pending' | 'processed'>('pending');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
+    const [loadLimit, setLoadLimit] = useState<number | 'all'>(100);
     const [selectedInvoice, setSelectedInvoice] = useState<SharePointInvoice | null>(null);
     const [selectedResponsable, setSelectedResponsable] = useState<string>("all");
     const [isEditingResponsible, setIsEditingResponsible] = useState(false);
@@ -312,12 +314,14 @@ export default function InvoicesPage() {
         }
     };
 
-    const fetchHistory = async (reset: boolean = false) => {
+    const fetchHistory = async (reset: boolean = false, overrideLimit?: number | 'all') => {
         if (!reset && processedInvoices.length > 0) return; // Already loaded history
         
         try {
             setLoading(true);
-            const response = await fetch(`/api/sharepoint/all?processed=true&offset=0&limit=50`); 
+            const activeLimit = overrideLimit !== undefined ? overrideLimit : loadLimit;
+            const actualLimit = activeLimit === 'all' ? 100000 : activeLimit;
+            const response = await fetch(`/api/sharepoint/all?processed=true&offset=0&limit=${actualLimit}`); 
             const data = await response.json();
 
             if (data.success) {
@@ -325,7 +329,6 @@ export default function InvoicesPage() {
                 setProcessedInvoices(normalized);
                 if (data.pendingCount !== undefined) setPendingCount(data.pendingCount);
                 if (data.processedCount !== undefined) setProcessedCount(data.processedCount);
-                setHasMoreProcessed(normalized.length === 50);
             }
         } catch (error) {
             console.error("Error fetching history:", error);
@@ -334,34 +337,7 @@ export default function InvoicesPage() {
         }
     };
 
-    const loadMoreHistory = async () => {
-        if (loadingMoreProcessed || !hasMoreProcessed) return;
-        
-        setLoadingMoreProcessed(true);
-        try {
-            const currentOffset = processedInvoices.length;
-            const response = await fetch(`/api/sharepoint/all?processed=true&offset=${currentOffset}&limit=50`);
-            const data = await response.json();
 
-            if (data.success) {
-                const normalized = normalizeInvoices(data.items);
-                setProcessedInvoices(prev => {
-                    const combined = [...prev];
-                    normalized.forEach(item => {
-                        if (!combined.some(c => c.id === item.id)) combined.push(item);
-                    });
-                    return combined;
-                });
-                setHasMoreProcessed(normalized.length === 50);
-                if (data.pendingCount !== undefined) setPendingCount(data.pendingCount);
-                if (data.processedCount !== undefined) setProcessedCount(data.processedCount);
-            }
-        } catch (error) {
-            console.error("Error loading more history:", error);
-        } finally {
-            setLoadingMoreProcessed(false);
-        }
-    };
 
     useEffect(() => {
         if (activeTab === 'processed') {
@@ -748,16 +724,25 @@ export default function InvoicesPage() {
                matchesColNit && matchesColConsecutivo && matchesColObservaciones;
     });
 
+    const sortedInvoices = useMemo(() => {
+        if (!sortOrder) return filteredInvoices;
+        return [...filteredInvoices].sort((a, b) => {
+            const dateA = a.FechaAprobacion ? new Date(a.FechaAprobacion).getTime() : 0;
+            const dateB = b.FechaAprobacion ? new Date(b.FechaAprobacion).getTime() : 0;
+            return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+        });
+    }, [filteredInvoices, sortOrder]);
+
     return (
         <div className="min-h-screen bg-[#f8fafc] flex">
             <Sidebar />
 
             <main 
-                className="flex-1 relative bg-[#f8fafc] transition-all duration-300 ease-in-out"
+                className="flex-1 relative bg-[#f8fafc] transition-all duration-300 ease-in-out overflow-x-visible min-w-fit"
                 style={{ marginLeft: 'var(--sidebar-width, 256px)' }}
             >
                 {/* Header Superior */}
-                <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-10">
+                <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-10 w-full min-w-max">
                     <div className="flex items-center gap-4">
                         <button 
                             onClick={toggleSidebar}
@@ -801,7 +786,7 @@ export default function InvoicesPage() {
                     </div>
                 </header>
 
-                <div className="p-8 max-w-[1600px] mx-auto space-y-8">
+                <div className="p-8 w-full min-w-max mx-auto space-y-8">
                     {/* Título y Resumen */}
                     <div className="flex justify-between items-end">
                         <motion.div
@@ -921,11 +906,11 @@ export default function InvoicesPage() {
                     </div>
 
                     {/* Tabla de Facturas */}
-                    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-                        <div className="overflow-x-auto min-h-[400px]">
+                    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-visible w-full min-w-max">
+                        <div className="overflow-visible min-h-[400px]">
                             <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-50/50 border-b border-gray-100">
+                                <thead className="sticky top-0 z-20 shadow-sm">
+                                    <tr className="bg-gray-50 border-b border-gray-200">
                                         <th style={{ width: colWidths['Acciones'], minWidth: colWidths['Acciones'], maxWidth: colWidths['Acciones'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Acciones<div onMouseDown={(e) => handleResize(e, 'Acciones')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
                                         <th style={{ width: colWidths['NIT'], minWidth: colWidths['NIT'], maxWidth: colWidths['NIT'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">NIT<div onMouseDown={(e) => handleResize(e, 'NIT')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
                                         <th style={{ width: colWidths['Proveedor'], minWidth: colWidths['Proveedor'], maxWidth: colWidths['Proveedor'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Proveedor<div onMouseDown={(e) => handleResize(e, 'Proveedor')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
@@ -937,11 +922,21 @@ export default function InvoicesPage() {
                                         <th style={{ width: colWidths['Consecutivo'], minWidth: colWidths['Consecutivo'], maxWidth: colWidths['Consecutivo'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Consecutivo<div onMouseDown={(e) => handleResize(e, 'Consecutivo')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
                                         <th style={{ width: colWidths['Fecha Creación'], minWidth: colWidths['Fecha Creación'], maxWidth: colWidths['Fecha Creación'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Fecha Creación<div onMouseDown={(e) => handleResize(e, 'Fecha Creación')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
                                         <th style={{ width: colWidths['C. Costos / Cuenta'], minWidth: colWidths['C. Costos / Cuenta'], maxWidth: colWidths['C. Costos / Cuenta'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">C. Costos / Cuenta<div onMouseDown={(e) => handleResize(e, 'C. Costos / Cuenta')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
-                                        <th style={{ width: colWidths['Fecha Aprobación'], minWidth: colWidths['Fecha Aprobación'], maxWidth: colWidths['Fecha Aprobación'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Fecha Aprobación<div onMouseDown={(e) => handleResize(e, 'Fecha Aprobación')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
+                                        <th style={{ width: colWidths['Fecha Aprobación'], minWidth: colWidths['Fecha Aprobación'], maxWidth: colWidths['Fecha Aprobación'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">
+                                            <button 
+                                                onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : (prev === 'asc' ? null : 'desc'))}
+                                                className="flex items-center gap-1 hover:text-[#254153] transition-colors"
+                                                title="Ordenar por fecha de aprobación"
+                                            >
+                                                Fecha Aprobación
+                                                <ArrowUpDown className={`h-3 w-3 ${sortOrder ? 'text-[#254153]' : ''}`} />
+                                            </button>
+                                            <div onMouseDown={(e) => handleResize(e, 'Fecha Aprobación')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" />
+                                        </th>
                                         <th style={{ width: colWidths['Observaciones'], minWidth: colWidths['Observaciones'], maxWidth: colWidths['Observaciones'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest relative">Observaciones<div onMouseDown={(e) => handleResize(e, 'Observaciones')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
                                         <th style={{ width: colWidths['Datos adjuntos'], minWidth: colWidths['Datos adjuntos'], maxWidth: colWidths['Datos adjuntos'] }} className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap relative">Datos adjuntos<div onMouseDown={(e) => handleResize(e, 'Datos adjuntos')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500/30" /></th>
                                     </tr>
-                                    <tr className="bg-white border-b border-gray-50">
+                                    <tr className="bg-white border-b border-gray-100">
                                         <td className="px-3 py-2" />
                                         <td className="px-3 py-2">
                                             <input 
@@ -1067,7 +1062,7 @@ export default function InvoicesPage() {
                                                     <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-24" /></td>
                                                 </tr>
                                             ))
-                                        ) : filteredInvoices.length === 0 ? (
+                                        ) : sortedInvoices.length === 0 ? (
                                             <tr>
                                                 <td colSpan={12} className="px-6 py-20 text-center">
                                                     <div className="flex flex-col items-center gap-3 opacity-30">
@@ -1077,7 +1072,7 @@ export default function InvoicesPage() {
                                                 </td>
                                             </tr>
                                         ) : (
-                                            filteredInvoices.map((inv, idx) => (
+                                            sortedInvoices.map((inv, idx) => (
                                                 <motion.tr
                                                     initial={{ opacity: 0, y: 10 }}
                                                     animate={{ opacity: 1, y: 0 }}
@@ -1232,26 +1227,7 @@ export default function InvoicesPage() {
                                 </tbody>
                             </table>
                         </div>
-                        {activeTab === 'processed' && hasMoreProcessed && processedInvoices.length > 0 && !loading && (
-                            <div className="p-4 border-t border-gray-100 flex justify-center">
-                                <Button
-                                    variant="outline"
-                                    className="bg-white border-gray-200 text-gray-600 hover:bg-gray-50 font-medium rounded-xl h-10 px-6"
-                                    onClick={loadMoreHistory}
-                                    disabled={loadingMoreProcessed}
-                                >
-                                    {loadingMoreProcessed ? (
-                                        <>
-                                            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                            Cargando más...
-                                        </>
-                                    ) : (
-                                        'Cargar más facturas'
-                                    )}
-                                </Button>
-                            </div>
-                        )}
-                    </div>
+                        </div>
 
                     {/* Paginación - Eliminada para carga completa */}
                     {!loading && filteredInvoices.length > 0 && (
@@ -1259,6 +1235,28 @@ export default function InvoicesPage() {
                             <div className="text-sm text-gray-400 font-medium italic">
                                 Mostrando <span className="text-[#254153] font-bold">{filteredInvoices.length}</span> registros de {activeTab === 'pending' ? `${pendingCount} pendientes` : `${processedCount} procesados`}
                             </div>
+                            
+                            {activeTab === 'processed' && (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm text-gray-500 font-medium">Cargar:</span>
+                                    <select
+                                        value={loadLimit}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            const newLimit = val === 'all' ? 'all' : Number(val);
+                                            setLoadLimit(newLimit);
+                                            fetchHistory(true, newLimit);
+                                        }}
+                                        className="h-9 px-3 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153] transition-all text-gray-600 font-bold"
+                                    >
+                                        <option value={100}>100 registros</option>
+                                        <option value={200}>200 registros</option>
+                                        <option value={500}>500 registros</option>
+                                        <option value={1000}>1000 registros</option>
+                                        <option value="all">Todas las facturas</option>
+                                    </select>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

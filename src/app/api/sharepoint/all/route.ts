@@ -108,12 +108,32 @@ export async function GET(req: Request) {
             const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url, centro_costos, tablaCostos';
             const fetchLimit = limit > 0 ? limit : 1000;
 
-            const { data, error } = await supabase
-                .from('Registro_Facturas')
-                .select(columns)
-                .eq('Aprobacion_Doliente', 'Por Aprobar')
-                .order('ID', { ascending: false })
-                .range(offset, offset + fetchLimit - 1);
+            let allData: any[] = [];
+            let currentOffset = offset;
+            let fetchError = null;
+
+            while (allData.length < fetchLimit) {
+                const chunkLimit = Math.min(1000, fetchLimit - allData.length);
+                const { data, error } = await supabase
+                    .from('Registro_Facturas')
+                    .select(columns)
+                    .eq('Aprobacion_Doliente', 'Por Aprobar')
+                    .order('ID', { ascending: false })
+                    .range(currentOffset, currentOffset + chunkLimit - 1);
+
+                if (error) {
+                    fetchError = error;
+                    break;
+                }
+                if (!data || data.length === 0) break;
+
+                allData = [...allData, ...data];
+                currentOffset += data.length;
+
+                if (data.length < chunkLimit) break;
+            }
+
+            const data = allData;
 
             const [pendingCountRes, processedCountRes] = await Promise.all([
                 supabase
@@ -154,20 +174,38 @@ export async function GET(req: Request) {
                 const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url, centro_costos, tablaCostos';
                 const fetchLimit = limit > 0 ? limit : 1000;
 
-                const { data, error } = await supabase
-                    .from('Registro_Facturas')
-                    .select(columns)
-                    .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado')
-                    .order('ID', { ascending: false })
-                    .range(offset, offset + fetchLimit - 1);
+                let allData: any[] = [];
+                let currentOffset = offset;
+                let fetchError = null;
 
-                if (!error && data && data.length > 0) {
+                while (allData.length < fetchLimit) {
+                    const chunkLimit = Math.min(1000, fetchLimit - allData.length);
+                    const { data, error } = await supabase
+                        .from('Registro_Facturas')
+                        .select(columns)
+                        .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado')
+                        .order('ID', { ascending: false })
+                        .range(currentOffset, currentOffset + chunkLimit - 1);
+
+                    if (error) {
+                        fetchError = error;
+                        break;
+                    }
+                    if (!data || data.length === 0) break;
+
+                    allData = [...allData, ...data];
+                    currentOffset += data.length;
+
+                    if (data.length < chunkLimit) break;
+                }
+
+                if (!fetchError && allData && allData.length > 0) {
                     return NextResponse.json({
                         success: true,
-                        total: data.length,
+                        total: allData.length,
                         pendingCount,
                         processedCount,
-                        items: data,
+                        items: allData,
                         source: 'cache'
                     });
                 }
