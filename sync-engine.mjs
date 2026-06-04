@@ -164,7 +164,7 @@ function mapSpToSupabase(spItem, userMap) {
 function mapSupabaseToSp(sbItem) {
     const payload = {};
     if (sbItem.Proveedor != null)               payload.Proveedor = sbItem.Proveedor;
-    if (sbItem.Nit != null)                      payload.Nit = sbItem.Nit;
+    if (sbItem.Nit != null)                      payload.Title = sbItem.Nit;
     if (sbItem.Nro_Factura != null)              payload.Nro_Factura = sbItem.Nro_Factura;
     if (sbItem.Aprobacion_Doliente != null)      payload.Aprobacion_Doliente = sbItem.Aprobacion_Doliente;
     if (sbItem.Gestion_Contabilidad != null)     payload.Gestion_Contabilidad = sbItem.Gestion_Contabilidad;
@@ -198,24 +198,47 @@ async function runSync() {
         const userMap = await getCachedUserMap(graphClient, siteId);
 
         // ── A: SharePoint → Supabase ──────────────────────────────────────────
+        let spChanges = [];
+        let spNextLink = `/sites/${siteId}/lists/${listId}/items?expand=fields&$top=500`;
         const spFilter = `fields/Modified ge '${lastSyncTime.toISOString()}'`;
-        const spChangesRes = await graphClient
-            .api(`/sites/${siteId}/lists/${listId}/items?expand=fields`)
-            .header('Prefer', 'HonorNonIndexedQueriesWarningMayFailRandomly')
-            .filter(spFilter)
-            .get();
-        const spChanges = spChangesRes.value || [];
+        
+        console.log(`[SP→SB] Fetching modified items from SharePoint...`);
+        while (spNextLink) {
+            const req = graphClient.api(spNextLink).header('Prefer', 'HonorNonIndexedQueriesWarningMayFailRandomly');
+            if (spNextLink.includes('?expand=fields') && !spNextLink.includes('skiptoken')) {
+                req.filter(spFilter);
+            }
+            const res = await req.get();
+            spChanges = spChanges.concat(res.value || []);
+            spNextLink = res['@odata.nextLink'] ? res['@odata.nextLink'].split('v1.0')[1] : null;
+        }
         console.log(`[SP→SB] Found ${spChanges.length} modified items in SharePoint.`);
 
         // ── B: Supabase → SharePoint ──────────────────────────────────────────
-        const { data: sbChanges = [], error: sbError } = await supabase
-            .from('Registro_Facturas')
-            .select('*')
-            .gt('updated_at', lastSyncTime.toISOString());
-
-        if (sbError) {
-            console.error('Error fetching from Supabase:', sbError.message);
-            return;
+        let sbChanges = [];
+        let sbHasMore = true;
+        let sbOffset = 0;
+        const sbLimit = 1000;
+        
+        console.log(`[SB→SP] Fetching modified items from Supabase...`);
+        while (sbHasMore) {
+            const { data: batch, error: sbError } = await supabase
+                .from('Registro_Facturas')
+                .select('*')
+                .gt('updated_at', lastSyncTime.toISOString())
+                .range(sbOffset, sbOffset + sbLimit - 1);
+            
+            if (sbError) {
+                console.error('Error fetching from Supabase:', sbError.message);
+                return;
+            }
+            
+            sbChanges = sbChanges.concat(batch || []);
+            if (!batch || batch.length < sbLimit) {
+                sbHasMore = false;
+            } else {
+                sbOffset += sbLimit;
+            }
         }
         console.log(`[SB→SP] Found ${sbChanges.length} modified items in Supabase.`);
 
