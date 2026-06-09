@@ -276,17 +276,20 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                                                         const res = await fetch(`/api/providers/responsable?nit=${encodeURIComponent(p.numero_identificacion)}`);
                                                                         const data = await res.json();
                                                                         if (data.found && data.responsable) {
-                                                                            // Search for this user by name to get their email
-                                                                            const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(data.responsable)}`);
+                                                                            let cleanName = data.responsable.replace(//g, 'ñ').replace(//g, 'Ñ');
+                                                                            const parts = cleanName.split(' ');
+                                                                            const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanName;
+
+                                                                            const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
                                                                             const userData = await userRes.json();
                                                                             const users = userData.users || [];
                                                                             if (users.length > 0) {
-                                                                                const exactMatch = users.find((u: any) => u.name.toLowerCase() === data.responsable.toLowerCase()) || users[0];
+                                                                                const exactMatch = users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase())) || users[0];
                                                                                 setFormData(prev => ({...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: exactMatch.email}));
                                                                                 setUserSearch(exactMatch.name);
                                                                                 setAutoFilledResponsable(true);
                                                                             } else {
-                                                                                setUserSearch(data.responsable);
+                                                                                setUserSearch(cleanName);
                                                                             }
                                                                         }
                                                                     } catch (e) {

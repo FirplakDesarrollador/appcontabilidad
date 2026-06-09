@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getGraphClient, createSharePointFolder, uploadFileToSharePoint, createSharePointListItem, getSharePointRESTToken } from '@/lib/sharepoint';
+import { getGraphClient, createSharePointFolder, uploadFileToSharePoint, createSharePointListItem, getSharePointRESTToken, ensureSharePointUserByEmail } from '@/lib/sharepoint';
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -61,21 +61,18 @@ export async function POST(req: NextRequest) {
         const uploadedFile = await uploadFileToSharePoint(siteIdIT, folderId, file.name, fileBuffer);
         const fileUrl = uploadedFile.webUrl || `https://firplaksa.sharepoint.com/sites/ITPowerApps/Reenvio%20facture/${encodeURIComponent(folderName)}/${encodeURIComponent(file.name)}`;
 
-        // 5. Resolver Responsable (Lookup ID)
+        // 5. Resolver Responsable (Lookup ID) asegurando que exista en SharePoint
         let responsableLookupId = null;
         if (responsableEmail) {
             try {
-                const userRes = await client.api(`/sites/${siteIdFPK}/lists('User Information List')/items`)
-                    .header('Prefer', 'HonorNonIndexedQueriesWarningMayFailRandomly')
-                    .expand('fields($select=id,EMail)')
-                    .filter(`fields/EMail eq '${responsableEmail}'`)
-                    .get();
-                
-                if (userRes.value && userRes.value.length > 0) {
-                    responsableLookupId = userRes.value[0].id;
+                const spUser = await ensureSharePointUserByEmail(responsableEmail);
+                if (spUser) {
+                    responsableLookupId = spUser.id;
+                } else {
+                    console.warn('[SharePoint] No se pudo asegurar el responsable por email:', responsableEmail);
                 }
             } catch (e) {
-                console.warn('No se pudo resolver el responsable por email:', responsableEmail);
+                console.warn('[SharePoint] Error resolviendo responsable por email:', responsableEmail, e);
             }
         }
 

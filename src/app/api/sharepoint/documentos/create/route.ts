@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getGraphClient, createSharePointListItem, getSharePointRESTToken } from '@/lib/sharepoint';
+import { getGraphClient, createSharePointListItem, getSharePointRESTToken, ensureSharePointUserByEmail } from '@/lib/sharepoint';
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,23 +26,20 @@ export async function POST(req: NextRequest) {
         const siteFPK = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
         const siteIdFPK = siteFPK.id;
 
-        // 2. Resolver Responsable (Lookup ID)
+        // 2. Resolver Responsable (Lookup ID) asegurando que exista en SharePoint
         let responsableLookupId = null;
         let responsableName = null;
         if (responsableEmail) {
             try {
-                const userRes = await client.api(`/sites/${siteIdFPK}/lists('User Information List')/items`)
-                    .header('Prefer', 'HonorNonIndexedQueriesWarningMayFailRandomly')
-                    .expand('fields($select=id,EMail,Title)')
-                    .filter(`fields/EMail eq '${responsableEmail}'`)
-                    .get();
-                
-                if (userRes.value && userRes.value.length > 0) {
-                    responsableLookupId = userRes.value[0].id;
-                    responsableName = userRes.value[0].fields.Title;
+                const spUser = await ensureSharePointUserByEmail(responsableEmail);
+                if (spUser) {
+                    responsableLookupId = spUser.id;
+                    responsableName = spUser.title;
+                } else {
+                    console.warn('[SharePoint] No se pudo asegurar el responsable por email:', responsableEmail);
                 }
             } catch (e) {
-                console.warn('No se pudo resolver el responsable por email:', responsableEmail);
+                console.warn('[SharePoint] Error resolviendo el responsable por email:', responsableEmail, e);
             }
         }
 

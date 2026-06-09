@@ -90,6 +90,68 @@ export async function getCachedUserMap(client: Client, siteId: string): Promise<
     return globalUserMap!;
 }
 
+/** 
+ * Resuelve y asegura un usuario en SharePoint por correo electrónico.
+ * Si el usuario no existe en la lista de información del sitio, lo agrega.
+ */
+export async function ensureSharePointUserByEmail(email: string): Promise<{ id: number, title: string } | null> {
+    try {
+        const restToken = await getSharePointRESTToken();
+        if (!restToken) return null;
+
+        const spBaseUrl = 'https://firplaksa.sharepoint.com/sites/FPKContabilidad';
+        
+        // 1. Obtener el Request Digest (necesario para POST en SharePoint REST)
+        let digest = "";
+        try {
+            const digestRes = await fetch(`${spBaseUrl}/_api/contextinfo`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${restToken}`,
+                    'Accept': 'application/json;odata=verbose',
+                }
+            });
+            if (digestRes.ok) {
+                const digestData = await digestRes.json();
+                digest = digestData.d.GetContextWebInformation.FormDigestValue;
+            }
+        } catch (e) {
+            console.warn('[SharePoint] Could not fetch digest for ensureUser...');
+        }
+
+        // 2. Llamar a ensureUser
+        const ensureUrl = `${spBaseUrl}/_api/web/ensureuser`;
+        const payload = JSON.stringify({ 'logonName': `i:0#.f|membership|${email}` });
+        
+        const ensureRes = await fetch(ensureUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${restToken}`,
+                'Accept': 'application/json;odata=verbose',
+                'Content-Type': 'application/json;odata=verbose',
+                ...(digest ? { 'X-RequestDigest': digest } : {})
+            },
+            body: payload
+        });
+
+        if (ensureRes.ok) {
+            const data = await ensureRes.json();
+            if (data.d && data.d.Id) {
+                return {
+                    id: data.d.Id,
+                    title: data.d.Title
+                };
+            }
+        } else {
+            const errText = await ensureRes.text();
+            console.warn(`[SharePoint] ensureUser failed for ${email}:`, errText);
+        }
+    } catch (e) {
+        console.error('[SharePoint] Exception in ensureUser:', e);
+    }
+    return null;
+}
+
 // ─── fetchAllSharePointItems (optimizado) ─────────────────────────────────────
 export async function fetchAllSharePointItems(
     listName: string = 'Registro_de_Facturas',
