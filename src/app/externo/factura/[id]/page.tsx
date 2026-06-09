@@ -101,6 +101,7 @@ export default function PublicApprovalPage() {
     const [error, setError] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null); // 'Aprobado' or 'Rechazado'
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const [isExtractingValue, setIsExtractingValue] = useState(false);
 
     const [observaciones, setObservaciones] = useState<string>("");
     const [distribuciones, setDistribuciones] = useState<{ centroCostos: string; cuenta: string; valor: string }[]>([{ centroCostos: "", cuenta: "", valor: "" }]);
@@ -239,6 +240,22 @@ export default function PublicApprovalPage() {
         }
     };
 
+    const extractValueFromPdf = async (id: string) => {
+        try {
+            setIsExtractingValue(true);
+            const res = await fetch(`/api/externo/factura/${id}/extract-value`, { method: 'POST' });
+            const extractData = await res.json();
+            if (extractData.success && extractData.value > 0) {
+                setEditableTotal(String(extractData.value));
+                setDistribuciones([{ centroCostos: "", cuenta: "", valor: String(extractData.value) }]);
+            }
+        } catch (err) {
+            console.error("Failed to auto-extract value:", err);
+        } finally {
+            setIsExtractingValue(false);
+        }
+    };
+
     const fetchInvoice = async () => {
         try {
             const res = await fetch(`/api/externo/factura/${itemId}`);
@@ -273,7 +290,16 @@ export default function PublicApprovalPage() {
             }
 
             if (data.valorTotal) {
-                setEditableTotal(data.valorTotal);
+                const numericTotal = parseSafeFloat(data.valorTotal);
+                if (numericTotal === 0) {
+                    setEditableTotal("0");
+                    extractValueFromPdf(itemId);
+                } else {
+                    setEditableTotal(data.valorTotal);
+                }
+            } else {
+                setEditableTotal("0");
+                extractValueFromPdf(itemId);
             }
 
             if (data.observaciones) {
@@ -744,6 +770,11 @@ export default function PublicApprovalPage() {
                                                 <div className="flex items-center gap-2 text-gray-400 mb-1">
                                                     <DollarSign className="h-4 w-4" />
                                                     <span className="text-[10px] font-black uppercase tracking-wider">Valor Total</span>
+                                                    {isExtractingValue && (
+                                                        <span className="text-[10px] text-blue-500 font-bold flex items-center gap-1 animate-pulse ml-2">
+                                                            <Loader2 className="h-3 w-3 animate-spin" /> Extrayendo del PDF...
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div className="relative group">
                                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
