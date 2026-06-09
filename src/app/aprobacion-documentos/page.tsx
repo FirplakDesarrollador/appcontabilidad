@@ -471,6 +471,21 @@ export default function SupportDocumentsPage() {
                                 Sincronizar SharePoint
                             </Button>
                             <Button
+                                variant="outline"
+                                onClick={() => {
+                                    const url = `${window.location.origin}/externo/documento-soporte`;
+                                    navigator.clipboard.writeText(url).then(() => {
+                                        alert("Link del formulario público copiado al portapapeles");
+                                    }).catch(() => {
+                                        alert("No se pudo copiar el enlace");
+                                    });
+                                }}
+                                className="border-[#254153]/20 text-[#254153] hover:bg-[#254153]/5 rounded-xl h-11 px-4 font-bold transition-all shadow-sm flex items-center gap-2"
+                            >
+                                <Copy className="h-4 w-4" />
+                                Copiar link para proveedor
+                            </Button>
+                            <Button
                                 onClick={() => setIsCreateModalOpen(true)}
                                 className="bg-[#254153] hover:bg-[#1a2f3d] text-white rounded-xl h-11 px-4 font-bold shadow-sm transition-all"
                             >
