@@ -13,7 +13,8 @@ import {
     XCircle,
     History,
     ChevronLeft,
-    ChevronRight
+    ChevronRight,
+    Search
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
@@ -37,6 +38,7 @@ function HistorialList() {
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState("");
 
     useEffect(() => {
         if (!responsable) {
@@ -116,17 +118,42 @@ function HistorialList() {
         }).format(numeric);
     };
 
+    const filteredInvoices = invoices.filter(inv => {
+        if (!searchTerm) return true;
+        const term = searchTerm.toLowerCase();
+        return (
+            inv.nroFactura?.toLowerCase().includes(term) ||
+            inv.proveedor?.toLowerCase().includes(term)
+        );
+    });
+
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between px-4 mb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 mb-2 gap-4">
                 <h2 className="text-lg font-bold text-[#254153] flex items-center gap-2">
                     <History className="h-5 w-5 text-gray-500" />
-                    Has procesado {invoices.length} {invoices.length === 1 ? 'factura' : 'facturas'}
+                    Mostrando {filteredInvoices.length} de {invoices.length} {invoices.length === 1 ? 'factura procesada' : 'facturas procesadas'}
                 </h2>
+                
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                        type="text"
+                        placeholder="Buscar factura o proveedor..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="h-10 pl-10 pr-4 rounded-xl bg-white shadow-sm border border-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153] w-full sm:w-80 transition-all font-medium text-gray-700"
+                    />
+                </div>
             </div>
             
             <div className="grid grid-cols-1 gap-4">
-                {invoices.map((inv, idx) => {
+                {filteredInvoices.length === 0 ? (
+                    <div className="p-8 text-center bg-white rounded-[28px] border border-gray-100">
+                        <p className="text-gray-500 font-medium">No se encontraron facturas que coincidan con tu búsqueda.</p>
+                    </div>
+                ) : (
+                    filteredInvoices.map((inv, idx) => {
                     const isAprobado = inv.aprobacionDoliente?.toLowerCase().includes("aprobado");
                     const isRechazado = inv.aprobacionDoliente?.toLowerCase().includes("rechazado");
 
@@ -185,7 +212,8 @@ function HistorialList() {
                             </div>
                         </motion.div>
                     );
-                })}
+                })
+                )}
             </div>
         </div>
     );
