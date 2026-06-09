@@ -276,7 +276,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                                                         const res = await fetch(`/api/providers/responsable?nit=${encodeURIComponent(p.numero_identificacion)}`);
                                                                         const data = await res.json();
                                                                         if (data.found && data.responsable) {
-                                                                            let cleanName = data.responsable.replace(//g, 'ñ').replace(//g, 'Ñ');
+                                                                            let cleanName = data.responsable.replace(/\uFFFD/g, 'ñ');
                                                                             const parts = cleanName.split(' ');
                                                                             const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanName;
 

@@ -82,8 +82,8 @@ export default function DocumentoSoporteExternoPage() {
             const res = await fetch(`/api/providers/responsable?nit=${encodeURIComponent(p.numero_identificacion)}`);
             const data = await res.json();
             if (data.found && data.responsable) {
-                // Fix encoding issues like  mapping to ñ
-                let cleanName = data.responsable.replace(//g, 'ñ').replace(//g, 'Ñ');
+                // Fix encoding issues like replacement char mapping to ñ
+                let cleanName = data.responsable.replace(/\uFFFD/g, 'ñ');
                 // Use first two words to make the search more robust
                 const parts = cleanName.split(' ');
                 const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanName;
