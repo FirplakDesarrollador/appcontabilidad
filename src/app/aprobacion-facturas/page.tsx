@@ -88,6 +88,7 @@ export default function InvoicesPage() {
     const [processedInvoices, setProcessedInvoices] = useState<SharePointInvoice[]>([]);
     const [pendingCount, setPendingCount] = useState(0);
     const [processedCount, setProcessedCount] = useState(0);
+    const [toProcessCount, setToProcessCount] = useState(0);
     const [hasMoreProcessed, setHasMoreProcessed] = useState(true);
     const [loadingMoreProcessed, setLoadingMoreProcessed] = useState(false);
 
@@ -101,7 +102,7 @@ export default function InvoicesPage() {
 
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
-    const [activeTab, setActiveTab] = useState<'pending' | 'processed'>('pending');
+    const [activeTab, setActiveTab] = useState<'pending' | 'to_process' | 'processed'>('pending');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
     const [loadLimit, setLoadLimit] = useState<number | 'all'>(100);
     const [selectedInvoice, setSelectedInvoice] = useState<SharePointInvoice | null>(null);
@@ -286,6 +287,7 @@ export default function InvoicesPage() {
                 setPendingInvoices(normalizeInvoices(data.items));
                 if (data.pendingCount !== undefined) setPendingCount(data.pendingCount);
                 if (data.processedCount !== undefined) setProcessedCount(data.processedCount);
+                if (data.toProcessCount !== undefined) setToProcessCount(data.toProcessCount);
                 setDataSource(data.source);
             }
         } catch (error) {
@@ -334,6 +336,7 @@ export default function InvoicesPage() {
                 setProcessedInvoices(normalized);
                 if (data.pendingCount !== undefined) setPendingCount(data.pendingCount);
                 if (data.processedCount !== undefined) setProcessedCount(data.processedCount);
+                if (data.toProcessCount !== undefined) setToProcessCount(data.toProcessCount);
             }
         } catch (error) {
             console.error("Error fetching history:", error);
@@ -345,7 +348,7 @@ export default function InvoicesPage() {
 
 
     useEffect(() => {
-        if (activeTab === 'processed') {
+        if (activeTab === 'processed' || activeTab === 'to_process') {
             fetchHistory();
         }
     }, [activeTab]);
@@ -694,6 +697,12 @@ export default function InvoicesPage() {
         return state.includes("pendiente") || state.includes("por aprobar");
     };
 
+    const isToProcess = (inv: SharePointInvoice) => {
+        const state = (inv.Aprobacion_Doliente || "").toLowerCase();
+        const contabilidad = (inv.Gestion_Contabilidad || "").toLowerCase();
+        return state.includes("aprobado") && contabilidad.includes("por procesar");
+    };
+
     const isProcessed = (inv: SharePointInvoice) => {
         const state = (inv.Aprobacion_Doliente || "").toLowerCase();
         const contabilidad = (inv.Gestion_Contabilidad || "").toLowerCase();
@@ -708,7 +717,7 @@ export default function InvoicesPage() {
             inv.Consecutivo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             inv.Observaciones?.toLowerCase().includes(searchTerm.toLowerCase());
 
-        const matchesTab = activeTab === 'pending' ? isPending(inv) : isProcessed(inv);
+        const matchesTab = activeTab === 'pending' ? isPending(inv) : activeTab === 'to_process' ? isToProcess(inv) : isProcessed(inv);
         const matchesResponsable = selectedResponsable === "all" || inv.Responsable_de_Autorizar === selectedResponsable;
 
         // Filtros por columna (Excel-style)
@@ -936,6 +945,20 @@ export default function InvoicesPage() {
                             )}
                         </button>
                         <button
+                            onClick={() => setActiveTab('to_process')}
+                            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'to_process'
+                                ? "bg-[#254153] text-white shadow-lg shadow-blue-900/10"
+                                : "text-gray-500 hover:text-gray-700 hover:bg-white/50"}`}
+                        >
+                            <Loader2 className={`h-4 w-4 ${activeTab === 'to_process' ? 'animate-spin-slow' : ''}`} />
+                            Por Procesar
+                            {toProcessCount > 0 && (
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'to_process' ? "bg-white/20" : "bg-gray-200"}`}>
+                                    {toProcessCount}
+                                </span>
+                            )}
+                        </button>
+                        <button
                             onClick={() => setActiveTab('processed')}
                             className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'processed'
                                 ? "bg-[#254153] text-white shadow-lg shadow-blue-900/10"
@@ -980,10 +1003,10 @@ export default function InvoicesPage() {
                     {!loading && filteredInvoices.length > 0 && (
                         <div className="flex items-center justify-between pt-4">
                             <div className="text-sm text-gray-400 font-medium italic">
-                                Mostrando <span className="text-[#254153] font-bold">{filteredInvoices.length}</span> registros de {activeTab === 'pending' ? `${pendingCount} pendientes` : `${processedCount} procesados`}
+                                Mostrando <span className="text-[#254153] font-bold">{filteredInvoices.length}</span> registros de {activeTab === 'pending' ? `${pendingCount} pendientes` : activeTab === 'to_process' ? `${toProcessCount} por procesar` : `${processedCount} procesados`}
                             </div>
                             
-                            {activeTab === 'processed' && (
+                            {(activeTab === 'processed' || activeTab === 'to_process') && (
                                 <div className="flex items-center gap-2">
                                     <span className="text-sm text-gray-500 font-medium">Cargar:</span>
                                     <select

@@ -135,7 +135,7 @@ export async function GET(req: Request) {
 
             const data = allData;
 
-            const [pendingCountRes, processedCountRes] = await Promise.all([
+            const [pendingCountRes, processedCountRes, toProcessCountRes] = await Promise.all([
                 supabase
                     .from('Registro_Facturas')
                     .select('ID', { count: 'exact', head: true })
@@ -143,7 +143,12 @@ export async function GET(req: Request) {
                 supabase
                     .from('Registro_Facturas')
                     .select('ID', { count: 'exact', head: true })
-                    .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado')
+                    .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado'),
+                supabase
+                    .from('Registro_Facturas')
+                    .select('ID', { count: 'exact', head: true })
+                    .eq('Aprobacion_Doliente', 'Aprobado')
+                    .ilike('Gestion_Contabilidad', '%POR PROCESAR%')
             ]);
 
             return NextResponse.json({
@@ -151,6 +156,7 @@ export async function GET(req: Request) {
                 total: data?.length || 0,
                 pendingCount: pendingCountRes.count || 0,
                 processedCount: processedCountRes.count || 0,
+                toProcessCount: toProcessCountRes.count || 0,
                 items: data || [],
                 source: 'cache',
                 syncStatus: refresh ? 'synced' : (cacheStale ? 'syncing' : 'fresh'),
@@ -162,12 +168,14 @@ export async function GET(req: Request) {
         // PROCESADOS / HISTÓRICO → caché de Supabase (rápido, paginado)
         // ─────────────────────────────────────────────────────────────────────
         if (processed) {
-            const [pendingCountRes, processedCountRes] = await Promise.all([
+            const [pendingCountRes, processedCountRes, toProcessCountRes] = await Promise.all([
                 supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Por Aprobar'),
-                supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado')
+                supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado'),
+                supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Aprobado').ilike('Gestion_Contabilidad', '%POR PROCESAR%')
             ]);
             const pendingCount = pendingCountRes.count || 0;
             const processedCount = processedCountRes.count || 0;
+            const toProcessCount = toProcessCountRes.count || 0;
 
             if (!refresh) {
                 console.log(`[API] Fetching PROCESSED from Supabase cache (offset=${offset}, limit=${limit})...`);
@@ -205,6 +213,7 @@ export async function GET(req: Request) {
                         total: allData.length,
                         pendingCount,
                         processedCount,
+                        toProcessCount,
                         items: allData,
                         source: 'cache'
                     });
@@ -222,6 +231,7 @@ export async function GET(req: Request) {
                 total: items.length,
                 pendingCount,
                 processedCount,
+                toProcessCount,
                 items,
                 source: 'sharepoint'
             });
@@ -234,9 +244,10 @@ export async function GET(req: Request) {
         let items = await fetchAllSharePointItems('Registro_de_Facturas', limit || 5000, '');
         if (limit > 0 && items.length > limit) items = items.slice(0, limit);
 
-        const [{ count: pendingCount }, { count: processedCount }] = await Promise.all([
+        const [{ count: pendingCount }, { count: processedCount }, { count: toProcessCount }] = await Promise.all([
             supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Por Aprobar'),
-            supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado')
+            supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado'),
+            supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Aprobado').ilike('Gestion_Contabilidad', '%POR PROCESAR%')
         ]);
 
         return NextResponse.json({
@@ -244,6 +255,7 @@ export async function GET(req: Request) {
             total: items.length,
             pendingCount: pendingCount || 0,
             processedCount: processedCount || 0,
+            toProcessCount: toProcessCount || 0,
             items,
             source: 'sharepoint'
         });
