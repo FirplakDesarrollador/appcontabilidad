@@ -277,19 +277,26 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                                                         const data = await res.json();
                                                                         if (data.found && data.responsable) {
                                                                             let cleanName = data.responsable.replace(/\uFFFD/g, 'ñ');
-                                                                            const parts = cleanName.split(' ');
-                                                                            const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanName;
-
-                                                                            const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
-                                                                            const userData = await userRes.json();
-                                                                            const users = userData.users || [];
-                                                                            if (users.length > 0) {
-                                                                                const exactMatch = users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase())) || users[0];
-                                                                                setFormData(prev => ({...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: exactMatch.email}));
-                                                                                setUserSearch(exactMatch.name);
+                                                                            
+                                                                            if (data.correo) {
+                                                                                setFormData(prev => ({...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: data.correo}));
+                                                                                setUserSearch(data.responsable);
                                                                                 setAutoFilledResponsable(true);
                                                                             } else {
-                                                                                setUserSearch(cleanName);
+                                                                                const parts = cleanName.split(' ');
+                                                                                const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanName;
+
+                                                                                const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
+                                                                                const userData = await userRes.json();
+                                                                                const users = userData.users || [];
+                                                                                if (users.length > 0) {
+                                                                                    const exactMatch = users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase())) || users[0];
+                                                                                    setFormData(prev => ({...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: exactMatch.email}));
+                                                                                    setUserSearch(exactMatch.name);
+                                                                                    setAutoFilledResponsable(true);
+                                                                                } else {
+                                                                                    setUserSearch(cleanName);
+                                                                                }
                                                                             }
                                                                         }
                                                                     } catch (e) {
