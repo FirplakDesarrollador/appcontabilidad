@@ -16,6 +16,39 @@ import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-communi
 // Configure AG Grid v35+ Modules
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+const AG_GRID_LOCALE_ES = {
+    // Text Filter
+    filterOoo: 'Buscar...',
+    empty: 'Elige uno',
+    equals: 'Igual a',
+    notEqual: 'Diferente a',
+    lessThan: 'Menor que',
+    greaterThan: 'Mayor que',
+    lessThanOrEqual: 'Menor o igual a',
+    greaterThanOrEqual: 'Mayor o igual a',
+    inRange: 'Rango',
+    contains: 'Buscar...',
+    notContains: 'No contiene',
+    startsWith: 'Inicia con',
+    endsWith: 'Termina con',
+    blank: 'En blanco',
+    notBlank: 'No en blanco',
+
+    // Filter Conditions
+    andCondition: 'Y',
+    orCondition: 'O',
+
+    // Filter Buttons
+    applyFilter: 'Aplicar',
+    resetFilter: 'Reiniciar',
+    clearFilter: 'Limpiar',
+    cancelFilter: 'Cancelar',
+
+    // Core
+    noRowsToShow: 'No hay registros para mostrar',
+    loadingOoo: 'Cargando...',
+};
+
 
 interface ManualAttachment {
     name: string;
@@ -105,6 +138,7 @@ export default function InvoicesPage() {
     const [activeTab, setActiveTab] = useState<'pending' | 'to_process' | 'processed'>('pending');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
     const [loadLimit, setLoadLimit] = useState<number | 'all'>(100);
+    const [displayedRowCount, setDisplayedRowCount] = useState<number>(0);
     const [selectedInvoice, setSelectedInvoice] = useState<SharePointInvoice | null>(null);
     const [selectedResponsable, setSelectedResponsable] = useState<string>("all");
     const [isEditingResponsible, setIsEditingResponsible] = useState(false);
@@ -789,15 +823,15 @@ export default function InvoicesPage() {
     ], [syncingId]);
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] flex">
+        <div className="h-screen bg-[#f8fafc] flex overflow-hidden">
             <Sidebar />
 
             <main 
-                className="flex-1 relative bg-[#f8fafc] transition-all duration-300 ease-in-out overflow-x-visible min-w-fit"
+                className="flex-1 relative bg-[#f8fafc] transition-all duration-300 ease-in-out flex flex-col h-screen overflow-y-auto overflow-x-hidden"
                 style={{ marginLeft: 'var(--sidebar-width, 256px)' }}
             >
                 {/* Header Superior */}
-                <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-10 w-full min-w-max">
+                <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-10 w-full">
                     <div className="flex items-center gap-4">
                         <button 
                             onClick={toggleSidebar}
@@ -841,7 +875,7 @@ export default function InvoicesPage() {
                     </div>
                 </header>
 
-                <div className="p-8 w-full min-w-max mx-auto space-y-8">
+                <div className="px-4 md:px-8 pt-6 pb-2 w-full mx-auto flex-1 flex flex-col min-h-min space-y-4">
                     {/* Título y Resumen */}
                     <div className="flex justify-between items-end">
                         <motion.div
@@ -975,20 +1009,26 @@ export default function InvoicesPage() {
                     </div>
 
                     {/* Tabla de Facturas AG Grid */}
-                    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-                        <div className="w-full" style={{ minHeight: '400px' }}>
+                    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden flex-1 flex flex-col min-h-[500px]">
+                        <div className="w-full flex-1 min-h-0">
                             <AgGridReact
                                 theme={themeQuartz}
+                                localeText={AG_GRID_LOCALE_ES}
                                 rowData={sortedInvoices}
                                 columnDefs={colDefs}
+                                onModelUpdated={(e) => setDisplayedRowCount(e.api.getDisplayedRowCount())}
                                 defaultColDef={{
                                     sortable: true,
                                     filter: true,
+                                    filterParams: {
+                                        filterOptions: ['contains'],
+                                        suppressAndOrCondition: true,
+                                        maxNumConditions: 1,
+                                    },
                                     resizable: true,
                                     floatingFilter: true,
                                     suppressMovable: false,
                                 }}
-                                domLayout="autoHeight"
                                 rowHeight={70}
                                 headerHeight={60}
                                 floatingFiltersHeight={50}
@@ -1001,9 +1041,9 @@ export default function InvoicesPage() {
                     </div>
                     {/* Paginación - Eliminada para carga completa */}
                     {!loading && filteredInvoices.length > 0 && (
-                        <div className="flex items-center justify-between pt-4">
+                        <div className="flex items-center justify-between pt-2">
                             <div className="text-sm text-gray-400 font-medium italic">
-                                Mostrando <span className="text-[#254153] font-bold">{filteredInvoices.length}</span> registros de {activeTab === 'pending' ? `${pendingCount} pendientes` : activeTab === 'to_process' ? `${toProcessCount} por procesar` : `${processedCount} procesados`}
+                                Mostrando <span className="text-[#254153] font-bold">{displayedRowCount}</span> de <span className="text-gray-600 font-bold">{filteredInvoices.length}</span> registros cargados (Total servidor: {activeTab === 'pending' ? `${pendingCount} pendientes` : activeTab === 'to_process' ? `${toProcessCount} por procesar` : `${processedCount} procesados`})
                             </div>
                             
                             {(activeTab === 'processed' || activeTab === 'to_process') && (
