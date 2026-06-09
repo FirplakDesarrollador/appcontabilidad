@@ -11,7 +11,10 @@ import {
     Hash,
     Loader2,
     ShieldCheck,
-    ArrowRight
+    ArrowRight,
+    Search,
+    ChevronDown,
+    User
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -30,42 +33,66 @@ export default function DocumentoSoporteExternoPage() {
     const [isLookingUp, setIsLookingUp] = useState(false);
     const [autoFilled, setAutoFilled] = useState(false);
 
-    // Búsqueda automática por NIT
-    const handleNitBlur = async () => {
-        const nit = formData.nit.trim();
-        if (nit.length < 3) return;
+    // Estados para búsqueda de Proveedor
+    const [providerSearch, setProviderSearch] = useState("");
+    const [providerResults, setProviderResults] = useState<any[]>([]);
+    const [isSearchingProviders, setIsSearchingProviders] = useState(false);
+    const [showProviderResults, setShowProviderResults] = useState(false);
+    const [providerPage, setProviderPage] = useState(0);
+    const [hasMoreProviders, setHasMoreProviders] = useState(true);
 
-        setIsLookingUp(true);
-        setAutoFilled(false);
-        setError(null);
-
+    // Búsqueda de proveedores
+    const searchProviders = useCallback(async (query: string, page: number = 0, append: boolean = false) => {
+        setIsSearchingProviders(true);
         try {
-            // 1. Buscar si el NIT existe y tiene responsable
-            const res = await fetch(`/api/providers/responsable?nit=${encodeURIComponent(nit)}`);
+            const res = await fetch(`/api/providers/search?q=${encodeURIComponent(query)}&page=${page}&limit=15`);
             const data = await res.json();
+            if (append) {
+                setProviderResults(prev => [...prev, ...data.providers]);
+            } else {
+                setProviderResults(data.providers || []);
+            }
+            setHasMoreProviders(data.hasMore);
+        } catch (e) {
+            console.error("Error searching providers:", e);
+        } finally {
+            setIsSearchingProviders(false);
+        }
+    }, []);
 
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (showProviderResults) {
+                setProviderPage(0);
+                searchProviders(providerSearch, 0, false);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [providerSearch, searchProviders, showProviderResults]);
+
+    const handleSelectProvider = async (p: any) => {
+        setFormData({ ...formData, proveedor: p.razon_social, nit: p.numero_identificacion });
+        setProviderSearch(p.razon_social);
+        setShowProviderResults(false);
+        
+        // Buscar el responsable automáticamente
+        try {
+            setIsLookingUp(true);
+            setAutoFilled(false);
+            const res = await fetch(`/api/providers/responsable?nit=${encodeURIComponent(p.numero_identificacion)}`);
+            const data = await res.json();
             if (data.found && data.responsable) {
-                // 2. Buscar el correo del responsable
                 const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(data.responsable)}`);
                 const userData = await userRes.json();
                 const users = userData.users || [];
-
-                let email = "";
                 if (users.length > 0) {
                     const exactMatch = users.find((u: any) => u.name.toLowerCase() === data.responsable.toLowerCase()) || users[0];
-                    email = exactMatch.email;
+                    setFormData(prev => ({ ...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: exactMatch.email }));
+                    setAutoFilled(true);
                 }
-
-                setFormData(prev => ({
-                    ...prev,
-                    proveedor: data.proveedor || prev.proveedor,
-                    responsableEmail: email
-                }));
-                setAutoFilled(true);
             }
         } catch (e) {
             console.error('Error looking up responsable:', e);
-            // No bloqueamos, solo dejamos que el usuario ingrese la razón social manual
         } finally {
             setIsLookingUp(false);
         }
@@ -188,51 +215,96 @@ export default function DocumentoSoporteExternoPage() {
                         )}
 
                         <div className="space-y-4">
-                            {/* NIT */}
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">NIT del Proveedor</label>
+                            {/* Proveedor (Searchable) */}
+                            <div className="space-y-1.5 relative">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Proveedor (Razón Social o NIT)</label>
                                 <div className="relative group">
-                                    <Hash className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-[#254153] transition-colors" />
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-[#254153] transition-colors" />
                                     <input
                                         required
                                         type="text"
+                                        value={formData.proveedor ? formData.proveedor : providerSearch}
+                                        onChange={(e) => {
+                                            setProviderSearch(e.target.value);
+                                            if (formData.proveedor) {
+                                                setFormData({ ...formData, proveedor: "", nit: "" });
+                                            }
+                                        }}
+                                        onFocus={() => setShowProviderResults(true)}
+                                        className="w-full h-14 pl-12 pr-12 bg-gray-50 border border-gray-200 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153] transition-all font-bold text-[#254153]"
+                                        placeholder="Buscar proveedor..."
+                                    />
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                        {isSearchingProviders && <Loader2 className="h-5 w-5 animate-spin text-[#254153]" />}
+                                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                </div>
+
+                                <AnimatePresence>
+                                    {showProviderResults && (
+                                        <>
+                                            <div className="fixed inset-0 z-40" onClick={() => setShowProviderResults(false)}></div>
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 5 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: 5 }}
+                                                className="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden max-h-60 overflow-y-auto"
+                                            >
+                                                {providerResults.length > 0 ? (
+                                                    <>
+                                                        {providerResults.map((p, idx) => (
+                                                            <button
+                                                                key={`${p.numero_identificacion}-${idx}`}
+                                                                type="button"
+                                                                onClick={() => handleSelectProvider(p)}
+                                                                className="w-full px-5 py-4 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0 transition-colors flex flex-col gap-1"
+                                                            >
+                                                                <span className="text-base font-bold text-slate-800 line-clamp-1">{p.razon_social}</span>
+                                                                <span className="text-sm text-slate-500 font-medium">NIT: {p.numero_identificacion}</span>
+                                                            </button>
+                                                        ))}
+                                                        {hasMoreProviders && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const nextPage = providerPage + 1;
+                                                                    setProviderPage(nextPage);
+                                                                    searchProviders(providerSearch, nextPage, true);
+                                                                }}
+                                                                className="w-full py-3 text-sm font-bold text-[#254153] hover:bg-gray-50 transition-colors"
+                                                            >
+                                                                Cargar más...
+                                                            </button>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <div className="px-5 py-6 text-sm text-gray-500 text-center font-medium">
+                                                        {isSearchingProviders ? "Buscando..." : "No se encontraron proveedores. Asegúrate de digitar bien el nombre o NIT."}
+                                                    </div>
+                                                )}
+                                            </motion.div>
+                                        </>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
+                            {/* NIT (Auto-filled) */}
+                            <div className="space-y-1.5 pt-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">NIT</label>
+                                <div className="relative group">
+                                    <Hash className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-[#254153] transition-colors" />
+                                    <input
+                                        readOnly
+                                        type="text"
                                         value={formData.nit}
-                                        onChange={(e) => setFormData({ ...formData, nit: e.target.value })}
-                                        onBlur={handleNitBlur}
-                                        className="w-full h-14 pl-12 pr-4 bg-gray-50 border border-gray-200 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153] transition-all font-bold text-[#254153]"
-                                        placeholder="Ej: 900123456"
+                                        className="w-full h-14 pl-12 pr-4 bg-gray-100 border border-gray-100 rounded-2xl text-lg font-bold text-gray-500 cursor-not-allowed"
+                                        placeholder="NIT (Automático)"
                                     />
                                     {isLookingUp && (
                                         <div className="absolute right-4 top-1/2 -translate-y-1/2">
                                             <Loader2 className="h-5 w-5 animate-spin text-[#254153]" />
                                         </div>
                                     )}
-                                </div>
-                            </div>
-
-                            {/* Razón Social */}
-                            <div className="space-y-1.5 relative">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 flex items-center justify-between">
-                                    <span>Razón Social</span>
-                                    {autoFilled && (
-                                        <span className="text-[10px] text-emerald-600 flex items-center gap-1">
-                                            <ShieldCheck className="h-3 w-3" />
-                                            Autocompletado
-                                        </span>
-                                    )}
-                                </label>
-                                <div className="relative group">
-                                    <Building2 className={`absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 transition-colors ${autoFilled ? 'text-emerald-500' : 'text-gray-400 group-focus-within:text-[#254153]'}`} />
-                                    <input
-                                        required
-                                        type="text"
-                                        value={formData.proveedor}
-                                        onChange={(e) => setFormData({ ...formData, proveedor: e.target.value })}
-                                        className={`w-full h-14 pl-12 pr-4 border rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153] transition-all font-bold text-[#254153] ${
-                                            autoFilled ? 'bg-emerald-50/50 border-emerald-200' : 'bg-gray-50 border-gray-200'
-                                        }`}
-                                        placeholder="Nombre de la empresa"
-                                    />
                                 </div>
                             </div>
 
