@@ -13,13 +13,24 @@ export async function GET(req: NextRequest) {
         // Extract base NIT without the check digit
         const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
 
-        // Search by NIT - the NIT in the table may include the check digit (e.g. "830051440-7")
-        // or just the base. We search with exact match and prefix match using the base NIT
-        const { data, error } = await supabase
+        // Search exact match first
+        let { data, error } = await supabase
             .from("Proveedores_con_Responsable")
             .select('"Nit", "Nombre de socio de negocios", "Responsable", "Autorizador", "Correo"')
-            .or(`Nit.eq.${nit},Nit.eq.${baseNit},Nit.like.${baseNit}-%,Nit.like.${baseNit}%`)
+            .eq("Nit", nit)
             .limit(1);
+            
+        // If exact match fails, search by base prefix
+        if (!error && (!data || data.length === 0)) {
+            const { data: data2, error: error2 } = await supabase
+                .from("Proveedores_con_Responsable")
+                .select('"Nit", "Nombre de socio de negocios", "Responsable", "Autorizador", "Correo"')
+                .like("Nit", `${baseNit}%`)
+                .limit(1);
+                
+            data = data2;
+            error = error2;
+        }
 
         if (error) {
             console.error("Error querying Proveedores_con_Responsable:", error);
@@ -34,6 +45,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({
             found: true,
             responsable: row.Responsable || row.Autorizador || "",
+            autorizador: row.Autorizador || "",
             correo: row.Correo || "",
             proveedor: row["Nombre de socio de negocios"] || ""
         });

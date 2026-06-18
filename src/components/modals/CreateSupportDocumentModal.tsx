@@ -283,19 +283,33 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                                                                 setUserSearch(data.responsable);
                                                                                 setAutoFilledResponsable(true);
                                                                             } else {
-                                                                                const parts = cleanName.split(' ');
-                                                                                const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanName;
+                                                                                const searchUser = async (nameToSearch: string) => {
+                                                                                    let cleanSearchName = nameToSearch.replace(/\uFFFD/g, 'ñ');
+                                                                                    const parts = cleanSearchName.split(' ');
+                                                                                    const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanSearchName;
+                                                                                    
+                                                                                    const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
+                                                                                    const userData = await userRes.json();
+                                                                                    const users = userData.users || [];
+                                                                                    
+                                                                                    if (users.length > 0) {
+                                                                                        return users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase())) || users[0];
+                                                                                    }
+                                                                                    return null;
+                                                                                };
 
-                                                                                const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
-                                                                                const userData = await userRes.json();
-                                                                                const users = userData.users || [];
-                                                                                if (users.length > 0) {
-                                                                                    const exactMatch = users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase())) || users[0];
+                                                                                let exactMatch = await searchUser(data.responsable);
+                                                                                
+                                                                                if (!exactMatch && data.autorizador && data.autorizador !== data.responsable) {
+                                                                                    exactMatch = await searchUser(data.autorizador);
+                                                                                }
+
+                                                                                if (exactMatch) {
                                                                                     setFormData(prev => ({...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: exactMatch.email}));
                                                                                     setUserSearch(exactMatch.name);
                                                                                     setAutoFilledResponsable(true);
                                                                                 } else {
-                                                                                    setUserSearch(cleanName);
+                                                                                    setUserSearch(data.responsable);
                                                                                 }
                                                                             }
                                                                         }
