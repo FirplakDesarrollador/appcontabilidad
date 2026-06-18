@@ -188,6 +188,10 @@ function HistorialList() {
                                         <span className="font-bold text-[#254153]">{formatCurrency(inv.valorTotal)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
+                                        <Calendar className="h-4 w-4 text-purple-400" />
+                                        <span>Creada: {inv.fechaRegistro ? new Date(inv.fechaRegistro).toLocaleDateString() : 'N/A'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
                                         <Calendar className="h-4 w-4 text-blue-400" />
                                         <span>Procesada: {inv.fechaAprobacion ? new Date(inv.fechaAprobacion).toLocaleDateString() : 'N/A'}</span>
                                     </div>

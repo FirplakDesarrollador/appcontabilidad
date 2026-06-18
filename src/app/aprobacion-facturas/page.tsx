@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
@@ -159,7 +159,10 @@ export default function InvoicesPage() {
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [manualAttachmentFiles, setManualAttachmentFiles] = useState<File[]>([]);
     const [uploadingManualAttachments, setUploadingManualAttachments] = useState(false);
-
+    const [expandedPdfUrl, setExpandedPdfUrl] = useState<string | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewError, setPreviewError] = useState<string | null>(null);
 
     const [columnFilters, setColumnFilters] = useState({
         invoice: "",
@@ -237,6 +240,36 @@ export default function InvoicesPage() {
             Attachments: item.Attachments || !!item.documentos || !!item.fp
         };
     });
+
+    useEffect(() => {
+        if (selectedInvoice) {
+            handlePreview(selectedInvoice);
+        } else {
+            setPreviewUrl(null);
+            setPreviewError(null);
+        }
+    }, [selectedInvoice]);
+
+    const handlePreview = async (invoice: any) => {
+        try {
+            setPreviewError(null);
+            setPreviewLoading(true);
+            const fileName = invoice?.documentInfo?.fileName || 'Factura';
+            const res = await fetch(`/api/externo/factura/${invoice.id}/download?file=${encodeURIComponent(fileName)}`);
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || "No se ha encontrado factura en PDF");
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            setPreviewUrl(url);
+        } catch (err: any) {
+            console.error('Preview error:', err);
+            setPreviewError(err.message || "No se pudo cargar la vista previa");
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
 
     const handleUploadManualAttachments = async () => {
         if (!selectedInvoice || manualAttachmentFiles.length === 0) return;
@@ -1787,8 +1820,100 @@ export default function InvoicesPage() {
                                                 Imprimir
                                             </Button>
                                         </div>
+
+                                        <div className="bg-gray-50/50 p-4 rounded-[24px] border border-gray-100 relative group h-[400px] flex flex-col mt-4">
+                                             <div className="flex justify-between items-center mb-3 px-2">
+                                                 <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Previsualización</h4>
+                                                 <button 
+                                                     onClick={() => previewUrl && setExpandedPdfUrl(previewUrl)} 
+                                                     className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-2"
+                                                     disabled={!previewUrl}
+                                                 >
+                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+                                                     Ampliar
+                                                 </button>
+                                             </div>
+                                             <div className="flex-1 relative rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm flex items-center justify-center">
+                                                {previewLoading ? (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-10 transition-all">
+                                                        <Loader2 className="h-8 w-8 text-[#254153] animate-spin mb-3" />
+                                                        <p className="text-[10px] font-black text-[#254153] uppercase tracking-[2px]">Cargando vista previa...</p>
+                                                    </div>
+                                                ) : previewError ? (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center bg-red-50/50">
+                                                        <div className="bg-white p-3 rounded-full shadow-sm mb-3">
+                                                            <AlertCircle className="h-6 w-6 text-red-500" />
+                                                        </div>
+                                                        <p className="text-[11px] font-black text-red-900 mb-3 px-2">{previewError}</p>
+                                                        <Button 
+                                                            onClick={() => handlePreview(selectedInvoice)} 
+                                                            className="h-8 text-[10px] bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-all"
+                                                        >
+                                                            Reintentar
+                                                        </Button>
+                                                    </div>
+                                                ) : previewUrl ? (
+                                                    <>
+                                                        <div 
+                                                            className="absolute inset-0 z-10 cursor-pointer bg-transparent" 
+                                                            onClick={() => setExpandedPdfUrl(previewUrl)} 
+                                                            title="Hacer clic para ampliar" 
+                                                        />
+                                                        <iframe 
+                                                            src={`${previewUrl}#toolbar=0&navpanes=0`} 
+                                                            className="w-full h-full border-none pointer-events-none" 
+                                                            onError={(e) => console.log('Error loading preview iframe')}
+                                                        />
+                                                    </>
+                                                ) : (
+                                                    <div className="flex flex-col items-center justify-center text-gray-400">
+                                                        <FileText className="h-8 w-8 mb-2 opacity-50" />
+                                                        <p className="text-[10px] font-bold">Esperando archivo...</p>
+                                                    </div>
+                                                )}
+                                             </div>
+                                        </div>
                                     </div>
                                 </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {expandedPdfUrl && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setExpandedPdfUrl(null)}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl h-[90vh] relative overflow-hidden flex flex-col"
+                        >
+                            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                                <h3 className="text-lg font-black text-[#254153] flex items-center gap-2">
+                                    <FileText className="h-5 w-5 text-blue-500" />
+                                    Factura
+                                </h3>
+                                <button
+                                    onClick={() => setExpandedPdfUrl(null)}
+                                    className="h-10 w-10 rounded-xl bg-white flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 transition-all text-gray-400 border border-gray-200 shadow-sm"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+                            <div className="flex-1 w-full bg-gray-100 relative">
+                                <iframe 
+                                    src={`${expandedPdfUrl}#view=FitH`} 
+                                    className="absolute inset-0 w-full h-full border-none" 
+                                />
                             </div>
                         </motion.div>
                     </div>
