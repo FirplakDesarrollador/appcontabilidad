@@ -13,11 +13,12 @@ export async function POST(req: NextRequest) {
         
         const nit = formData.get('nit') as string;
         const proveedor = formData.get('proveedor') as string;
-        const responsableEmail = formData.get('responsableEmail') as string;
+        const responsableEmail = formData.get('responsableEmail') as string | null;
+        let responsableNombreRecibido = formData.get('responsableNombre') as string | null;
         const file = formData.get('file') as File;
 
-        if (!nit || !proveedor || !file) {
-            return NextResponse.json({ error: 'Faltan campos obligatorios (NIT, Proveedor o Archivo)' }, { status: 400 });
+        if (!file || !nit || !proveedor) {
+            return NextResponse.json({ success: false, error: 'Faltan campos obligatorios' }, { status: 400 });
         }
 
         const client = await getGraphClient();
@@ -28,13 +29,15 @@ export async function POST(req: NextRequest) {
 
         // 2. Resolver Responsable (Lookup ID) asegurando que exista en SharePoint
         let responsableLookupId = null;
-        let responsableName = null;
+        let responsableName = responsableNombreRecibido;
         if (responsableEmail) {
             try {
                 const spUser = await ensureSharePointUserByEmail(responsableEmail);
                 if (spUser) {
                     responsableLookupId = spUser.id;
-                    responsableName = spUser.title;
+                    if (spUser.title) {
+                        responsableName = spUser.title;
+                    }
                 } else {
                     console.warn('[SharePoint] No se pudo asegurar el responsable por email:', responsableEmail);
                 }

@@ -113,7 +113,7 @@ export default function DocumentoSoporteExternoPage() {
                     }
 
                     if (exactMatch) {
-                        setFormData(prev => ({ ...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: exactMatch.email }));
+                        setFormData(prev => ({ ...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: exactMatch.email, responsableNombre: exactMatch.name }));
                         setAutoFilled(true);
                     }
                 }
@@ -146,6 +146,9 @@ export default function DocumentoSoporteExternoPage() {
             data.append("proveedor", formData.proveedor);
             if (formData.responsableEmail) {
                 data.append("responsableEmail", formData.responsableEmail);
+            }
+            if ((formData as any).responsableNombre) {
+                data.append("responsableNombre", (formData as any).responsableNombre);
             }
             data.append("file", file);
 
