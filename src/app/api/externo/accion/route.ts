@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
         // FETCH the item again to get the "Consecutivo" and "Proveedor" from SharePoint
         const spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).get();
         const consecutivoReal = spItem.Consecutivo || itemId;
-        const proveedorReal = spItem.Proveedor || "Proveedor Desconocido";
+        const proveedorReal = spItem.Proveedor || spItem.tsic || spItem.Nombre_proveedor || spItem.Razon_social || "Proveedor Desconocido";
 
         // 4. Trigger SAP Draft Creation on Approval
         let sapResult = null;

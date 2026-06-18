@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
             invoice = {
                 id: spItem.id,
                 Nro_Factura: nroFactura,
-                Proveedor: spItem.Proveedor || "Proveedor en SharePoint",
+                Proveedor: spItem.Proveedor || spItem.tsic || spItem.Nombre_proveedor || spItem.Razon_social || "Proveedor en SharePoint",
                 Nit: String(nitValue),
                 Responsable_de_Autorizar: spItem.Responsable_de_Autorizar,
                 Observaciones: spItem.Observaciones || 'Sincronización manual desde portal de aprobación',
