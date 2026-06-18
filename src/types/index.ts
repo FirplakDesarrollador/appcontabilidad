@@ -10,22 +10,25 @@ export interface RegistroFactura {
     Responsable_de_Autorizar: string | null;
     FechaAprobacion: string | null;
     centro_costos: string | null;
-    "Valor total": string | null;
+    Valor_total: string | null;
     tiene_anticipo: string | null;
     Creado: string | null;
-    "Creado por": string | null;
+    Creado_por: string | null;
     CUFE: string | null;
     InformeRecepcion: string | null;
     FechaProcesado: string | null;
     DigitadoPor: string | null;
-    "Datos adjuntos": number | null;
+    Datos_adjuntos: number | null;
     tablaCostos: string | null;
     Procesado: string | null;
     Modificado: string | null;
-    "Modificado por": string | null;
+    Modificado_por: string | null;
     fp: string | null;
     notificar_reasignacion: boolean | null;
     notificacionContabilidadEnviada: string | null;
+    sharepoint_id: string | null;
+    documentos: string | null;
+    updated_at: string | null;
 }
 
 export interface FacturaPendiente {

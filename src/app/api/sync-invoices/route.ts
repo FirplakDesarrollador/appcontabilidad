@@ -143,7 +143,7 @@ export async function POST() {
                     Nit: nit,
                     Proveedor: provider,
                     Nro_Factura: ldf,
-                    "Valor total": amountValue.toString(),
+                    Valor_total: amountValue.toString(),
                     Creado: new Date().toISOString(),
                     CUFE: detailsData.UUID || "",
                     Gestion_Contabilidad: 'Por Aprobar',

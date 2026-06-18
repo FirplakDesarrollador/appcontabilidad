@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
+import { useSidebar } from "@/context/SidebarContext";
+import { Menu } from "lucide-react";
+import { CreateSupportDocumentModal } from "@/components/modals/CreateSupportDocumentModal";
 
 interface SharePointDocument {
     id: string;
@@ -22,6 +26,7 @@ interface SharePointDocument {
 }
 
 export default function SupportDocumentsPage() {
+    const { toggleSidebar } = useSidebar();
     const [documents, setDocuments] = useState<SharePointDocument[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
@@ -34,6 +39,7 @@ export default function SupportDocumentsPage() {
     const [isSearchingUsers, setIsSearchingUsers] = useState(false);
     const [isUpdatingResponsible, setIsUpdatingResponsible] = useState(false);
     const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     
     // For auto-approval (using same providers table)
     const [isProvidersSidebarOpen, setIsProvidersSidebarOpen] = useState(false);
@@ -76,37 +82,98 @@ export default function SupportDocumentsPage() {
         };
     }, [documents]);
 
-    const fetchDocuments = async () => {
+    const [dataSource, setDataSource] = useState<'cache' | 'sharepoint' | 'loading'>('loading');
+
+    const normalizeDocuments = (items: any[]) => items.map((item: any) => ({
+        ...item,
+        id: item.id || item.ID || String(Math.random()),
+        Nro_Factura: item.consecutivo || item.Consecutivo_Doc_Soporte || "S/N",
+        Proveedor: item.proveedor || item.tsic || "N/A",
+        Nit: item.nit || item.Title || "N/A",
+        Monto: item.valor_total || item.Valortotal || 0,
+        Responsable_de_Autorizar: item.responsable_nombre || item.Responsable_de_Autorizar || "Sin asignar",
+        Aprobacion_Doliente: item.aprobacion_doliente || item.AprobacionDoliente || "Pendiente",
+        Gestion_Contabilidad: item.gestion_contabilidad || item.Gestion_Contabilidad || "Pendiente",
+        Created: item.fecha_creacion || item.Created || item.created_at
+    }));
+
+    const fetchDocuments = async (refresh = false) => {
         try {
             setLoading(true);
-            const response = await fetch(`/api/sharepoint/documentos`);
+            setDataSource('loading');
+            
+            const params = new URLSearchParams();
+            if (refresh) params.append('refresh', 'true');
+            params.append('pending', 'true'); 
+            
+            const response = await fetch(`/api/sharepoint/documentos/all?${params.toString()}`);
             const data = await response.json();
 
             if (data.success) {
-                const normalizedItems = data.items.map((item: any) => {
-                    return {
-                        ...item,
-                        Nro_Factura: item.Consecutivo_Doc_Soporte ? String(item.Consecutivo_Doc_Soporte) : "S/N",
-                        Proveedor: item.tsic || "N/A",
-                        Nit: item.Title || "N/A",
-                        Monto: item.Valortotal || 0,
-                        Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
-                        Aprobacion_Doliente: item.AprobacionDoliente || "Pendiente",
-                        Gestion_Contabilidad: item.Gestion_Contabilidad || "Pendiente"
-                    };
-                });
-                setDocuments(normalizedItems);
+                setDocuments(normalizeDocuments(data.items));
+                setDataSource(data.source);
             }
         } catch (error) {
-            console.error("Error fetching SharePoint support documents:", error);
+            console.error("Error fetching documents:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchHistory = async () => {
+        if (documents.some(doc => !isPending(doc))) return; // Already loaded history
+        
+        try {
+            setLoading(true);
+            const response = await fetch(`/api/sharepoint/documentos/all?limit=2000`); 
+            const data = await response.json();
+
+            if (data.success) {
+                const normalized = normalizeDocuments(data.items);
+                setDocuments(prev => {
+                    const combined = [...prev];
+                    normalized.forEach((item: any) => {
+                        if (!combined.some(c => c.id === item.id)) combined.push(item);
+                    });
+                    return combined.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+                });
+            }
+        } catch (error) {
+            console.error("Error fetching history:", error);
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchDocuments();
-    }, []);
+        if (activeTab === 'processed') {
+            fetchHistory();
+        }
+    }, [activeTab]);
+
+    const router = useRouter();
+    const [user, setUser] = useState<any>(null);
+
+    useEffect(() => {
+        const checkUser = async () => {
+            try {
+                const { data: { session }, error } = await supabase.auth.getSession();
+                if (error || !session) {
+                    if (error) console.error("Error de autenticación:", error.message);
+                    await supabase.auth.signOut();
+                    router.push("/login");
+                } else {
+                    setUser(session.user);
+                    fetchDocuments(); // Usará el nuevo límite de 100 por defecto para velocidad máxima
+                }
+            } catch (err) {
+                console.error("Error inesperado en checkUser:", err);
+                router.push("/login");
+            }
+        };
+
+        checkUser();
+    }, [router]);
 
     useEffect(() => {
         setPendingResponsibleUser(null);
@@ -152,6 +219,9 @@ export default function SupportDocumentsPage() {
                     itemId: selectedDoc.id,
                     userEmail: pendingResponsibleUser.email,
                     userName: pendingResponsibleUser.name,
+                    assignedByName: selectedDoc.Responsable_de_Autorizar,
+                    invoiceNumber: selectedDoc.Nro_Factura,
+                    providerName: selectedDoc.Proveedor,
                     listName: 'Documento_Soporte'
                 })
             });
@@ -190,41 +260,62 @@ export default function SupportDocumentsPage() {
         });
     };
 
-    const fetchProviders = async () => {
+    const fetchProviders = async (search?: string) => {
         setLoadingProviders(true);
         try {
-            let allProviders: any[] = [];
-            let from = 0;
-            const step = 1000;
-            let moreData = true;
+            let query = supabase
+                .from('proveedores')
+                .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
+                .order('razon_social', { ascending: true });
 
-            while (moreData) {
-                const { data, error } = await supabase
-                    .from('proveedores')
-                    .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
-                    .order('razon_social', { ascending: true })
-                    .range(from, from + step - 1);
-
-                if (error) throw error;
-                
-                if (data && data.length > 0) {
-                    allProviders = [...allProviders, ...data];
-                    from += step;
-                } else {
-                    moreData = false;
-                }
-                
-                // Safety break to prevent infinite loops
-                if (from > 50000) moreData = false;
+            if (search) {
+                query = query.or(`razon_social.ilike.%${search}%,numero_identificacion.ilike.%${search}%`);
             }
+            
+            // Limitamos a 500 para que sea rápido, si busca algo específico lo encontrará
+            const { data, error } = await query.limit(500);
 
-            setProviders(allProviders);
+            if (error) throw error;
+
+            if (search) {
+                // Si es búsqueda, reemplazamos los resultados
+                setProviders(data || []);
+            } else {
+                // Si es carga inicial, combinamos con los que ya tienen aprobación automática activos
+                setProviders(prev => {
+                    const activeOnes = prev.filter(p => p.aprobacion_automatica);
+                    const newOnes = data || [];
+                    const combined = [...activeOnes];
+                    
+                    newOnes.forEach(p => {
+                        if (!combined.find(c => c.id === p.id)) {
+                            combined.push(p);
+                        }
+                    });
+                    return combined;
+                });
+            }
         } catch (error) {
             console.error('Error fetching providers:', error);
         } finally {
             setLoadingProviders(false);
         }
     };
+
+    // Efecto para búsqueda con debounce
+    useEffect(() => {
+        if (!isProvidersSidebarOpen) return;
+
+        const timer = setTimeout(() => {
+            if (providersSearch.length >= 2) {
+                fetchProviders(providersSearch);
+            } else if (providersSearch.length === 0) {
+                fetchProviders();
+            }
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [providersSearch, isProvidersSidebarOpen]);
 
     const toggleProviderAutoApproval = async (id: string, currentValue: boolean) => {
         const newValue = !currentValue;
@@ -309,11 +400,22 @@ export default function SupportDocumentsPage() {
         <div className="min-h-screen bg-[#f8fafc] flex">
             <Sidebar />
 
-            <main className="flex-1 md:ml-64 relative bg-[#f8fafc]">
+            <main 
+                className="flex-1 relative bg-[#f8fafc] transition-all duration-300 ease-in-out"
+                style={{ marginLeft: 'var(--sidebar-width, 256px)' }}
+            >
                 <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-10">
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-1.5 bg-[#254153] rounded-full" />
-                        <h1 className="text-xl font-bold text-gray-800 tracking-tight">Aprobación de Documento Soporte</h1>
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={toggleSidebar}
+                            className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-[#254153]"
+                        >
+                            <Menu className="h-6 w-6" />
+                        </button>
+                        <div className="flex items-center gap-3">
+                            <div className="h-8 w-1.5 bg-[#254153] rounded-full" />
+                            <h1 className="text-xl font-bold text-gray-800 tracking-tight">Aprobación de Documento Soporte</h1>
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-4">
@@ -351,8 +453,8 @@ export default function SupportDocumentsPage() {
                         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
                             <h2 className="text-3xl font-extrabold text-[#254153]">Gestión de Documento Soporte</h2>
                             <p className="text-gray-500 mt-1 font-medium flex items-center gap-2">
-                                <span className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-                                Lista: Documento_Soporte de SharePoint
+                                <span className={`h-2 w-2 rounded-full animate-pulse ${dataSource === 'cache' ? 'bg-emerald-500' : dataSource === 'sharepoint' ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                                {dataSource === 'cache' ? 'Cargado desde Caché (Alta Velocidad)' : dataSource === 'sharepoint' ? 'Cargado desde SharePoint Online' : 'Cargando datos...'}
                             </p>
                         </motion.div>
 
@@ -364,9 +466,30 @@ export default function SupportDocumentsPage() {
                                 <ShieldCheck className="h-4 w-4" />
                                 <span className="hidden lg:inline">Aprobación Automática</span>
                             </button>
-                            <Button variant="outline" onClick={() => fetchDocuments()} disabled={loading} className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm">
-                                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                                Actualizar
+                            <Button variant="outline" onClick={() => fetchDocuments(true)} disabled={loading} className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm">
+                                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                                Sincronizar SharePoint
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    const url = `${window.location.origin}/externo/documento-soporte`;
+                                    navigator.clipboard.writeText(url).then(() => {
+                                        alert("Link del formulario público copiado al portapapeles");
+                                    }).catch(() => {
+                                        alert("No se pudo copiar el enlace");
+                                    });
+                                }}
+                                className="border-[#254153]/20 text-[#254153] hover:bg-[#254153]/5 rounded-xl h-11 px-4 font-bold transition-all shadow-sm flex items-center gap-2"
+                            >
+                                <Copy className="h-4 w-4" />
+                                Copiar link para proveedor
+                            </Button>
+                            <Button
+                                onClick={() => setIsCreateModalOpen(true)}
+                                className="bg-[#254153] hover:bg-[#1a2f3d] text-white rounded-xl h-11 px-4 font-bold shadow-sm transition-all"
+                            >
+                                Crear documento soporte
                             </Button>
                         </div>
                     </div>
@@ -509,6 +632,9 @@ export default function SupportDocumentsPage() {
                                     <h2 className="text-xl font-bold text-[#254153] flex items-center gap-2">
                                         <ShieldCheck className="h-5 w-5 text-green-600" />
                                         Aprobación Automática
+                                        <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-normal">
+                                            {providers.length.toLocaleString()}
+                                        </span>
                                     </h2>
                                     <p className="text-xs text-gray-400 font-medium">Gestión de proveedores compartida</p>
                                 </div>
@@ -638,6 +764,12 @@ export default function SupportDocumentsPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            <CreateSupportDocumentModal
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                onSuccess={() => fetchDocuments(true)}
+            />
         </div>
     );
 }

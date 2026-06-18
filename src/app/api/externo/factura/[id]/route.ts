@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSharePointInvoiceById, findExternalInvoiceDocument } from '@/lib/sharepoint';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
+
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function GET(
     req: NextRequest,
@@ -14,6 +20,11 @@ export async function GET(
         }
 
         const invoice = await getSharePointInvoiceById(itemId);
+        const { data: supabaseInvoice } = await supabase
+            .from('Registro_Facturas')
+            .select('adjuntos_url')
+            .or(`ID.eq.${itemId},sharepoint_id.eq.${itemId}`)
+            .maybeSingle();
 
         // Normalize fields similar to the main list view
         const nitValue = invoice.Title || invoice.Nit_x0020_ || invoice["Nit "] || invoice.Nit || "N/A";
@@ -73,7 +84,11 @@ export async function GET(
             aprobacionDoliente: invoice.Aprobacion_Doliente || "Pendiente",
             gestionContabilidad: invoice.Gestion_Contabilidad || "Pendiente",
             responsableActual: invoice.Responsable_de_Autorizar || "No asignado",
-            documentInfo
+            documentInfo,
+            adjuntosUrl: supabaseInvoice?.adjuntos_url || [],
+            distribuciones: invoice.centro_costos || null,
+            observaciones: invoice.Observaciones || "",
+            anticipo: invoice.tiene_anticipo || ""
         });
 
     } catch (error: any) {

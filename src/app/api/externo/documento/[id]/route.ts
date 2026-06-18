@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSharePointItemById } from '@/lib/sharepoint';
+import { supabase } from '@/lib/supabaseClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,14 +14,30 @@ export async function GET(
             return NextResponse.json({ error: 'Missing itemId' }, { status: 400 });
         }
 
-        const doc = await getSharePointItemById(itemId, 'Documento_Soporte');
+        const [doc, { data: dbDoc }] = await Promise.all([
+            getSharePointItemById(itemId, 'Documento_Soporte'),
+            supabase
+                .from('Documento_Soporte')
+                .select('pdf_url, adjunto')
+                .eq('id', Number(itemId))
+                .maybeSingle()
+        ]);
 
         // Normalize fields for Documento Soporte
         const nitValue = doc.Title || "N/A";
         const valorTotal = doc.Valortotal || 0;
 
+        const pdfUrl = dbDoc?.pdf_url || dbDoc?.adjunto || null;
+
         let documentInfo = null;
-        if (doc.rawAttachments && doc.rawAttachments.length > 0) {
+        if (pdfUrl) {
+            documentInfo = {
+                fileName: pdfUrl.split('/').pop() || 'documento.pdf',
+                serverRelativeUrl: pdfUrl,
+                isNative: true,
+                pdfUrl: pdfUrl
+            };
+        } else if (doc.rawAttachments && doc.rawAttachments.length > 0) {
             const attachment = doc.rawAttachments[0];
             documentInfo = {
                 fileName: attachment.name,
@@ -48,7 +65,8 @@ export async function GET(
             aprobacionDoliente: doc.AprobacionDoliente || "Pendiente",
             gestionContabilidad: doc.Gestion_Contabilidad || "Pendiente",
             responsableActual: doc.Responsable_de_Autorizar || "No asignado",
-            documentInfo
+            documentInfo,
+            distribuciones: doc.centro_costos || null
         });
 
     } catch (error: any) {

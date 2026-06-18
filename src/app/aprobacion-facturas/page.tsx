@@ -1,12 +1,63 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
+import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
+import { useSidebar } from "@/context/SidebarContext";
+import { Menu } from "lucide-react";
+import { AgGridReact } from 'ag-grid-react';
+import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
+
+// Configure AG Grid v35+ Modules
+ModuleRegistry.registerModules([AllCommunityModule]);
+
+const AG_GRID_LOCALE_ES = {
+    // Text Filter
+    filterOoo: 'Buscar...',
+    empty: 'Elige uno',
+    equals: 'Igual a',
+    notEqual: 'Diferente a',
+    lessThan: 'Menor que',
+    greaterThan: 'Mayor que',
+    lessThanOrEqual: 'Menor o igual a',
+    greaterThanOrEqual: 'Mayor o igual a',
+    inRange: 'Rango',
+    contains: 'Buscar...',
+    notContains: 'No contiene',
+    startsWith: 'Inicia con',
+    endsWith: 'Termina con',
+    blank: 'En blanco',
+    notBlank: 'No en blanco',
+
+    // Filter Conditions
+    andCondition: 'Y',
+    orCondition: 'O',
+
+    // Filter Buttons
+    applyFilter: 'Aplicar',
+    resetFilter: 'Reiniciar',
+    clearFilter: 'Limpiar',
+    cancelFilter: 'Cancelar',
+
+    // Core
+    noRowsToShow: 'No hay registros para mostrar',
+    loadingOoo: 'Cargando...',
+};
+
+
+interface ManualAttachment {
+    name: string;
+    url: string;
+    path?: string;
+    type?: string;
+    size?: number;
+    uploadedAt?: string;
+}
 
 interface SharePointInvoice {
     id: string;
@@ -18,17 +69,76 @@ interface SharePointInvoice {
     Aprobacion_Doliente?: string;
     Gestion_Contabilidad?: string;
     Consecutivo?: string;
+    Observaciones?: string;
     OData__RegistrationDate?: string;
     Created?: string;
     Documento_x0020_PDF?: string;
+    FechaAprobacion?: string;
+    adjuntos_url?: ManualAttachment[] | string | null;
     [key: string]: any;
 }
 
+function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode, label: string, value?: string, subValue?: string }) {
+    return (
+        <div className="flex items-start gap-4">
+            <div className="h-10 w-10 rounded-xl bg-gray-50 flex items-center justify-center text-[#254153] flex-shrink-0">
+                {React.cloneElement(icon as React.ReactElement<any>, { className: "h-5 w-5" })}
+            </div>
+            <div className="min-w-0">
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-0.5">{label}</p>
+                <p className="text-sm font-bold text-[#254153] truncate">{value || 'N/A'}</p>
+                {subValue && <p className="text-[10px] text-gray-400 mt-0.5 font-medium">{subValue}</p>}
+            </div>
+        </div>
+    );
+}
+
 export default function InvoicesPage() {
-    const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
+    const { toggleSidebar } = useSidebar();
+    const [colWidths, setColWidths] = useState<Record<string, number>>({ 'C. Costos / Cuenta': 100 });
+
+    const handleResize = (e: React.MouseEvent, col: string) => {
+        e.preventDefault();
+        const startX = e.pageX;
+        const thElement = (e.target as HTMLElement).closest('th');
+        const startWidth = colWidths[col] || thElement?.offsetWidth || 150;
+        
+        const onMouseMove = (moveEvent: MouseEvent) => {
+            const newWidth = Math.max(50, startWidth + (moveEvent.pageX - startX));
+            setColWidths(prev => ({ ...prev, [col]: newWidth }));
+        };
+        
+        const onMouseUp = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        };
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    };
+
+    const [pendingInvoices, setPendingInvoices] = useState<SharePointInvoice[]>([]);
+    const [processedInvoices, setProcessedInvoices] = useState<SharePointInvoice[]>([]);
+    const [pendingCount, setPendingCount] = useState(0);
+    const [processedCount, setProcessedCount] = useState(0);
+    const [toProcessCount, setToProcessCount] = useState(0);
+    const [hasMoreProcessed, setHasMoreProcessed] = useState(true);
+    const [loadingMoreProcessed, setLoadingMoreProcessed] = useState(false);
+
+    const invoices = useMemo(() => {
+        const combined = [...pendingInvoices];
+        processedInvoices.forEach(item => {
+            if (!combined.some(c => c.id === item.id)) combined.push(item);
+        });
+        return combined.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+    }, [pendingInvoices, processedInvoices]);
+
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
-    const [activeTab, setActiveTab] = useState<'pending' | 'processed'>('pending');
+    const [activeTab, setActiveTab] = useState<'pending' | 'to_process' | 'processed'>('pending');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
+    const [loadLimit, setLoadLimit] = useState<number | 'all'>(100);
+    const [displayedRowCount, setDisplayedRowCount] = useState<number>(0);
     const [selectedInvoice, setSelectedInvoice] = useState<SharePointInvoice | null>(null);
     const [selectedResponsable, setSelectedResponsable] = useState<string>("all");
     const [isEditingResponsible, setIsEditingResponsible] = useState(false);
@@ -41,6 +151,18 @@ export default function InvoicesPage() {
     const [providers, setProviders] = useState<any[]>([]);
     const [providersSearch, setProvidersSearch] = useState("");
     const [loadingProviders, setLoadingProviders] = useState(false);
+    const [syncingId, setSyncingId] = useState<string | null>(null);
+    const [isSyncingSharePoint, setIsSyncingSharePoint] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [sapStatus, setSapStatus] = useState<'loading' | 'found' | 'not_found' | 'error' | null>(null);
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [manualAttachmentFiles, setManualAttachmentFiles] = useState<File[]>([]);
+    const [uploadingManualAttachments, setUploadingManualAttachments] = useState(false);
+    const [expandedPdfUrl, setExpandedPdfUrl] = useState<string | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewError, setPreviewError] = useState<string | null>(null);
 
     const [columnFilters, setColumnFilters] = useState({
         invoice: "",
@@ -48,7 +170,10 @@ export default function InvoicesPage() {
         amount: "",
         responsible: "",
         status: "",
-        contabilidad: ""
+        contabilidad: "",
+        nit: "",
+        consecutivo: "",
+        observaciones: ""
     });
 
     // Opciones para los filtros dropdown
@@ -78,42 +203,222 @@ export default function InvoicesPage() {
         };
     }, [invoices]);
 
-    const fetchInvoices = async () => {
+    const [dataSource, setDataSource] = useState<'cache' | 'sharepoint' | 'loading'>('loading');
+
+    const normalizeManualAttachments = (value: any): ManualAttachment[] => {
+        if (!value) return [];
+        if (Array.isArray(value)) return value;
+        if (typeof value === "string") {
+            try {
+                const parsed = JSON.parse(value);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch {
+                return [];
+            }
+        }
+        return [];
+    };
+
+    const normalizeInvoices = (items: any[]) => items.map((item: any) => {
+        let documentInfo = null;
+        if (item.documentos || item.fp) {
+            documentInfo = {
+                fileName: "Factura.pdf",
+                serverRelativeUrl: item.documentos || item.fp
+            };
+        }
+        return {
+            ...item,
+            id: item.id || item.ID || String(Math.random()),
+            Monto: item.Valor_total ?? item["Valor total"] ?? item.Valortotal ?? item.Monto ?? 0,
+            Nit: item.Nit || item.Title || "N/A",
+            Proveedor: item.Proveedor || "N/A",
+            Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
+            FechaAprobacion: item.FechaAprobacion || null,
+            adjuntos_url: normalizeManualAttachments(item.adjuntos_url),
+            documentInfo,
+            Attachments: item.Attachments || !!item.documentos || !!item.fp
+        };
+    });
+
+    useEffect(() => {
+        if (selectedInvoice) {
+            handlePreview(selectedInvoice);
+        } else {
+            setPreviewUrl(null);
+            setPreviewError(null);
+        }
+    }, [selectedInvoice]);
+
+    const handlePreview = async (invoice: any) => {
+        try {
+            setPreviewError(null);
+            setPreviewLoading(true);
+            const fileName = invoice?.documentInfo?.fileName || 'Factura';
+            const res = await fetch(`/api/externo/factura/${invoice.id}/download?file=${encodeURIComponent(fileName)}`);
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || "No se ha encontrado factura en PDF");
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            setPreviewUrl(url);
+        } catch (err: any) {
+            console.error('Preview error:', err);
+            setPreviewError(err.message || "No se pudo cargar la vista previa");
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    const handleUploadManualAttachments = async () => {
+        if (!selectedInvoice || manualAttachmentFiles.length === 0) return;
+
+        setUploadingManualAttachments(true);
+        try {
+            const formData = new FormData();
+            formData.append("invoiceNumber", selectedInvoice.Nro_Factura || String(selectedInvoice.id));
+            manualAttachmentFiles.forEach((file) => formData.append("files", file));
+
+            const res = await fetch(`/api/facturas/${selectedInvoice.id}/adjuntos`, {
+                method: "POST",
+                body: formData,
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || "Error al cargar adjuntos");
+
+            const attachments = normalizeManualAttachments(data.attachments);
+            setPendingInvoices(prev => prev.map(inv =>
+                inv.id === selectedInvoice.id ? { ...inv, adjuntos_url: attachments } : inv
+            ));
+            setProcessedInvoices(prev => prev.map(inv =>
+                inv.id === selectedInvoice.id ? { ...inv, adjuntos_url: attachments } : inv
+            ));
+            setSelectedInvoice({ ...selectedInvoice, adjuntos_url: attachments });
+            setManualAttachmentFiles([]);
+            alert("Adjuntos cargados correctamente");
+        } catch (error: any) {
+            console.error("Error uploading manual attachments:", error);
+            alert(error.message || "Error al cargar adjuntos");
+        } finally {
+            setUploadingManualAttachments(false);
+        }
+    };
+
+    const handleDeleteManualAttachment = async (attachment: ManualAttachment) => {
+        if (!selectedInvoice) return;
+        const confirmed = window.confirm(`¿Quitar el adjunto "${attachment.name}" de esta factura?`);
+        if (!confirmed) return;
+
+        try {
+            const res = await fetch(`/api/facturas/${selectedInvoice.id}/adjuntos`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    path: attachment.path,
+                    url: attachment.url,
+                }),
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || "Error al quitar adjunto");
+
+            const attachments = normalizeManualAttachments(data.attachments);
+            setPendingInvoices(prev => prev.map(inv =>
+                inv.id === selectedInvoice.id ? { ...inv, adjuntos_url: attachments } : inv
+            ));
+            setProcessedInvoices(prev => prev.map(inv =>
+                inv.id === selectedInvoice.id ? { ...inv, adjuntos_url: attachments } : inv
+            ));
+            setSelectedInvoice({ ...selectedInvoice, adjuntos_url: attachments });
+        } catch (error: any) {
+            console.error("Error deleting manual attachment:", error);
+            alert(error.message || "Error al quitar adjunto");
+        }
+    };
+
+    const fetchInvoices = async (refresh: boolean = false) => {
         try {
             setLoading(true);
-            const response = await fetch(`/api/sharepoint/all`);
+            setDataSource('loading');
+            
+            const params = new URLSearchParams();
+            if (refresh) params.append('refresh', 'true');
+            params.append('pending', 'true'); 
+            
+            const response = await fetch(`/api/sharepoint/all?${params.toString()}`);
             const data = await response.json();
 
             if (data.success) {
-                const normalizedItems = data.items.map((item: any) => {
-                    let documentInfo = null;
-                    if (item.Documento_x0020_PDF) {
-                        try {
-                            documentInfo = JSON.parse(item.Documento_x0020_PDF);
-                        } catch (e) {
-                            console.warn("Error parsing Documento_x0020_PDF:", e);
-                        }
-                    }
-
-                    const nitValue = item.Title || item.Nit_x0020_ || item["Nit "] || item.Nit || "N/A";
-                    const montoValue = item.Valortotal ?? item.Valor_x0020_total ?? item["Valor total"] ?? item.Monto ?? 0;
-
-                    return {
-                        ...item,
-                        Monto: montoValue,
-                        Nit: nitValue,
-                        Responsable_de_Autorizar: item.Responsable_de_Autorizar || item["Responsable de Autorizar"] || "Sin asignar",
-                        documentInfo
-                    };
-                });
-                setInvoices(normalizedItems);
+                setPendingInvoices(normalizeInvoices(data.items));
+                if (data.pendingCount !== undefined) setPendingCount(data.pendingCount);
+                if (data.processedCount !== undefined) setProcessedCount(data.processedCount);
+                if (data.toProcessCount !== undefined) setToProcessCount(data.toProcessCount);
+                setDataSource(data.source);
             }
         } catch (error) {
-            console.error("Error fetching all SharePoint invoices:", error);
+            console.error("Error fetching invoices:", error);
         } finally {
             setLoading(false);
         }
     };
+
+    const handleRefreshInvoices = async () => {
+        setIsSyncingSharePoint(true);
+        try {
+            const response = await fetch("/api/cron/sync-sharepoint?manual=true", {
+                method: "GET",
+            });
+            const data = await response.json();
+
+            if (!response.ok || data.success === false) {
+                throw new Error(data.error || "No se pudo ejecutar la sincronizacion");
+            }
+
+            await fetchInvoices(true);
+            if (activeTab === "processed") {
+                await fetchHistory(true);
+            }
+        } catch (error: unknown) {
+            console.error("Error syncing SharePoint from Supabase function:", error);
+            alert(error instanceof Error ? error.message : "Error al actualizar las facturas");
+        } finally {
+            setIsSyncingSharePoint(false);
+        }
+    };
+
+    const fetchHistory = async (reset: boolean = false, overrideLimit?: number | 'all') => {
+        if (!reset && processedInvoices.length > 0) return; // Already loaded history
+        
+        try {
+            setLoading(true);
+            const activeLimit = overrideLimit !== undefined ? overrideLimit : loadLimit;
+            const actualLimit = activeLimit === 'all' ? 100000 : activeLimit;
+            const response = await fetch(`/api/sharepoint/all?processed=true&offset=0&limit=${actualLimit}`); 
+            const data = await response.json();
+
+            if (data.success) {
+                const normalized = normalizeInvoices(data.items);
+                setProcessedInvoices(normalized);
+                if (data.pendingCount !== undefined) setPendingCount(data.pendingCount);
+                if (data.processedCount !== undefined) setProcessedCount(data.processedCount);
+                if (data.toProcessCount !== undefined) setToProcessCount(data.toProcessCount);
+            }
+        } catch (error) {
+            console.error("Error fetching history:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+
+
+    useEffect(() => {
+        if (activeTab === 'processed' || activeTab === 'to_process') {
+            fetchHistory();
+        }
+    }, [activeTab]);
 
     useEffect(() => {
         fetchInvoices();
@@ -162,18 +467,25 @@ export default function InvoicesPage() {
                 body: JSON.stringify({
                     itemId: selectedInvoice.id,
                     userEmail: pendingResponsibleUser.email,
-                    userName: pendingResponsibleUser.name
+                    userName: pendingResponsibleUser.name,
+                    assignedByName: selectedInvoice.Responsable_de_Autorizar,
+                    invoiceNumber: selectedInvoice.Nro_Factura,
+                    providerName: selectedInvoice.Proveedor
                 })
             });
 
             if (res.ok) {
                 // Update local state
-                const updatedInvoices = invoices.map(inv =>
+                setPendingInvoices(prev => prev.map(inv =>
                     inv.id === selectedInvoice.id
                         ? { ...inv, Responsable_de_Autorizar: pendingResponsibleUser.name }
                         : inv
-                );
-                setInvoices(updatedInvoices);
+                ));
+                setProcessedInvoices(prev => prev.map(inv =>
+                    inv.id === selectedInvoice.id
+                        ? { ...inv, Responsable_de_Autorizar: pendingResponsibleUser.name }
+                        : inv
+                ));
                 setSelectedInvoice({ ...selectedInvoice, Responsable_de_Autorizar: pendingResponsibleUser.name });
                 setIsEditingResponsible(false);
                 setPendingResponsibleUser(null);
@@ -193,41 +505,63 @@ export default function InvoicesPage() {
 
 
 
-    const fetchProviders = async () => {
+    const fetchProviders = async (search?: string) => {
         setLoadingProviders(true);
         try {
-            let allProviders: any[] = [];
-            let from = 0;
-            const step = 1000;
-            let moreData = true;
+            let query = supabase
+                .from('proveedores')
+                .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
+                .order('razon_social', { ascending: true });
 
-            while (moreData) {
-                const { data, error } = await supabase
-                    .from('proveedores')
-                    .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
-                    .order('razon_social', { ascending: true })
-                    .range(from, from + step - 1);
-
-                if (error) throw error;
-                
-                if (data && data.length > 0) {
-                    allProviders = [...allProviders, ...data];
-                    from += step;
-                } else {
-                    moreData = false;
-                }
-                
-                // Safety break to prevent infinite loops
-                if (from > 50000) moreData = false;
+            if (search) {
+                query = query.or(`razon_social.ilike.%${search}%,numero_identificacion.ilike.%${search}%`);
             }
+            
+            // Limitamos a 500 para que sea rápido, si busca algo específico lo encontrará
+            const { data, error } = await query.limit(500);
 
-            setProviders(allProviders);
+            if (error) throw error;
+
+            if (search) {
+                // Si es búsqueda, reemplazamos los resultados
+                setProviders(data || []);
+            } else {
+                // Si es carga inicial, combinamos con los que ya tienen aprobación automática activos
+                // (Para que no desaparezcan de la vista los que ya configuró)
+                setProviders(prev => {
+                    const activeOnes = prev.filter(p => p.aprobacion_automatica);
+                    const newOnes = data || [];
+                    const combined = [...activeOnes];
+                    
+                    newOnes.forEach(p => {
+                        if (!combined.find(c => c.id === p.id)) {
+                            combined.push(p);
+                        }
+                    });
+                    return combined;
+                });
+            }
         } catch (error) {
             console.error('Error fetching providers:', error);
         } finally {
             setLoadingProviders(false);
         }
     };
+
+    // Efecto para búsqueda con debounce
+    useEffect(() => {
+        if (!isProvidersSidebarOpen) return;
+
+        const timer = setTimeout(() => {
+            if (providersSearch.length >= 2) {
+                fetchProviders(providersSearch);
+            } else if (providersSearch.length === 0) {
+                fetchProviders();
+            }
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [providersSearch, isProvidersSidebarOpen]);
 
     const toggleProviderAutoApproval = async (id: string, currentValue: boolean) => {
         const newValue = !currentValue;
@@ -269,6 +603,134 @@ export default function InvoicesPage() {
         });
     };
 
+    const handleAction = async (action: string) => {
+        if (!selectedInvoice) return;
+        setActionLoading(action);
+        try {
+            const res = await fetch("/api/sharepoint/update-status", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    itemId: selectedInvoice.id,
+                    status: action
+                })
+            });
+
+            if (res.ok) {
+                setPendingInvoices(prev => prev.map(inv => 
+                    inv.id === selectedInvoice.id ? { ...inv, Gestion_Contabilidad: action } : inv
+                ));
+                setProcessedInvoices(prev => prev.map(inv => 
+                    inv.id === selectedInvoice.id ? { ...inv, Gestion_Contabilidad: action } : inv
+                ));
+                setSelectedInvoice(prev => prev ? { ...prev, Gestion_Contabilidad: action } : null);
+                alert(`Factura ${action.toLowerCase()} correctamente`);
+            } else {
+                const data = await res.json();
+                alert(`Error: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Error updating status:", error);
+            alert("Error de conexión");
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
+    const handleManualSapSync = async (inv: SharePointInvoice) => {
+        if (!confirm(`Â¿Estás seguro de crear un documento preliminar en SAP para la factura ${inv.Nro_Factura}?`)) return;
+        
+        setSyncingId(inv.id);
+        try {
+            const res = await fetch("/api/sap/manual-draft", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ invoiceId: inv.id })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                alert(`âœ… Preliminar SAP creado exitosamente\nDocEntry: ${data.sap.draftId}`);
+            } else {
+                alert(`âŒ Error al crear preliminar SAP: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Error manual SAP sync:", error);
+            alert("âŒ Error de conexión al sincronizar con SAP. Revisa la consola.");
+        } finally {
+            setSyncingId(null);
+        }
+    };
+
+    const formatCostCenter = (costCenterStr: any, tableCostStr: any) => {
+        if (!costCenterStr && !tableCostStr) return "Sin asignar";
+        
+        if (costCenterStr) {
+            try {
+                const parsed = typeof costCenterStr === 'string' ? JSON.parse(costCenterStr) : costCenterStr;
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    return (
+                        <div className="flex flex-col gap-1.5 py-1">
+                            {parsed.map((p, i) => (
+                                <div key={i} className="whitespace-normal break-words leading-tight bg-gray-50/50 rounded p-1">
+                                    <span className="text-[#254153] font-extrabold">{p.centroCosto?.split(' - ')[0] || ''}</span>
+                                    <span className="text-gray-300 mx-1.5">|</span>
+                                    <span className="text-gray-600">{p.cuenta || ''}</span>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                }
+            } catch (e) {
+                return <div className="whitespace-normal break-words leading-tight">{String(costCenterStr)}</div>;
+            }
+        }
+        
+        if (tableCostStr) {
+            if (typeof tableCostStr === 'object' && tableCostStr.Url) {
+                return "Ver tabla adjunta";
+            }
+            return <div className="whitespace-normal break-words leading-tight">{String(tableCostStr)}</div>;
+        }
+        
+        return "Sin asignar";
+    };
+
+    const renderCostCenterForModal = (costCenterStr: any, tableCostStr: any) => {
+        if (!costCenterStr && !tableCostStr) return <span className="text-gray-400 italic">Sin asignar</span>;
+        
+        if (costCenterStr) {
+            try {
+                const parsed = typeof costCenterStr === 'string' ? JSON.parse(costCenterStr) : costCenterStr;
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    return (
+                        <div className="flex flex-col gap-2">
+                            {parsed.map((p: any, i: number) => (
+                                <div key={i} className="flex flex-col bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                    <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Centro de Costo</div>
+                                    <div className="text-sm font-black text-[#254153] mb-2 cursor-text select-text">{p.centroCosto || 'N/A'}</div>
+                                    <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Cuenta</div>
+                                    <div className="text-sm font-black text-[#254153] cursor-text select-text">{p.cuenta || 'N/A'}</div>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                }
+            } catch (e) {
+                return <div className="text-sm font-bold text-[#254153] whitespace-pre-wrap cursor-text select-text">{String(costCenterStr)}</div>;
+            }
+        }
+        
+        if (tableCostStr) {
+            if (typeof tableCostStr === 'object' && tableCostStr.Url) {
+                return <a href={tableCostStr.Url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm font-bold">Ver tabla adjunta</a>;
+            }
+            return <div className="text-sm font-bold text-[#254153] whitespace-pre-wrap cursor-text select-text">{String(tableCostStr)}</div>;
+        }
+        
+        return <span className="text-gray-400 italic">Sin asignar</span>;
+    };
+
     const formatCurrency = (value: any) => {
         if (value === undefined || value === null || value === "") return "$ 0,00";
 
@@ -302,6 +764,12 @@ export default function InvoicesPage() {
         return state.includes("pendiente") || state.includes("por aprobar");
     };
 
+    const isToProcess = (inv: SharePointInvoice) => {
+        const state = (inv.Aprobacion_Doliente || "").toLowerCase();
+        const contabilidad = (inv.Gestion_Contabilidad || "").toLowerCase();
+        return state.includes("aprobado") && contabilidad.includes("por procesar");
+    };
+
     const isProcessed = (inv: SharePointInvoice) => {
         const state = (inv.Aprobacion_Doliente || "").toLowerCase();
         const contabilidad = (inv.Gestion_Contabilidad || "").toLowerCase();
@@ -312,36 +780,102 @@ export default function InvoicesPage() {
         const matchesSearch = !searchTerm ||
             inv.Nro_Factura?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             inv.Proveedor?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            inv.Nit?.toLowerCase().includes(searchTerm.toLowerCase());
+            inv.Nit?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            inv.Consecutivo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            inv.Observaciones?.toLowerCase().includes(searchTerm.toLowerCase());
 
-        const matchesTab = activeTab === 'pending' ? isPending(inv) : isProcessed(inv);
+        const matchesTab = activeTab === 'pending' ? isPending(inv) : activeTab === 'to_process' ? isToProcess(inv) : isProcessed(inv);
         const matchesResponsable = selectedResponsable === "all" || inv.Responsable_de_Autorizar === selectedResponsable;
 
         // Filtros por columna (Excel-style)
         const matchesColInvoice = !columnFilters.invoice || inv.Nro_Factura?.toLowerCase().includes(columnFilters.invoice.toLowerCase());
         const matchesColProvider = !columnFilters.provider || 
-            inv.Proveedor?.toLowerCase().includes(columnFilters.provider.toLowerCase()) || 
-            inv.Nit?.toLowerCase().includes(columnFilters.provider.toLowerCase());
+            inv.Proveedor?.toLowerCase().includes(columnFilters.provider.toLowerCase());
         const matchesColAmount = !columnFilters.amount || String(inv.Monto).includes(columnFilters.amount);
         const matchesColResponsible = !columnFilters.responsible || inv.Responsable_de_Autorizar?.toLowerCase().includes(columnFilters.responsible.toLowerCase());
         const matchesColStatus = !columnFilters.status || (inv.Aprobacion_Doliente || "Pendiente").toLowerCase().includes(columnFilters.status.toLowerCase());
         const matchesColContabilidad = !columnFilters.contabilidad || (inv.Gestion_Contabilidad || "Pendiente").toLowerCase().includes(columnFilters.contabilidad.toLowerCase());
+        const matchesColNit = !columnFilters.nit || (inv.Nit || "").toLowerCase().includes(columnFilters.nit.toLowerCase());
+        const matchesColConsecutivo = !columnFilters.consecutivo || (inv.Consecutivo || "").toLowerCase().includes(columnFilters.consecutivo.toLowerCase());
+        const matchesColObservaciones = !columnFilters.observaciones || (inv.Observaciones || "").toLowerCase().includes(columnFilters.observaciones.toLowerCase());
 
         return matchesSearch && matchesTab && matchesResponsable && 
-               matchesColInvoice && matchesColProvider && matchesColAmount && 
-               matchesColResponsible && matchesColStatus && matchesColContabilidad;
+                matchesColInvoice && matchesColProvider && matchesColAmount && 
+               matchesColResponsible && matchesColStatus && matchesColContabilidad &&
+               matchesColNit && matchesColConsecutivo && matchesColObservaciones;
     });
 
+    const sortedInvoices = useMemo(() => {
+        if (!sortOrder) return filteredInvoices;
+        return [...filteredInvoices].sort((a, b) => {
+            const dateA = a.FechaAprobacion ? new Date(a.FechaAprobacion).getTime() : 0;
+            const dateB = b.FechaAprobacion ? new Date(b.FechaAprobacion).getTime() : 0;
+            return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+        });
+    }, [filteredInvoices, sortOrder]);
+
+    const colDefs = useMemo(() => [
+        {
+            headerName: 'Acciones',
+            field: 'id',
+            width: 160,
+            pinned: 'left',
+            filter: false,
+            sortable: false,
+            cellRenderer: (params: any) => {
+                const inv = params.data;
+                if (!inv) return null;
+                return (
+                    <div className="flex items-center justify-start gap-2 h-full">
+                        <Button variant="outline" onClick={() => handleCopyLink(inv)} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Copiar Link Público">
+                            <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" onClick={() => handleManualSapSync(inv)} disabled={syncingId === inv.id} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50" title="Sincronizar con SAP Manualmente">
+                            {syncingId === inv.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button variant="outline" onClick={() => { setSelectedInvoice(inv); setIsModalOpen(true); }} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Ver Detalle">
+                            <Search className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
+                );
+            }
+        },
+        { headerName: 'NIT', field: 'Nit', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'Proveedor', field: 'Proveedor', width: 250, cellRenderer: (p: any) => <div className="text-sm font-bold text-gray-800 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'Factura', field: 'Nro_Factura', width: 160, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="font-bold text-[#254153] leading-none">{p.value || "S/N"}</div><div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {p.data?.id}</div></div> },
+        { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
+        { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
+        { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
+        { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Pendiente"}</div> },
+        { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'Fecha Creación', field: 'Creado', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{(p.value || p.data?.Created) ? new Date(p.value || p.data?.Created).toLocaleString() : "Sin fecha"}</div> },
+        { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{formatCostCenter(p.value, p.data?.tablaCostos)}</div> },
+        { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
+        { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || "Sin observaciones"}</div> },
+        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{(p.data?.documentInfo || p.data?.Attachments) ? <a href={`/api/sharepoint/attachment-redirect?itemId=${p.data?.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
+    ], [syncingId]);
+
     return (
-        <div className="min-h-screen bg-[#f8fafc] flex">
+        <div className="h-screen bg-[#f8fafc] flex overflow-hidden">
             <Sidebar />
 
-            <main className="flex-1 md:ml-64 relative bg-[#f8fafc]">
+            <main 
+                className="flex-1 relative bg-[#f8fafc] transition-all duration-300 ease-in-out flex flex-col h-screen overflow-y-auto overflow-x-hidden"
+                style={{ marginLeft: 'var(--sidebar-width, 256px)' }}
+            >
                 {/* Header Superior */}
-                <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-10">
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-1.5 bg-[#254153] rounded-full" />
-                        <h1 className="text-xl font-bold text-gray-800 tracking-tight">Aprobación de Facturas</h1>
+                <header className="h-20 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-10 w-full">
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={toggleSidebar}
+                            className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-[#254153]"
+                        >
+                            <Menu className="h-6 w-6" />
+                        </button>
+                        <div className="flex items-center gap-3">
+                            <div className="h-8 w-1.5 bg-[#254153] rounded-full" />
+                            <h1 className="text-xl font-bold text-gray-800 tracking-tight">Aprobación de Facturas</h1>
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-4">
@@ -374,7 +908,7 @@ export default function InvoicesPage() {
                     </div>
                 </header>
 
-                <div className="p-8 max-w-[1600px] mx-auto space-y-8">
+                <div className="px-4 md:px-8 pt-6 pb-2 w-full mx-auto flex-1 flex flex-col min-h-min space-y-4">
                     {/* Título y Resumen */}
                     <div className="flex justify-between items-end">
                         <motion.div
@@ -383,8 +917,8 @@ export default function InvoicesPage() {
                         >
                             <h2 className="text-3xl font-extrabold text-[#254153]">Gestión de Facturas</h2>
                             <p className="text-gray-500 mt-1 font-medium flex items-center gap-2">
-                                <span className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-                                Datos cargados directamente desde SharePoint Online
+                                <span className={`h-2 w-2 rounded-full animate-pulse ${dataSource === 'cache' ? 'bg-emerald-500' : dataSource === 'sharepoint' ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                                {dataSource === 'cache' ? 'Cargado desde Caché (Alta Velocidad)' : dataSource === 'sharepoint' ? 'Cargado desde SharePoint Online' : 'Cargando datos...'}
                             </p>
                         </motion.div>
 
@@ -397,13 +931,21 @@ export default function InvoicesPage() {
                                 <span className="hidden lg:inline">Aprobación Automática</span>
                             </button>
                             <Button
+                                onClick={() => setIsCreateModalOpen(true)}
+                                className="bg-[#254153] text-white rounded-xl h-11 px-6 font-black hover:bg-[#1a2f3d] transition-all shadow-lg shadow-blue-900/10 flex items-center gap-2"
+                            >
+                                <CloudUpload className="h-4 w-4" />
+                                Crear Factura
+                            </Button>
+                            <Button
                                 variant="outline"
-                                onClick={() => fetchInvoices()}
-                                disabled={loading}
+
+                                onClick={handleRefreshInvoices}
+                                disabled={loading || isSyncingSharePoint}
                                 className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm"
                             >
-                                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                                Actualizar
+                                {loading || isSyncingSharePoint ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                                {isSyncingSharePoint ? "Actualizando..." : "Actualizar"}
                             </Button>
                         </div>
                     </div>
@@ -413,21 +955,21 @@ export default function InvoicesPage() {
                         {[
                             {
                                 label: "Total Facturas",
-                                value: invoices.length,
+                                value: pendingCount + processedCount,
                                 icon: Paperclip,
                                 color: "bg-blue-500",
                                 bg: "bg-blue-50"
                             },
                             {
                                 label: "Pendientes por Aprobar",
-                                value: invoices.filter(isPending).length,
+                                value: pendingCount,
                                 icon: RefreshCw,
                                 color: "bg-amber-500",
                                 bg: "bg-amber-50"
                             },
                             {
                                 label: "Histórico Procesadas",
-                                value: invoices.filter(isProcessed).length,
+                                value: processedCount,
                                 icon: Bell,
                                 color: "bg-emerald-500",
                                 bg: "bg-emerald-50"
@@ -463,9 +1005,23 @@ export default function InvoicesPage() {
                         >
                             <RefreshCw className={`h-4 w-4 ${activeTab === 'pending' ? 'animate-spin-slow' : ''}`} />
                             Por Aprobar
-                            {invoices.filter(isPending).length > 0 && (
+                            {pendingCount > 0 && (
                                 <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'pending' ? "bg-white/20" : "bg-gray-200"}`}>
-                                    {invoices.filter(isPending).length}
+                                    {pendingCount}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('to_process')}
+                            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'to_process'
+                                ? "bg-[#254153] text-white shadow-lg shadow-blue-900/10"
+                                : "text-gray-500 hover:text-gray-700 hover:bg-white/50"}`}
+                        >
+                            <Loader2 className={`h-4 w-4 ${activeTab === 'to_process' ? 'animate-spin-slow' : ''}`} />
+                            Por Procesar
+                            {toProcessCount > 0 && (
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'to_process' ? "bg-white/20" : "bg-gray-200"}`}>
+                                    {toProcessCount}
                                 </span>
                             )}
                         </button>
@@ -477,221 +1033,332 @@ export default function InvoicesPage() {
                         >
                             <Bell className="h-4 w-4" />
                             Histórico
-                            {invoices.filter(isProcessed).length > 0 && (
+                            {processedCount > 0 && (
                                 <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'processed' ? "bg-white/20" : "bg-gray-200"}`}>
-                                    {invoices.filter(isProcessed).length}
+                                    {processedCount}
                                 </span>
                             )}
                         </button>
                     </div>
 
-                    {/* Tabla de Facturas */}
-                    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-                        <div className="overflow-x-auto min-h-[400px]">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-50/50 border-b border-gray-100">
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Factura</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Proveedor</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Valor total</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Responsable</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Estado</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">G. Contabilidad</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Datos adjuntos</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Acciones</th>
-                                    </tr>
-                                    <tr className="bg-white border-b border-gray-50">
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                list="list-invoice"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.invoice}
-                                                onChange={(e) => setColumnFilters({...columnFilters, invoice: e.target.value})}
-                                            />
-                                            <datalist id="list-invoice">
-                                                {filterOptions.invoices.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                list="list-provider"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.provider}
-                                                onChange={(e) => setColumnFilters({...columnFilters, provider: e.target.value})}
-                                            />
-                                            <datalist id="list-provider">
-                                                {filterOptions.providers.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.amount}
-                                                onChange={(e) => setColumnFilters({...columnFilters, amount: e.target.value})}
-                                            />
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                list="list-responsible"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.responsible}
-                                                onChange={(e) => setColumnFilters({...columnFilters, responsible: e.target.value})}
-                                            />
-                                            <datalist id="list-responsible">
-                                                {filterOptions.responsibles.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                list="list-status"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.status}
-                                                onChange={(e) => setColumnFilters({...columnFilters, status: e.target.value})}
-                                            />
-                                            <datalist id="list-status">
-                                                {filterOptions.statuses.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input 
-                                                type="text" 
-                                                list="list-contabilidad"
-                                                placeholder="Filtrar..."
-                                                className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none"
-                                                value={columnFilters.contabilidad}
-                                                onChange={(e) => setColumnFilters({...columnFilters, contabilidad: e.target.value})}
-                                            />
-                                            <datalist id="list-contabilidad">
-                                                {filterOptions.contabilidades.map(opt => <option key={opt} value={opt} />)}
-                                            </datalist>
-                                        </td>
-                                        <td className="px-3 py-2" />
-                                        <td className="px-3 py-2" />
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-50">
-                                    <AnimatePresence mode="popLayout">
-                                        {loading ? (
-                                            Array.from({ length: 8 }).map((_, i) => (
-                                                <tr key={`skeleton-${i}`} className="animate-pulse">
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-40" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-24 ml-auto" /></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-32" /></td>
-                                                    <td className="px-6 py-5"><div className="h-7 bg-gray-100 rounded-full w-24" /></td>
-                                                    <td className="px-6 py-5"><div className="h-8 bg-gray-100 rounded-lg w-24" /></td>
-                                                    <td className="px-6 py-5 text-right"><div className="h-8 bg-gray-100 rounded-lg w-16 ml-auto" /></td>
-                                                </tr>
-                                            ))
-                                        ) : filteredInvoices.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={8} className="px-6 py-20 text-center">
-                                                    <div className="flex flex-col items-center gap-3 opacity-30">
-                                                        <Search className="h-12 w-12 text-[#254153]" />
-                                                        <p className="text-lg font-bold text-[#254153]">No se encontraron resultados</p>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            filteredInvoices.map((inv, idx) => (
-                                                <motion.tr
-                                                    initial={{ opacity: 0, y: 10 }}
-                                                    animate={{ opacity: 1, y: 0 }}
-                                                    transition={{ delay: idx * 0.03 }}
-                                                    key={inv.id}
-                                                    className="hover:bg-[#f8fafc] transition-colors group"
-                                                >
-                                                    <td className="px-6 py-5">
-                                                        <div className="font-bold text-[#254153] leading-none">{inv.Nro_Factura || "S/N"}</div>
-                                                        <div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {inv.id}</div>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="text-sm font-bold text-gray-800">{inv.Proveedor || "N/A"}</div>
-                                                        <div className="text-[11px] text-gray-500 mt-0.5 font-medium">NIT: {inv.Nit || "N/A"}</div>
-                                                    </td>
-                                                    <td className="px-6 py-5 text-right px-10">
-                                                        <div className="text-sm font-extrabold text-[#254153]">{formatCurrency(inv.Monto)}</div>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <div className="text-xs font-semibold text-gray-600">{inv.Responsable_de_Autorizar || "Sin asignar"}</div>
-                                                        <div className="text-[10px] text-gray-400 font-medium">
-                                                            {inv.Created ? new Date(inv.Created).toLocaleDateString() : ""}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(inv.Aprobacion_Doliente)}`}>
-                                                            {inv.Aprobacion_Doliente || "Pendiente"}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        <span className="text-[10px] font-bold text-gray-600 uppercase tracking-tight">
-                                                            {inv.Gestion_Contabilidad || "Pendiente"}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-5">
-                                                        {(inv.documentInfo || inv.Attachments) ? (
-                                                            <a
-                                                                href={`/api/sharepoint/attachment-redirect?itemId=${inv.id}`}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50"
-                                                                title="Ver Documento Adjunto"
-                                                            >
-                                                                <FileText className="h-3.5 w-3.5" />
-                                                                <span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span>
-                                                            </a>
-                                                        ) : (
-                                                            <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-6 py-5 text-right">
-                                                        <div className="flex items-center justify-end gap-2">
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => handleCopyLink(inv)}
-                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
-                                                                title="Copiar Link Público"
-                                                            >
-                                                                <Copy className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={() => setSelectedInvoice(inv)}
-                                                                className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
-                                                                title="Ver Detalle"
-                                                            >
-                                                                <Search className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                        </div>
-                                                    </td>
-                                                </motion.tr>
-                                            ))
-                                        )}
-                                    </AnimatePresence>
-                                </tbody>
-                            </table>
+                    {/* Tabla de Facturas AG Grid */}
+                    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden flex-1 flex flex-col min-h-[500px]">
+                        <div className="w-full flex-1 min-h-0">
+                            <AgGridReact
+                                theme={themeQuartz}
+                                localeText={AG_GRID_LOCALE_ES}
+                                rowData={sortedInvoices}
+                                columnDefs={colDefs}
+                                onModelUpdated={(e) => setDisplayedRowCount(e.api.getDisplayedRowCount())}
+                                defaultColDef={{
+                                    sortable: true,
+                                    filter: true,
+                                    filterParams: {
+                                        filterOptions: ['contains'],
+                                        suppressAndOrCondition: true,
+                                        maxNumConditions: 1,
+                                    },
+                                    resizable: true,
+                                    floatingFilter: true,
+                                    suppressMovable: false,
+                                }}
+                                rowHeight={70}
+                                headerHeight={60}
+                                floatingFiltersHeight={50}
+                                animateRows={true}
+                                pagination={false}
+                                overlayLoadingTemplate='<span class="ag-overlay-loading-center text-gray-500 font-bold">Cargando facturas...</span>'
+                                overlayNoRowsTemplate='<span class="ag-overlay-loading-center text-gray-500 font-bold">No se encontraron resultados</span>'
+                            />
                         </div>
                     </div>
-
                     {/* Paginación - Eliminada para carga completa */}
                     {!loading && filteredInvoices.length > 0 && (
-                        <div className="flex items-center justify-between pt-4">
+                        <div className="flex items-center justify-between pt-2">
                             <div className="text-sm text-gray-400 font-medium italic">
-                                Mostrando <span className="text-[#254153] font-bold">{filteredInvoices.length}</span> registros de {activeTab === 'pending' ? 'pestaña Por Aprobar' : 'pestaña Histórico'}
+                                Mostrando <span className="text-[#254153] font-bold">{displayedRowCount}</span> de <span className="text-gray-600 font-bold">{filteredInvoices.length}</span> registros cargados (Total servidor: {activeTab === 'pending' ? `${pendingCount} pendientes` : activeTab === 'to_process' ? `${toProcessCount} por procesar` : `${processedCount} procesados`})
                             </div>
+                            
+                            {(activeTab === 'processed' || activeTab === 'to_process') && (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm text-gray-500 font-medium">Cargar:</span>
+                                    <select
+                                        value={loadLimit}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            const newLimit = val === 'all' ? 'all' : Number(val);
+                                            setLoadLimit(newLimit);
+                                            fetchHistory(true, newLimit);
+                                        }}
+                                        className="h-9 px-3 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153] transition-all text-gray-600 font-bold"
+                                    >
+                                        <option value={100}>100 registros</option>
+                                        <option value={200}>200 registros</option>
+                                        <option value={500}>500 registros</option>
+                                        <option value={1000}>1000 registros</option>
+                                        <option value="all">Todas las facturas</option>
+                                    </select>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
+
+                {/* Invoice Details Modal */}
+                <AnimatePresence>
+                    {isModalOpen && selectedInvoice && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setIsModalOpen(false)}
+                                className="absolute inset-0 bg-[#254153]/40 backdrop-blur-sm"
+                            />
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                                className="bg-white rounded-[2.5rem] shadow-2xl border border-white overflow-hidden max-w-2xl w-full relative z-10"
+                            >
+                                <div className="h-3 bg-linear-to-r from-[#254153] to-[#4a6b8a]" />
+                                <button 
+                                    onClick={() => setIsModalOpen(false)}
+                                    className="absolute top-6 right-6 h-10 w-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+
+                                <div className="p-8 md:p-12">
+                                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
+                                        <div>
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#254153]/5 text-[#254153] text-[10px] font-bold uppercase tracking-wider">
+                                                    <FileText className="h-3 w-3" /> Detalles de Factura
+                                                </div>
+                                                
+                                                {sapStatus === 'loading' && (
+                                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold uppercase tracking-wider border border-blue-200">
+                                                        <RefreshCw className="h-3 w-3 animate-spin" /> Consultando SAP...
+                                                    </div>
+                                                )}
+                                                {sapStatus === 'found' && (
+                                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 text-green-700 text-[10px] font-bold uppercase tracking-wider border border-green-200">
+                                                        <Check className="h-3 w-3" /> Ingresado a SAP
+                                                    </div>
+                                                )}
+                                                {sapStatus === 'not_found' && (
+                                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-50 text-red-700 text-[10px] font-bold uppercase tracking-wider border border-red-200">
+                                                        <X className="h-3 w-3" /> Factura no ingresada a SAP
+                                                    </div>
+                                                )}
+                                                {sapStatus === 'error' && (
+                                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-50 text-yellow-700 text-[10px] font-bold uppercase tracking-wider border border-yellow-200">
+                                                        <RefreshCw className="h-3 w-3" /> Error al consultar
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <h1 className="text-3xl font-extrabold text-[#254153] tracking-tight">
+                                                {selectedInvoice.Nro_Factura || 'S/N'}
+                                            </h1>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Monto Total</p>
+                                            <p className="text-3xl font-black text-[#254153] font-mono tracking-tighter">
+                                                {formatCurrency(selectedInvoice.Valor_total ?? selectedInvoice["Valor total"])}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8 mb-12">
+                                        <ModalInfoItem icon={<User />} label="Proveedor" value={selectedInvoice.Proveedor} />
+                                        <ModalInfoItem icon={<Landmark />} label="NIT" value={selectedInvoice.Nit} />
+                                        <ModalInfoItem icon={<Calendar />} label="Fecha" value={selectedInvoice.FechaAprobacion || selectedInvoice.Creado ? new Date(selectedInvoice.FechaAprobacion || selectedInvoice.Creado!).toLocaleDateString() : 'N/A'} />
+                                        <ModalInfoItem icon={<Hash />} label="ID de Registro" value={String(selectedInvoice.ID ?? selectedInvoice.id ?? 'N/A')} />
+                                        <div className="col-span-full pt-4 border-t border-gray-50">
+                                            <ModalInfoItem icon={<User />} label="Responsable" value={selectedInvoice.Responsable_de_Autorizar} subValue="Autoridad asignada para esta gestión" />
+                                        </div>
+                                    </div>
+
+                                    {selectedInvoice.Gestion_Contabilidad === 'Aprobado' || selectedInvoice.Gestion_Contabilidad === 'Rechazado' ? (
+                                        <div className={`w-full rounded-2xl p-6 mb-4 text-center border ${selectedInvoice.Gestion_Contabilidad === 'Aprobado'
+                                            ? 'bg-green-50/50 border-green-100 text-green-800'
+                                            : 'bg-red-50/50 border-red-100 text-red-800'
+                                            }`}>
+                                            <div className="flex items-center justify-center gap-3 mb-2 font-bold uppercase tracking-wide">
+                                                {selectedInvoice.Gestion_Contabilidad === 'Aprobado' ? <Check className="h-5 w-5" /> : <X className="h-5 w-5" />}
+                                                Factura {selectedInvoice.Gestion_Contabilidad}
+                                            </div>
+                                            <p className="opacity-70 text-xs font-medium italic">Esta factura ya ha sido procesada.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col sm:flex-row gap-4 w-full mb-6">
+                                            <Button
+                                                className="flex-1 h-14 rounded-2xl bg-[#254153] hover:bg-[#1a2e3b] text-white font-bold text-lg shadow-lg shadow-[#254153]/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                                onClick={() => handleAction('Aprobado')}
+                                                disabled={!!actionLoading}
+                                            >
+                                                {actionLoading === 'Aprobado' ? <RefreshCw className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
+                                                Aprobar
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                className="flex-1 h-14 rounded-2xl border-2 border-red-100 text-red-600 hover:bg-red-50 font-bold text-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                                onClick={() => handleAction('Rechazado')}
+                                                disabled={!!actionLoading}
+                                            >
+                                                {actionLoading === 'Rechazado' ? <RefreshCw className="h-5 w-5 animate-spin" /> : <X className="h-5 w-5" />}
+                                                Rechazar
+                                            </Button>
+                                        </div>
+                                    )}
+
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
+                {/* Providers Sidebar - Slide over */}
+                <AnimatePresence>
+                    {isProvidersSidebarOpen && (
+                        <div className="fixed inset-0 z-50 flex justify-end">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setIsProvidersSidebarOpen(false)}
+                                className="absolute inset-0 bg-[#254153]/20 backdrop-blur-sm"
+                            />
+                            <motion.div
+                                initial={{ x: "100%" }}
+                                animate={{ x: 0 }}
+                                exit={{ x: "100%" }}
+                                transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                                className="relative w-full max-w-md bg-white shadow-2xl h-full flex flex-col border-l border-gray-100"
+                            >
+                                <div className="p-6 border-b border-gray-50 flex items-center justify-between bg-white sticky top-0 z-10">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-[#254153] flex items-center gap-2">
+                                            <ShieldCheck className="h-5 w-5 text-green-600" />
+                                            Aprobación Automática
+                                        </h2>
+                                        <p className="text-xs text-gray-400 font-medium">Gestiona proveedores de confianza</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsProvidersSidebarOpen(false)}
+                                        className="h-9 w-9 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                                    >
+                                        <X className="h-5 w-5" />
+                                    </button>
+                                </div>
+
+                                <div className="p-4 border-b border-gray-50 bg-gray-50/50">
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Buscar proveedor o Nit..."
+                                            value={providersSearch}
+                                            onChange={(e) => setProvidersSearch(e.target.value)}
+                                            className="w-full h-11 pl-10 pr-4 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153]/30 transition-all font-medium"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                                    {loadingProviders ? (
+                                        Array.from({ length: 8 }).map((_, i) => (
+                                            <div key={i} className="h-20 bg-gray-50 rounded-2xl animate-pulse" />
+                                        ))
+                                    ) : (
+                                        providers
+                                            .filter(p => 
+                                                p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) || 
+                                                p.numero_identificacion?.includes(providersSearch)
+                                            )
+                                            .map((p) => (
+                                                <div 
+                                                    key={p.id}
+                                                    className={`p-4 rounded-2xl border transition-all duration-300 flex flex-col group ${
+                                                        p.aprobacion_automatica 
+                                                        ? 'bg-green-50/30 border-green-100 shadow-xs' 
+                                                        : 'bg-white border-gray-100 hover:border-gray-200 shadow-xs'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between w-full">
+                                                        <div className="flex-1 min-w-0 pr-4">
+                                                            <p className={`text-sm font-bold truncate ${p.aprobacion_automatica ? 'text-green-800' : 'text-[#254153]'}`}>
+                                                                {p.razon_social || 'S/N'}
+                                                            </p>
+                                                            <div className="flex items-center gap-2 mt-1">
+                                                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Nit: {p.numero_identificacion || 'N/A'}</span>
+                                                                {p.aprobacion_automatica && (
+                                                                    <span className="flex items-center gap-1 text-[9px] font-black text-green-600 bg-green-100 px-1.5 py-0.5 rounded-sm uppercase tracking-tighter">
+                                                                        <Check className="h-2 w-2" /> Activo
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <Switch 
+                                                            checked={!!p.aprobacion_automatica}
+                                                            onChange={() => toggleProviderAutoApproval(p.id, !!p.aprobacion_automatica)}
+                                                        />
+                                                    </div>
+
+                                                    {p.aprobacion_automatica && (
+                                                        <motion.div 
+                                                            initial={{ opacity: 0, height: 0 }}
+                                                            animate={{ opacity: 1, height: 'auto' }}
+                                                            className="mt-4 pt-4 border-t border-green-100/50 flex gap-3"
+                                                        >
+                                                            <div className="flex-1">
+                                                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Valor Ref. (COP)</label>
+                                                                <div className="relative">
+                                                                    <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-600" />
+                                                                    <input 
+                                                                        type="number"
+                                                                        defaultValue={p.valor_de_referencia || ''}
+                                                                        onBlur={(e) => updateProviderField(p.id, 'valor_de_referencia', e.target.value === '' ? null : Number(e.target.value))}
+                                                                        className="w-full h-8 pl-6 pr-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
+                                                                        placeholder="0.00"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <div className="w-24">
+                                                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">% Desv.</label>
+                                                                <input 
+                                                                    type="number"
+                                                                    defaultValue={p.porcentaje_desviacion || ''}
+                                                                    onBlur={(e) => updateProviderField(p.id, 'porcentaje_desviacion', e.target.value === '' ? null : Number(e.target.value))}
+                                                                    className="w-full h-8 px-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
+                                                                    placeholder="%"
+                                                                />
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
+                                                </div>
+                                            ))
+                                    )}
+                                </div>
+
+                                <div className="p-6 bg-gray-50/50 border-t border-gray-100">
+                                    <div className="flex items-start gap-3 p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                                        <div className="mt-0.5 h-8 w-8 rounded-lg bg-green-50 flex items-center justify-center text-green-600 shrink-0">
+                                            <ShieldCheck className="h-4 w-4" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-gray-800">Control Inteligente</p>
+                                            <p className="text-[10px] text-gray-500 font-medium leading-relaxed mt-0.5">
+                                                Los proveedores activados aprobarán sus facturas automáticamente al ingresar.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
             </main>
 
             {/* Panel Aprobación Automática */}
@@ -717,6 +1384,9 @@ export default function InvoicesPage() {
                                     <h2 className="text-xl font-bold text-[#254153] flex items-center gap-2">
                                         <ShieldCheck className="h-5 w-5 text-green-600" />
                                         Aprobación Automática
+                                        <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-normal">
+                                            {providers.length.toLocaleString()}
+                                        </span>
                                     </h2>
                                     <p className="text-xs text-gray-400 font-medium">Gestiona proveedores de confianza</p>
                                 </div>
@@ -850,9 +1520,9 @@ export default function InvoicesPage() {
                             initial={{ opacity: 0, scale: 0.95, y: 20 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                            className="bg-white rounded-[32px] shadow-2xl w-full max-w-4xl relative overflow-hidden border border-white/20"
+                            className="bg-white rounded-[32px] shadow-2xl w-full max-w-4xl relative overflow-hidden border border-white/20 flex flex-col max-h-[95vh]"
                         >
-                            <div className="p-8">
+                            <div className="p-8 overflow-y-auto custom-scrollbar">
                                 <div className="flex justify-between items-start mb-8">
                                     <div className="flex items-center gap-4">
                                         <div className="h-14 w-14 bg-blue-50 rounded-2xl flex items-center justify-center shadow-inner">
@@ -899,6 +1569,19 @@ export default function InvoicesPage() {
                                                     <p className="text-[11px] font-bold text-gray-400 uppercase">Fecha Registro</p>
                                                     <p className="font-bold text-gray-600">{selectedInvoice.Created ? new Date(selectedInvoice.Created).toLocaleDateString() : "N/A"}</p>
                                                 </div>
+                                                <div>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Fecha Aprobación</p>
+                                                    <p className="font-bold text-gray-600">
+                                                        {selectedInvoice.FechaAprobacion ? new Date(selectedInvoice.FechaAprobacion).toLocaleString() : "Pendiente"}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Centro de Costos y Cuenta</h4>
+                                            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                                                {renderCostCenterForModal(selectedInvoice.centro_costos, selectedInvoice.tablaCostos)}
                                             </div>
                                         </div>
 
@@ -930,6 +1613,72 @@ export default function InvoicesPage() {
                                                 </div>
                                             </div>
                                         )}
+
+                                        <div className="bg-white p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div>
+                                                    <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Adjuntos manuales</h4>
+                                                    <p className="text-[10px] text-gray-400 font-bold mt-1">Excel, PDF, imagenes o Word</p>
+                                                </div>
+                                                <Paperclip className="h-5 w-5 text-[#254153]" />
+                                            </div>
+
+                                            {normalizeManualAttachments(selectedInvoice.adjuntos_url).length > 0 ? (
+                                                <div className="space-y-2">
+                                                    {normalizeManualAttachments(selectedInvoice.adjuntos_url).map((attachment) => (
+                                                        <div
+                                                            key={attachment.path || attachment.url}
+                                                            className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm font-bold text-[#254153]"
+                                                        >
+                                                            <FileText className="h-4 w-4 text-blue-500 shrink-0" />
+                                                            <span className="truncate flex-1">{attachment.name}</span>
+                                                            <a
+                                                                href={attachment.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="rounded-lg px-2 py-1 text-[10px] text-gray-400 uppercase hover:bg-white hover:text-[#254153] transition-colors"
+                                                            >
+                                                                Abrir
+                                                            </a>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteManualAttachment(attachment)}
+                                                                className="rounded-lg px-2 py-1 text-[10px] uppercase text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                            >
+                                                                Quitar
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs font-bold text-gray-300 italic">No hay adjuntos manuales cargados.</p>
+                                            )}
+
+                                            <div className="space-y-3">
+                                                <input
+                                                    type="file"
+                                                    multiple
+                                                    accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,image/*"
+                                                    onChange={(event) => setManualAttachmentFiles(Array.from(event.target.files || []))}
+                                                    className="block w-full text-xs font-bold text-gray-500 file:mr-4 file:rounded-xl file:border-0 file:bg-[#254153]/10 file:px-4 file:py-2 file:text-xs file:font-black file:text-[#254153] hover:file:bg-[#254153]/15"
+                                                />
+                                                {manualAttachmentFiles.length > 0 && (
+                                                    <div className="rounded-xl bg-gray-50 px-3 py-2 text-[11px] font-bold text-gray-500">
+                                                        {manualAttachmentFiles.length} archivo(s) seleccionado(s)
+                                                    </div>
+                                                )}
+                                                <Button
+                                                    type="button"
+                                                    onClick={handleUploadManualAttachments}
+                                                    disabled={uploadingManualAttachments || manualAttachmentFiles.length === 0}
+                                                    isLoading={uploadingManualAttachments}
+                                                    className="w-full h-10 text-xs"
+                                                >
+                                                    <CloudUpload className="h-4 w-4 mr-2" />
+                                                    Cargar adjuntos
+                                                </Button>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Estados y Responsables */}
@@ -954,7 +1703,7 @@ export default function InvoicesPage() {
                                                                 <Edit2 className="h-3 w-3 text-gray-300 group-hover:text-blue-500 transition-colors" />
                                                             </div>
                                                             {pendingResponsibleUser && (
-                                                                <p className="text-[9px] font-bold text-blue-400 uppercase tracking-tighter">⚠️ Cambio pendiente por guardar</p>
+                                                                <p className="text-[9px] font-bold text-blue-400 uppercase tracking-tighter">âš ï¸ Cambio pendiente por guardar</p>
                                                             )}
                                                         </div>
                                                     ) : (
@@ -1019,8 +1768,16 @@ export default function InvoicesPage() {
                                                     )}
                                                 </div>
                                                 <div>
-                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Gestión Contabilidad</p>
-                                                    <p className="font-bold text-gray-600">{selectedInvoice.Gestion_Contabilidad || "Pendiente"}</p>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Gestión Contabilidad</p>
+                                                    <select
+                                                        value={selectedInvoice.Gestion_Contabilidad || "Por Procesar"}
+                                                        onChange={(e) => handleAction(e.target.value)}
+                                                        disabled={!!actionLoading}
+                                                        className="w-full h-10 px-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254153]/20 transition-all cursor-pointer hover:border-[#254153]/30"
+                                                    >
+                                                        <option value="Por Procesar">Por Procesar</option>
+                                                        <option value="Procesado">Procesado</option>
+                                                    </select>
                                                 </div>
                                             </div>
                                         </div>
@@ -1042,6 +1799,19 @@ export default function InvoicesPage() {
                                             ) : (
                                                 <div className="flex-1" />
                                             )}
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => handleManualSapSync(selectedInvoice)}
+                                                disabled={syncingId === selectedInvoice.id}
+                                                className="h-14 rounded-2xl px-6 border-gray-100 font-bold text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 transition-all flex items-center justify-center gap-2"
+                                            >
+                                                {syncingId === selectedInvoice.id ? (
+                                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                                ) : (
+                                                    <CloudUpload className="h-5 w-5" />
+                                                )}
+                                                Cargar a SAP
+                                            </Button>
                                             <Button 
                                                 variant="outline" 
                                                 className="h-14 rounded-2xl px-8 border-gray-100 font-bold text-gray-500 hover:bg-gray-50"
@@ -1050,6 +1820,59 @@ export default function InvoicesPage() {
                                                 Imprimir
                                             </Button>
                                         </div>
+
+                                        <div className="bg-gray-50/50 p-4 rounded-[24px] border border-gray-100 relative group h-[400px] flex flex-col mt-4">
+                                             <div className="flex justify-between items-center mb-3 px-2">
+                                                 <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Previsualización</h4>
+                                                 <button 
+                                                     onClick={() => previewUrl && setExpandedPdfUrl(previewUrl)} 
+                                                     className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-2"
+                                                     disabled={!previewUrl}
+                                                 >
+                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+                                                     Ampliar
+                                                 </button>
+                                             </div>
+                                             <div className="flex-1 relative rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm flex items-center justify-center">
+                                                {previewLoading ? (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-10 transition-all">
+                                                        <Loader2 className="h-8 w-8 text-[#254153] animate-spin mb-3" />
+                                                        <p className="text-[10px] font-black text-[#254153] uppercase tracking-[2px]">Cargando vista previa...</p>
+                                                    </div>
+                                                ) : previewError ? (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center bg-red-50/50">
+                                                        <div className="bg-white p-3 rounded-full shadow-sm mb-3">
+                                                            <AlertCircle className="h-6 w-6 text-red-500" />
+                                                        </div>
+                                                        <p className="text-[11px] font-black text-red-900 mb-3 px-2">{previewError}</p>
+                                                        <Button 
+                                                            onClick={() => handlePreview(selectedInvoice)} 
+                                                            className="h-8 text-[10px] bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-all"
+                                                        >
+                                                            Reintentar
+                                                        </Button>
+                                                    </div>
+                                                ) : previewUrl ? (
+                                                    <>
+                                                        <div 
+                                                            className="absolute inset-0 z-10 cursor-pointer bg-transparent" 
+                                                            onClick={() => setExpandedPdfUrl(previewUrl)} 
+                                                            title="Hacer clic para ampliar" 
+                                                        />
+                                                        <iframe 
+                                                            src={`${previewUrl}#toolbar=0&navpanes=0`} 
+                                                            className="w-full h-full border-none pointer-events-none" 
+                                                            onError={(e) => console.log('Error loading preview iframe')}
+                                                        />
+                                                    </>
+                                                ) : (
+                                                    <div className="flex flex-col items-center justify-center text-gray-400">
+                                                        <FileText className="h-8 w-8 mb-2 opacity-50" />
+                                                        <p className="text-[10px] font-bold">Esperando archivo...</p>
+                                                    </div>
+                                                )}
+                                             </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1057,6 +1880,52 @@ export default function InvoicesPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            <AnimatePresence>
+                {expandedPdfUrl && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setExpandedPdfUrl(null)}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl h-[90vh] relative overflow-hidden flex flex-col"
+                        >
+                            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                                <h3 className="text-lg font-black text-[#254153] flex items-center gap-2">
+                                    <FileText className="h-5 w-5 text-blue-500" />
+                                    Factura
+                                </h3>
+                                <button
+                                    onClick={() => setExpandedPdfUrl(null)}
+                                    className="h-10 w-10 rounded-xl bg-white flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 transition-all text-gray-400 border border-gray-200 shadow-sm"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+                            <div className="flex-1 w-full bg-gray-100 relative">
+                                <iframe 
+                                    src={`${expandedPdfUrl}#view=FitH`} 
+                                    className="absolute inset-0 w-full h-full border-none" 
+                                />
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            <CreateInvoiceModal 
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                onSuccess={() => fetchInvoices(true)}
+            />
         </div>
     );
 }
+

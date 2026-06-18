@@ -1,0 +1,161 @@
+{
+  "name": "Aprobación Automática de Facturas (Webhook)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "supabase-nueva-factura",
+        "options": {}
+      },
+      "id": "webhook-trigger-node",
+      "name": "Webhook (Supabase)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "f78d91b4-1cfa-4db7-8b01-52ea7442ca65"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "schema": "public",
+        "table": "proveedores",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "numero_identificacion",
+              "condition": "eq",
+              "keyValue": "={{ $json.body.record.Nit }}"
+            }
+          ]
+        }
+      },
+      "id": "18f7734a-afdc-4cc9-b007-a6865243dfb7",
+      "name": "Buscar Proveedor x NIT",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.aprobacion_automatica }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "fa451fc8-1216-43b6-bff0-78531ba6d2a7",
+      "name": "Si Tiene Aprobacion Automatica",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "number": [
+            {
+              "name": "ID",
+              "value": "={{ $('Webhook (Supabase)').item.json.body.record.ID }}"
+            }
+          ],
+          "string": [
+            {
+              "name": "Aprobacion_Doliente",
+              "value": "Aprobado"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1826f43e-bfa3-4c9f-b7a4-32ae7214cc9a",
+      "name": "Mapear Datos Para Actualizar",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        900,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "Registro_Facturas",
+        "columns": "Aprobacion_Doliente",
+        "matchColumns": "ID"
+      },
+      "id": "52fcf3e8-f2b7-4c75-a0d3-3778a483a30c",
+      "name": "Actualizar A Aprobado",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        280
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Buscar Proveedor x NIT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Proveedor x NIT": {
+      "main": [
+        [
+          {
+            "node": "Si Tiene Aprobacion Automatica",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Si Tiene Aprobacion Automatica": {
+      "main": [
+        [
+          {
+            "node": "Mapear Datos Para Actualizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mapear Datos Para Actualizar": {
+      "main": [
+        [
+          {
+            "node": "Actualizar A Aprobado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

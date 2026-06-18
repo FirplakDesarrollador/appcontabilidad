@@ -1,9 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGraphClient } from '@/lib/sharepoint';
+import { sendReassignmentNotification } from '@/lib/sendReassignmentNotification';
+import { supabase } from '@/lib/supabaseClient';
+
 
 export async function POST(req: NextRequest) {
     try {
-        const { itemId, userEmail, userName, listName = 'Registro_de_Facturas' } = await req.json();
+        const {
+            itemId,
+            userEmail,
+            userName,
+            listName = 'Registro_de_Facturas',
+            assignedByName,
+            invoiceNumber,
+            providerName
+        } = await req.json();
 
         if (!itemId || !userEmail) {
 
@@ -85,7 +96,43 @@ export async function POST(req: NextRequest) {
             throw new Error('No se pudo actualizar el responsable en ningún campo conocido de SharePoint usando el ID del usuario.');
         }
 
-        return NextResponse.json({ success: true });
+        // Sync responsible to Supabase cache immediately
+        try {
+            if (listName === 'Documento_Soporte') {
+                await supabase
+                    .from('Documento_Soporte')
+                    .update({
+                        responsable_id: userEmail,
+                        responsable_nombre: userName,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', Number(itemId));
+                console.log(`Supabase Documento_Soporte responsible updated for item ${itemId}`);
+            } else {
+                await supabase
+                    .from('Registro_Facturas')
+                    .update({
+                        Responsable_de_Autorizar: userName,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('ID', Number(itemId));
+                console.log(`Supabase Registro_Facturas responsible updated for item ${itemId}`);
+            }
+        } catch (supaErr) {
+            console.error('Failed to update Supabase cache for reassignment:', supaErr);
+        }
+
+        const notificationSent = await sendReassignmentNotification({
+            itemId,
+            recipientEmail: userEmail,
+            recipientName: userName,
+            assignedByName,
+            invoiceNumber,
+            providerName,
+            listName
+        });
+
+        return NextResponse.json({ success: true, notificationSent });
     } catch (error: any) {
         console.error('Error updating responsible:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });

@@ -143,7 +143,6 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
 
                         const existingInvoiceNumbers = invoiceNumbersOverride ?? allInvoiceNumbers ?? new Set(
                             existingInvoices.map(inv => normalizeRef(inv.Nro_Factura))
-
                         );
 
                         // Add Status Header and Filter for "No encontrado"
@@ -154,7 +153,6 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
                             let status = "Desconocido";
                             if (facturaIndex !== -1) {
                                 const facturaNum = normalizeRef(row[facturaIndex]);
-
                                 status = existingInvoiceNumbers.has(facturaNum) ? "Encontrado" : "No encontrado";
                             }
                             newRow.push(status);
@@ -187,7 +185,6 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
 
                         const existingInvoiceNumbers = invoiceNumbersOverride ?? allInvoiceNumbers ?? new Set(
                             existingInvoices.map(inv => normalizeRef(inv.Nro_Factura))
-
                         );
 
                         // Add Status Header and Filter for "No encontrado"
@@ -198,7 +195,6 @@ export function ExcelUploadModal({ isOpen, onClose, existingInvoices, allInvoice
                             let status = "Desconocido";
                             if (facturaIndex !== -1) {
                                 const facturaNum = normalizeRef(row[facturaIndex]);
-
                                 status = existingInvoiceNumbers.has(facturaNum) ? "Encontrado" : "No encontrado";
                             }
                             newRow.push(status);

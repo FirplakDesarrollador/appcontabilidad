@@ -1,5 +1,0 @@
-SP_TOKEN: OK
-SP_AUD: 00000003-0000-0ff1-ce00-000000000000
-SP_ROLES: ["Sites.Read.All","Sites.ReadWrite.All"]
-REST_STATUS: 401
-REST_BODY: Unsupported app only token.

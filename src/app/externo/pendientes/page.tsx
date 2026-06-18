@@ -12,9 +12,11 @@ import {
     CheckCircle2,
     ChevronRight,
     Search,
-    Inbox
+    Inbox,
+    History
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import Link from "next/link";
 
 interface Invoice {
     id: string;
@@ -185,6 +187,12 @@ export default function PendientesPage() {
                         <h1 className="text-4xl font-black text-[#254153] tracking-tight">Facturas por Aprobar</h1>
                         <p className="text-gray-500 font-medium">Revisa las facturas pendientes asignadas a tu centro de costo.</p>
                     </div>
+
+                    <div className="flex-shrink-0">
+                        <Suspense fallback={null}>
+                            <HistorialButton />
+                        </Suspense>
+                    </div>
                 </header>
 
                 <Suspense fallback={
@@ -203,5 +211,19 @@ export default function PendientesPage() {
                 </footer>
             </div>
         </div>
+    );
+}
+
+function HistorialButton() {
+    const searchParams = useSearchParams();
+    const responsable = searchParams.get("responsable");
+    return (
+        <Link 
+            href={`/externo/historial${responsable ? `?responsable=${encodeURIComponent(responsable)}` : ''}`}
+        >
+            <Button variant="outline" className="gap-2 text-[#254153] hover:bg-gray-100 border-[#254153]/20 shadow-sm">
+                <History className="h-4 w-4" /> Historial de Aprobación
+            </Button>
+        </Link>
     );
 }

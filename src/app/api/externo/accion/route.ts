@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGraphClient } from '@/lib/sharepoint';
+import { createSapDraft } from '@/lib/sap';
+import { supabase } from '@/lib/supabaseClient';
 
 export async function POST(req: NextRequest) {
     try {
-        const { itemId, action, observaciones, distribuciones, anticipo, valor, listName = 'Registro_de_Facturas' } = await req.json();
-
-
+        const { itemId, action, observaciones, distribuciones, anticipo, valor, nit, nroFactura, listName = 'Registro_de_Facturas' } = await req.json();
 
         if (!itemId || !action) {
             return NextResponse.json({ error: 'Missing itemId or action' }, { status: 400 });
@@ -13,6 +13,13 @@ export async function POST(req: NextRequest) {
 
         if (action !== 'Aprobado' && action !== 'Rechazado') {
             return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+        }
+
+        // Clean valor if present (Number field in SP)
+        let cleanValor: number | null = null;
+        if (valor) {
+            const numericValue = String(valor).replace(/[^0-9]/g, '');
+            cleanValor = numericValue ? Number(numericValue) : null;
         }
 
         const client = await getGraphClient();
@@ -28,8 +35,7 @@ export async function POST(req: NextRequest) {
         if (!list) throw new Error(`SharePoint list "${listName}" not found`);
         const listId = list.id;
 
-
-        // 3. Update the Item
+        // 3. Update the Item AND Fetch current fields for SAP
         const isDocSoporte = listName === 'Documento_Soporte';
         const updatePayload: any = {};
 
@@ -39,6 +45,9 @@ export async function POST(req: NextRequest) {
             updatePayload.Aprobacion_Doliente = action;
         }
 
+        if (action === 'Aprobado') {
+            updatePayload.FechaAprobacion = new Date().toISOString();
+        }
 
         if (observaciones) {
             updatePayload.Observaciones = observaciones;
@@ -48,24 +57,134 @@ export async function POST(req: NextRequest) {
             updatePayload.tiene_anticipo = anticipo;
         }
 
+        if (cleanValor !== null) {
+            updatePayload.Valortotal = cleanValor;
+        }
 
+        let jsonDist = "";
         if (distribuciones && Array.isArray(distribuciones) && distribuciones.length > 0) {
             const centroCostosArray = distribuciones.map((d: any) => ({
-                centroCosto: d.centroCostos || "",
+                centroCosto: d.centroCosto || d.centroCostos || "",
                 cuenta: d.cuenta || "",
                 valor: d.valor ? String(d.valor) : "0"
             }));
-            updatePayload.centro_costos = JSON.stringify(centroCostosArray);
+            jsonDist = JSON.stringify(centroCostosArray);
+            updatePayload.centro_costos = jsonDist;
         }
 
-        await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
+        // Apply update to SharePoint
+        console.log(`Sending PATCH to SharePoint item ${itemId} in list ${listId}:`, JSON.stringify(updatePayload, null, 2));
+        try {
+            await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
+            console.log(`SharePoint update for item ${itemId} to ${action} successful`);
+        } catch (spErr: any) {
+            console.error('SharePoint Patch Error Details:', JSON.stringify(spErr.body || spErr, null, 2));
+            throw new Error(`Error al actualizar SharePoint: ${spErr.message || 'Invalid request'}`);
+        }
 
-        console.log(`Public update for item ${itemId} to ${action} successful`);
+        // Sync to Supabase for immediate feedback
+        try {
+            if (isDocSoporte) {
+                const supabaseUpdate: any = {
+                    aprobacion_doliente: action,
+                    updated_at: new Date().toISOString()
+                };
+                if (cleanValor !== null) {
+                    supabaseUpdate.valor_total = cleanValor;
+                }
+                if (observaciones) {
+                    supabaseUpdate.observaciones = observaciones;
+                }
+                if (anticipo) {
+                    supabaseUpdate.tiene_anticipo = anticipo;
+                }
+                if (updatePayload.centro_costos) {
+                    supabaseUpdate.centro_costos = updatePayload.centro_costos;
+                }
 
+                const { error: supaErr } = await supabase
+                    .from('Documento_Soporte')
+                    .update(supabaseUpdate)
+                    .eq('id', Number(itemId));
+                
+                if (supaErr) throw supaErr;
+                console.log(`Supabase cache updated for Documento_Soporte item ${itemId}`);
+            } else {
+                const supabaseUpdate: any = {
+                    Aprobacion_Doliente: action,
+                    updated_at: new Date().toISOString()
+                };
+                if (updatePayload.FechaAprobacion) {
+                    supabaseUpdate.FechaAprobacion = updatePayload.FechaAprobacion;
+                }
+                if (cleanValor !== null) {
+                    supabaseUpdate["Valor_total"] = cleanValor;
+                }
+                if (observaciones) {
+                    supabaseUpdate.Observaciones = observaciones;
+                }
+                if (updatePayload.centro_costos) {
+                    supabaseUpdate.centro_costos = updatePayload.centro_costos;
+                    supabaseUpdate.tablaCostos = jsonDist; // Keep full version in Supabase
+                }
 
-        return NextResponse.json({ success: true });
+                const { error: supaErr } = await supabase
+                    .from('Registro_Facturas')
+                    .update(supabaseUpdate)
+                    .eq('ID', Number(itemId));
+                
+                if (supaErr) throw supaErr;
+                console.log(`Supabase cache updated for Registro_Facturas item ${itemId}`);
+            }
+        } catch (supaErr) {
+            console.error('Failed to update Supabase cache:', supaErr);
+        }
+
+        // FETCH the item again to get the "Consecutivo" and "Proveedor" from SharePoint
+        const spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).get();
+        const consecutivoReal = spItem.Consecutivo || itemId;
+        const proveedorReal = spItem.Proveedor || spItem.tsic || spItem.Nombre_proveedor || spItem.Razon_social || "Proveedor Desconocido";
+
+        // 4. Trigger SAP Draft Creation on Approval
+        let sapResult = null;
+        if (action === 'Aprobado') {
+            try {
+                console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
+
+                sapResult = await createSapDraft({
+                    nit: nit || "",
+                    total: cleanValor !== null ? cleanValor : (valor || "0"),
+                    distribuciones: distribuciones || [],
+                    anticipo: anticipo === 'Con anticipo' ? 't' : 'f',
+                    observations: observaciones || 'Aprobado vía portal externo',
+                    nroFactura: nroFactura || itemId,
+                    docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA',
+                    itemId: consecutivoReal,
+                    proveedorName: proveedorReal,
+                    seriesName: isDocSoporte ? 'DSE3' : undefined
+                });
+            } catch (sapErr: any) {
+                console.error('Failed to trigger SAP Draft registration:', sapErr.message);
+                sapResult = { success: false, error: sapErr.message };
+
+                // LOG ERROR TO SUPABASE
+                try {
+                    await supabase.from('log_errores_sap').insert({
+                        factura_id: Number(itemId),
+                        nro_factura: nroFactura || String(itemId),
+                        proveedor: proveedorReal,
+                        error_mensaje: sapErr.message,
+                        detalles: sapErr
+                    });
+                } catch (logErr) {
+                    console.error('Failed to log SAP error to database:', logErr);
+                }
+            }
+        }
+
+        return NextResponse.json({ success: true, sap: sapResult });
     } catch (error: any) {
-        console.error('Error in public action API:', error);
+        console.error('Error in externo-accion API:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
