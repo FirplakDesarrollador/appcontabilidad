@@ -40,9 +40,11 @@ export async function POST(req: NextRequest) {
                     }
                 } else {
                     console.warn('[SharePoint] No se pudo asegurar el responsable por email:', responsableEmail);
+                    return NextResponse.json({ error: `El correo responsable (${responsableEmail}) no es válido o no existe en SharePoint.` }, { status: 400 });
                 }
             } catch (e) {
                 console.warn('[SharePoint] Error resolviendo el responsable por email:', responsableEmail, e);
+                return NextResponse.json({ error: `Ocurrió un error validando al responsable (${responsableEmail}).` }, { status: 400 });
             }
         }
 

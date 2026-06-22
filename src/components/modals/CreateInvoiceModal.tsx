@@ -321,7 +321,7 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                                                             } else {
                                                                                 const searchUser = async (nameToSearch: string) => {
                                                                                     let cleanSearchName = nameToSearch.replace(/\uFFFD/g, 'ñ');
-                                                                                    const parts = cleanSearchName.split(' ');
+                                                                                    const parts = cleanSearchName.split(' ').filter(p => p.trim() !== '');
                                                                                     const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanSearchName;
                                                                                     
                                                                                     const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
@@ -329,7 +329,16 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                                                                     const users = userData.users || [];
                                                                                     
                                                                                     if (users.length > 0) {
-                                                                                        return users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase())) || users[0];
+                                                                                        const exactMatch = users.find((u: any) => u.name.toLowerCase() === cleanSearchName.toLowerCase());
+                                                                                        if (exactMatch) return exactMatch;
+                                                                                        
+                                                                                        const allPartsMatch = users.find((u: any) => {
+                                                                                            const name = u.name.toLowerCase();
+                                                                                            return parts.every(p => name.includes(p.toLowerCase()));
+                                                                                        });
+                                                                                        if (allPartsMatch) return allPartsMatch;
+                                                                                        
+                                                                                        return null;
                                                                                     }
                                                                                     return null;
                                                                                 };
@@ -444,7 +453,7 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                             onChange={(e) => {
                                                 setUserSearch(e.target.value);
                                                 setAutoFilledResponsable(false);
-                                                if (e.target.value === "") setFormData({...formData, responsableEmail: ""});
+                                                setFormData({...formData, responsableEmail: ""});
                                             }}
                                             className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-[#254153] ${
                                                 autoFilledResponsable ? 'bg-emerald-50/50 border-emerald-200' : 'bg-gray-50 border-gray-100'

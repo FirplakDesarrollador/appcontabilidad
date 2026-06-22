@@ -70,10 +70,14 @@ export async function POST(req: NextRequest) {
                     responsableLookupId = spUser.id;
                 } else {
                     console.warn('[SharePoint] No se pudo asegurar el responsable por email:', responsableEmail);
+                    return NextResponse.json({ error: `El correo responsable (${responsableEmail}) no es válido o no existe en SharePoint.` }, { status: 400 });
                 }
             } catch (e) {
                 console.warn('[SharePoint] Error resolviendo responsable por email:', responsableEmail, e);
+                return NextResponse.json({ error: `Ocurrió un error validando al responsable (${responsableEmail}).` }, { status: 400 });
             }
+        } else {
+            return NextResponse.json({ error: 'Debes seleccionar un responsable para la factura.' }, { status: 400 });
         }
 
         const fields: Record<string, any> = {
