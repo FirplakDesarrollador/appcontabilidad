@@ -65,17 +65,17 @@ export async function POST(req: NextRequest) {
         const newItem = await createSharePointListItem(siteIdFPK, 'Documento_Soporte', fields);
         const newItemId = newItem.id;
 
-        // 3. Adjuntar el archivo al ítem de la lista usando la API de REST (más confiable para adjuntos)
-        const fileBuffer = Buffer.from(await file.arrayBuffer());
+        // 3. Adjuntar el archivo principal y los anexos al ítem de la lista usando la API de REST
+        const attachments = formData.getAll('attachments') as File[];
+        const filesToAttach = [file, ...attachments].filter(Boolean);
+
+        const fileBuffer = Buffer.from(await file.arrayBuffer()); // Guardamos el buffer del archivo principal para Supabase
+
         try {
             const restToken = await getSharePointRESTToken();
             if (restToken) {
                 const spBaseUrl = 'https://firplaksa.sharepoint.com/sites/FPKContabilidad';
-                const escapedFileName = file.name.replace(/'/g, "''");
-                const attachUrl = `${spBaseUrl}/_api/web/lists/getbytitle('Documento_Soporte')/items(${newItemId})/AttachmentFiles/add(FileName='${escapedFileName}')`;
                 
-                console.log(`[SharePoint] Attaching file to Documento_Soporte item ${newItemId} via REST...`);
-
                 let digest = "";
                 try {
                     const digestRes = await fetch(`${spBaseUrl}/_api/contextinfo`, {
@@ -92,27 +92,35 @@ export async function POST(req: NextRequest) {
                 } catch (e) {
                     console.warn('[SharePoint] Could not fetch digest, proceeding without it...');
                 }
-                
-                const attachRes = await fetch(attachUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${restToken}`,
-                        'Accept': 'application/json;odata=verbose',
-                        'Content-Type': file.type || 'application/pdf',
-                        ...(digest ? { 'X-RequestDigest': digest } : {})
-                    },
-                    body: fileBuffer
-                });
 
-                if (!attachRes.ok) {
-                    const errorText = await attachRes.text();
-                    console.error('[SharePoint REST Error] Status:', attachRes.status, 'Body:', errorText);
-                } else {
-                    console.log('[SharePoint] File attached successfully to item', newItemId);
+                for (const f of filesToAttach) {
+                    const attachBuffer = Buffer.from(await f.arrayBuffer());
+                    const escapedFileName = f.name.replace(/'/g, "''");
+                    const attachUrl = `${spBaseUrl}/_api/web/lists/getbytitle('Documento_Soporte')/items(${newItemId})/AttachmentFiles/add(FileName='${escapedFileName}')`;
+                    
+                    console.log(`[SharePoint] Attaching file ${f.name} to Documento_Soporte item ${newItemId} via REST...`);
+                    
+                    const attachRes = await fetch(attachUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${restToken}`,
+                            'Accept': 'application/json;odata=verbose',
+                            'Content-Type': f.type || 'application/octet-stream',
+                            ...(digest ? { 'X-RequestDigest': digest } : {})
+                        },
+                        body: attachBuffer
+                    });
+
+                    if (!attachRes.ok) {
+                        const errorText = await attachRes.text();
+                        console.error('[SharePoint REST Error] Status:', attachRes.status, 'Body:', errorText);
+                    } else {
+                        console.log('[SharePoint] File attached successfully:', f.name);
+                    }
                 }
             }
         } catch (attachError) {
-            console.error('Error al adjuntar archivo al ítem de SharePoint:', attachError);
+            console.error('Error al adjuntar archivos al ítem de SharePoint:', attachError);
         }
 
         // 4. Upsert en Supabase para visibilidad inmediata
