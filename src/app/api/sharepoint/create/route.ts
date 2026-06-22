@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+
+export const dynamic = 'force-dynamic';
 import { getGraphClient, createSharePointFolder, uploadFileToSharePoint, createSharePointListItem, getSharePointRESTToken, ensureSharePointUserByEmail } from '@/lib/sharepoint';
 
 const supabaseAdmin = createClient(

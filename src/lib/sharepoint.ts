@@ -37,6 +37,9 @@ export const getGraphClient = async () => {
     const token = await getAccessToken();
     return Client.init({
         authProvider: (done) => { done(null, token!); },
+        fetchOptions: {
+            cache: 'no-store'
+        }
     });
 };
 

@@ -234,6 +234,13 @@ export default function PublicDocumentApprovalPage() {
 
     const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
         try {
+            if (action === 'Rechazado') {
+                if (!observaciones || observaciones.trim() === "") {
+                    alert("Por favor, ingresa una observación para poder rechazar el documento.");
+                    return;
+                }
+            }
+
             if (action === 'Aprobado') {
                 if (!anticipo) {
                     alert("Por favor, responde las preguntas de validación antes de aprobar.");
@@ -629,7 +636,7 @@ export default function PublicDocumentApprovalPage() {
                                                     value={observaciones}
                                                     onChange={(e) => setObservaciones(e.target.value)}
                                                     className="w-full rounded-2xl border border-gray-200 p-5 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all resize-none h-28 text-sm text-gray-700 placeholder-gray-400"
-                                                    placeholder="Añade observaciones (opcional)..."
+                                                    placeholder="Añade observaciones (obligatorio para rechazar)..."
                                                     disabled={!!actionLoading}
                                                 />
                                             </div>
