@@ -30,6 +30,7 @@ export default function DocumentoSoporteExternoPage() {
     });
 
     const [file, setFile] = useState<File | null>(null);
+    const [attachments, setAttachments] = useState<File[]>([]);
     const [isLookingUp, setIsLookingUp] = useState(false);
     const [autoFilled, setAutoFilled] = useState(false);
 
@@ -100,7 +101,20 @@ export default function DocumentoSoporteExternoPage() {
                         const users = userData.users || [];
                         
                         if (users.length > 0) {
-                            return users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase())) || users[0];
+                            // 1. Intentar match exacto con el searchQuery
+                            let match = users.find((u: any) => u.name.toLowerCase().includes(searchQuery.toLowerCase()));
+                            // 2. Si no, intentar que incluya todas las partes principales
+                            if (!match && parts.length > 1) {
+                                match = users.find((u: any) => {
+                                    const uName = u.name.toLowerCase();
+                                    return uName.includes(parts[0].toLowerCase()) && uName.includes(parts[1].toLowerCase());
+                                });
+                            }
+                            // 3. Fallback al primer nombre
+                            if (!match) {
+                                match = users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase()));
+                            }
+                            return match || users[0];
                         }
                         return null;
                     };
@@ -151,6 +165,9 @@ export default function DocumentoSoporteExternoPage() {
                 data.append("responsableNombre", (formData as any).responsableNombre);
             }
             data.append("file", file);
+            attachments.forEach(att => {
+                data.append("attachments", att);
+            });
 
             const res = await fetch("/api/sharepoint/documentos/create", {
                 method: "POST",
@@ -198,6 +215,7 @@ export default function DocumentoSoporteExternoPage() {
                             setSuccess(false);
                             setFormData({ nit: "", proveedor: "", responsableEmail: "" });
                             setFile(null);
+                            setAttachments([]);
                             setAutoFilled(false);
                         }}
                         className="w-full h-12 rounded-xl bg-[#254153] hover:bg-[#1a2f3d] text-white font-bold"
@@ -371,6 +389,62 @@ export default function DocumentoSoporteExternoPage() {
                                             <div>
                                                 <p className="text-base font-bold text-[#254153]">Selecciona o arrastra el PDF aquí</p>
                                                 <p className="text-sm text-gray-400 font-medium mt-1">Peso máximo permitido: 10MB</p>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Anexos (Opcional) */}
+                            <div className="space-y-1.5 pt-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Anexos / Archivos Adjuntos (Opcional)</label>
+                                <div 
+                                    className={`relative border-2 border-dashed rounded-3xl p-6 flex flex-col items-center text-center space-y-3 transition-all cursor-pointer group
+                                        ${attachments.length > 0 ? "border-[#254153]/50 bg-[#254153]/5" : "border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300"}`}
+                                >
+                                    <input
+                                        type="file"
+                                        multiple
+                                        onChange={(e) => {
+                                            if (e.target.files) {
+                                                setAttachments(prev => [...prev, ...Array.from(e.target.files as FileList)]);
+                                            }
+                                        }}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                    />
+                                    {attachments.length > 0 ? (
+                                        <div className="flex flex-col gap-2 w-full text-left relative z-20">
+                                            {attachments.map((att, i) => (
+                                                <div key={i} className="flex items-center justify-between bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                                    <div className="flex items-center gap-3 overflow-hidden">
+                                                        <FileText className="h-5 w-5 text-[#254153] shrink-0" />
+                                                        <div className="overflow-hidden">
+                                                            <p className="text-sm font-bold text-[#254153] truncate">{att.name}</p>
+                                                            <p className="text-xs text-gray-500 font-medium">{(att.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setAttachments(prev => prev.filter((_, index) => index !== i));
+                                                        }}
+                                                        className="p-2 hover:bg-rose-50 text-gray-400 hover:text-rose-500 rounded-lg transition-colors"
+                                                    >
+                                                        <AlertCircle className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            <p className="text-xs text-[#254153] font-bold underline mt-2 text-center">Haz clic o arrastra para añadir más archivos</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="h-14 w-14 rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center group-hover:scale-110 transition-transform">
+                                                <Upload className="h-6 w-6 text-gray-400 group-hover:text-[#254153] transition-colors" />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-[#254153]">Selecciona o arrastra anexos adicionales aquí</p>
+                                                <p className="text-xs text-gray-400 font-medium mt-1">Puedes subir múltiples archivos</p>
                                             </div>
                                         </>
                                     )}
