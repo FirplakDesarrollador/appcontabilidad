@@ -255,14 +255,13 @@ export default function InvoicesPage() {
             setPreviewError(null);
             setPreviewLoading(true);
             const fileName = invoice?.documentInfo?.fileName || 'Factura';
-            const res = await fetch(`/api/externo/factura/${invoice.id}/download?file=${encodeURIComponent(fileName)}`);
+            const apiUrl = `/api/externo/factura/${invoice.id}/download?file=${encodeURIComponent(fileName)}`;
+            const res = await fetch(apiUrl);
             if (!res.ok) {
                 const data = await res.json();
                 throw new Error(data.error || "No se ha encontrado factura en PDF");
             }
-            const blob = await res.blob();
-            const url = window.URL.createObjectURL(blob);
-            setPreviewUrl(url);
+            setPreviewUrl(apiUrl);
         } catch (err: any) {
             console.error('Preview error:', err);
             setPreviewError(err.message || "No se pudo cargar la vista previa");

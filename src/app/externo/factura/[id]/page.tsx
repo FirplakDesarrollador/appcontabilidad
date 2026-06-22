@@ -216,9 +216,16 @@ export default function PublicApprovalPage() {
         try {
             setPreviewError(null);
             setPreviewLoading(true);
-            const blob = await fetchPdfBlob();
-            const url = window.URL.createObjectURL(blob);
-            setPreviewUrl(url);
+            const fileName = invoice?.documentInfo?.fileName || 'Factura';
+            const apiUrl = `/api/externo/factura/${itemId}/download?file=${encodeURIComponent(fileName)}`;
+            
+            const res = await fetch(apiUrl);
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || "No se ha encontrado factura en PDF");
+            }
+            
+            setPreviewUrl(apiUrl);
         } catch (err: any) {
             console.error('Preview error:', err);
             setPreviewError(err.message || "No se pudo cargar la vista previa");

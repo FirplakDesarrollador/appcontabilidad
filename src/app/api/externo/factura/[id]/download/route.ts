@@ -22,8 +22,14 @@ export async function GET(
         const nitValue = invoiceDetails.Title || invoiceDetails.Nit_x0020_ || invoiceDetails["Nit "] || invoiceDetails.Nit || "N/A";
         const nroFactura = invoiceDetails.Nro_Factura;
 
+        const consecutivo = invoiceDetails.Consecutivo || "";
+        const proveedor = invoiceDetails.Proveedor || "";
+        const nroFacturaStr = invoiceDetails.Nro_Factura || "";
+        
+        let customFileName = `RAD ${consecutivo} ${proveedor} ${nroFacturaStr}`.replace(/\s+/g, ' ').trim();
+        
         let fileBuffer: ArrayBuffer | null = null;
-        let finalFileName = requestFileName || `factura_${nroFactura || itemId}.pdf`;
+        let finalFileName = `${customFileName}.pdf`;
 
         // 1. Try ITPowerApps first (most likely for "Todas tienen su carpeta")
         if (nroFactura && nitValue !== 'N/A') {
@@ -36,8 +42,7 @@ export async function GET(
                     const response = await client.api(`/drives/${externalDoc.driveId}/items/${externalDoc.id}/content`).get();
                     if (response) {
                         fileBuffer = response;
-                        finalFileName = externalDoc.fileName;
-                        console.log(`[Direct Download] Successfully fetched ${finalFileName} from ITPowerApps`);
+                        console.log(`[Direct Download] Successfully fetched ${externalDoc.fileName} from ITPowerApps, outputting as ${finalFileName}`);
                     }
                 } catch (extErr) {
                     console.error(`[Direct Download] Failed to fetch content from ITPowerApps:`, extErr);
@@ -58,7 +63,6 @@ export async function GET(
                     const attResponse = await client.api(`/sites/${siteId}/lists/${list.id}/items/${itemId}/attachments/${requestFileName}/$value`).get();
                     if (attResponse) {
                         fileBuffer = attResponse;
-                        finalFileName = requestFileName;
                         console.log(`[Direct Download] Successfully fetched attachment from FPKContabilidad`);
                     }
                 }
@@ -83,8 +87,8 @@ export async function GET(
         return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename="${finalFileName}"`,
-                'Cache-Control': 'no-store',
+                'Content-Disposition': `inline; filename="${finalFileName}"`,
+                'Cache-Control': 'public, max-age=300',
             },
         });
 
