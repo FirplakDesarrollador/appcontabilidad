@@ -160,7 +160,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
             nitWithDash = `${cleanNit.substring(0, 8)}-${cleanNit.substring(8)}`;
         }
 
-        const nitFilter = `(FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}')`;
+        const nitFilter = `(FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}' or CardCode eq 'AC${baseNit}' or CardCode eq 'PN${baseNit}' or CardCode eq 'AC${baseNit}-01' or CardCode eq 'PN${baseNit}-01')`;
         const vendorCodeFilter = `(startswith(CardCode,'AC') or startswith(CardCode,'PN'))`;
         const bpUrl = `${baseUrl}/BusinessPartners?$filter=${nitFilter} and ${vendorCodeFilter}&$select=CardCode,CardName,FederalTaxID,CardType`;
         const bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
