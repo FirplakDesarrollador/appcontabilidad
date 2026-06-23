@@ -285,7 +285,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                                                             } else {
                                                                                 const searchUser = async (nameToSearch: string) => {
                                                                                     let cleanSearchName = nameToSearch.replace(/\uFFFD/g, 'ñ');
-                                                                                    const parts = cleanSearchName.split(' ');
+                                                                                    const parts = cleanSearchName.split(' ').filter(p => p.trim() !== '');
                                                                                     const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanSearchName;
                                                                                     
                                                                                     const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
@@ -293,7 +293,26 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                                                                     const users = userData.users || [];
                                                                                     
                                                                                     if (users.length > 0) {
-                                                                                        return users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase())) || users[0];
+                                                                                        const exact = users.find((u: any) => u.name.toLowerCase() === cleanSearchName.toLowerCase());
+                                                                                        if (exact) return exact;
+
+                                                                                        let bestMatch = users[0];
+                                                                                        let bestScore = 0;
+
+                                                                                        for (const user of users) {
+                                                                                            const userNameLower = user.name.toLowerCase();
+                                                                                            let score = 0;
+                                                                                            for (const part of parts) {
+                                                                                                if (userNameLower.includes(part.toLowerCase())) {
+                                                                                                    score++;
+                                                                                                }
+                                                                                            }
+                                                                                            if (score > bestScore) {
+                                                                                                bestScore = score;
+                                                                                                bestMatch = user;
+                                                                                            }
+                                                                                        }
+                                                                                        return bestMatch;
                                                                                     }
                                                                                     return null;
                                                                                 };

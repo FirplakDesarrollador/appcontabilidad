@@ -1550,9 +1550,15 @@ export default function InvoicesPage() {
                                                     <p className="text-[11px] font-bold text-gray-400 uppercase">Proveedor</p>
                                                     <p className="text-lg font-black text-[#254153]">{selectedInvoice.Proveedor || "N/A"}</p>
                                                 </div>
-                                                <div>
-                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">NIT</p>
-                                                    <p className="font-bold text-gray-600">{selectedInvoice.Nit || "N/A"}</p>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <p className="text-[11px] font-bold text-gray-400 uppercase">NIT</p>
+                                                        <p className="font-bold text-gray-600">{selectedInvoice.Nit || "N/A"}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[11px] font-bold text-gray-400 uppercase">Consecutivo</p>
+                                                        <p className="font-bold text-gray-600">{selectedInvoice.Consecutivo || "N/A"}</p>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1572,6 +1578,12 @@ export default function InvoicesPage() {
                                                     <p className="text-[11px] font-bold text-gray-400 uppercase">Fecha Aprobación</p>
                                                     <p className="font-bold text-gray-600">
                                                         {selectedInvoice.FechaAprobacion ? new Date(selectedInvoice.FechaAprobacion).toLocaleString() : "Pendiente"}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Anticipo / Tarjeta</p>
+                                                    <p className="font-bold text-gray-600">
+                                                        {selectedInvoice.tiene_anticipo || "N/A"}
                                                     </p>
                                                 </div>
                                             </div>
