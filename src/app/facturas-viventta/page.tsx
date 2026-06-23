@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle } from "lucide-react";
@@ -250,6 +250,44 @@ export default function ViventtaInvoicesPage() {
     const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
 
     // Create invoice form states (local mock modal)
+    const [providerSearch, setProviderSearch] = useState("");
+    const [providerResults, setProviderResults] = useState<any[]>([]);
+    const [isSearchingProviders, setIsSearchingProviders] = useState(false);
+    const [showProviderResults, setShowProviderResults] = useState(false);
+    const providerDropdownRef = useRef<HTMLDivElement>(null);
+
+    const searchProviders = useCallback(async (query: string) => {
+        setIsSearchingProviders(true);
+        try {
+            const res = await fetch(`/api/providers/search?q=${encodeURIComponent(query)}&table=Proveedores_Viventta&limit=15`);
+            const data = await res.json();
+            setProviderResults(data.providers || []);
+        } catch (e) {
+            console.error("Error searching providers:", e);
+        } finally {
+            setIsSearchingProviders(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (showProviderResults) {
+                searchProviders(providerSearch);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [providerSearch, searchProviders, showProviderResults]);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (providerDropdownRef.current && !providerDropdownRef.current.contains(event.target as Node)) {
+                setShowProviderResults(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
     const [createFormData, setCreateFormData] = useState({
         nit: "",
         proveedor: "",
@@ -517,6 +555,7 @@ export default function ViventtaInvoicesPage() {
 
         setInvoices(prev => [newInvoice, ...prev]);
         setIsCreateModalOpen(false);
+        setProviderSearch("");
         setCreateFormData({
             nit: "",
             proveedor: "",
@@ -1255,28 +1294,75 @@ export default function ViventtaInvoicesPage() {
                                     </div>
 
                                     <div className="space-y-4">
-                                        <div>
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider block mb-1">NIT del Proveedor *</label>
-                                            <input
-                                                type="text"
-                                                required
-                                                placeholder="Ej: 901234567-8"
-                                                value={createFormData.nit}
-                                                onChange={(e) => setCreateFormData({ ...createFormData, nit: e.target.value })}
-                                                className="w-full h-11 px-4 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:bg-white transition-all text-[#254153] font-bold"
-                                            />
+                                        <div className="relative" ref={providerDropdownRef}>
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider block mb-1">Razón Social del Proveedor *</label>
+                                            <div className="relative group">
+                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 group-focus-within:text-[#254153] transition-colors" />
+                                                <input
+                                                    required
+                                                    type="text"
+                                                    value={createFormData.proveedor ? createFormData.proveedor : providerSearch}
+                                                    onChange={(e) => {
+                                                        setProviderSearch(e.target.value);
+                                                        if (createFormData.proveedor) {
+                                                            setCreateFormData({...createFormData, proveedor: "", nit: ""});
+                                                        }
+                                                    }}
+                                                    onFocus={() => setShowProviderResults(true)}
+                                                    className="w-full pl-9 pr-10 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:bg-white transition-all font-bold text-[#254153]"
+                                                    placeholder="Buscar proveedor..."
+                                                />
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                                    {isSearchingProviders && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#254153]" />}
+                                                </div>
+                                            </div>
+
+                                            <AnimatePresence>
+                                                {showProviderResults && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, y: 5 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        exit={{ opacity: 0, y: 5 }}
+                                                        className="absolute z-[110] w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto custom-scrollbar"
+                                                    >
+                                                        {providerResults.length > 0 ? (
+                                                            providerResults.map((p, idx) => (
+                                                                <button
+                                                                    key={`${p.numero_identificacion}-${idx}`}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setCreateFormData({...createFormData, proveedor: p.razon_social, nit: p.numero_identificacion});
+                                                                        setProviderSearch(p.razon_social);
+                                                                        setShowProviderResults(false);
+                                                                    }}
+                                                                    className="w-full px-4 py-2.5 text-left hover:bg-gray-50 border-b border-gray-50 last:border-0 transition-colors flex flex-col"
+                                                                >
+                                                                    <span className="text-xs font-bold text-[#254153] line-clamp-1">{p.razon_social}</span>
+                                                                    <span className="text-[10px] text-gray-400">NIT: {p.numero_identificacion}</span>
+                                                                </button>
+                                                            ))
+                                                        ) : (
+                                                            <div className="px-4 py-3 text-xs text-gray-400 text-center">
+                                                                {isSearchingProviders ? "Buscando..." : "No se encontraron proveedores"}
+                                                            </div>
+                                                        )}
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
                                         </div>
 
                                         <div>
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider block mb-1">Razón Social del Proveedor *</label>
-                                            <input
-                                                type="text"
-                                                required
-                                                placeholder="Ej: Suministros Viventta SAS"
-                                                value={createFormData.proveedor}
-                                                onChange={(e) => setCreateFormData({ ...createFormData, proveedor: e.target.value })}
-                                                className="w-full h-11 px-4 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:bg-white transition-all text-[#254153] font-bold"
-                                            />
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider block mb-1">NIT del Proveedor *</label>
+                                            <div className="relative group">
+                                                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 group-focus-within:text-[#254153] transition-colors" />
+                                                <input
+                                                    readOnly
+                                                    type="text"
+                                                    value={createFormData.nit}
+                                                    className="w-full pl-9 pr-3 py-2.5 bg-gray-100 border border-gray-100 rounded-xl text-sm font-bold text-gray-500 cursor-not-allowed"
+                                                    placeholder="NIT automático"
+                                                />
+                                            </div>
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-4">
