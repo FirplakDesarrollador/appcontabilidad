@@ -11,6 +11,21 @@ import { Switch } from "@/components/ui/Switch";
 import { useSidebar } from "@/context/SidebarContext";
 import { Menu } from "lucide-react";
 import { CreateSupportDocumentModal } from "@/components/modals/CreateSupportDocumentModal";
+import { AgGridReact } from 'ag-grid-react';
+import { useRef } from 'react';
+import * as XLSX from 'xlsx';
+import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
+
+ModuleRegistry.registerModules([AllCommunityModule]);
+
+const AG_GRID_LOCALE_ES = {
+    filterOoo: 'Buscar...', empty: 'Elige uno', equals: 'Igual a', notEqual: 'Diferente a',
+    lessThan: 'Menor que', greaterThan: 'Mayor que', lessThanOrEqual: 'Menor o igual a', greaterThanOrEqual: 'Mayor o igual a',
+    inRange: 'Rango', contains: 'Buscar...', notContains: 'No contiene', startsWith: 'Inicia con',
+    endsWith: 'Termina con', blank: 'En blanco', notBlank: 'No en blanco', andCondition: 'Y',
+    orCondition: 'O', applyFilter: 'Aplicar', resetFilter: 'Reiniciar', clearFilter: 'Limpiar',
+    cancelFilter: 'Cancelar', noRowsToShow: 'No hay registros para mostrar', loadingOoo: 'Cargando...',
+};
 
 interface SharePointDocument {
     id: string;
@@ -396,6 +411,109 @@ export default function SupportDocumentsPage() {
                matchesColResponsible && matchesColStatus && matchesColContabilidad;
     });
 
+    const gridRef = useRef<AgGridReact>(null);
+    const [displayedRowCount, setDisplayedRowCount] = useState<number>(0);
+
+    const handleExportExcel = () => {
+        if (!gridRef.current || !gridRef.current.api) return;
+        const rowData: any[] = [];
+        gridRef.current.api.forEachNodeAfterFilterAndSort((node) => {
+            if (node.data) rowData.push(node.data);
+        });
+        
+        const excelData = rowData.map((doc: any) => ({
+            'Documento': doc.Nro_Factura,
+            'NIT': doc.Nit,
+            'Proveedor': doc.Proveedor,
+            'Valor Total': doc.Monto,
+            'Responsable': doc.Responsable_de_Autorizar,
+            'Estado': doc.Aprobacion_Doliente,
+            'G. Contabilidad': doc.Gestion_Contabilidad,
+            'Consecutivo': doc.Consecutivo,
+            'Fecha Creación': doc.Created ? new Date(doc.Created).toLocaleString() : 'Sin fecha',
+            'Fecha Aprobación': doc.FechaAprobacion ? new Date(doc.FechaAprobacion).toLocaleString() : 'Sin fecha',
+            'Observaciones': doc.Observaciones || ''
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Documentos');
+        XLSX.writeFile(workbook, 'Documentos_Soporte.xlsx');
+    };
+
+    const formatCostCenter = (costCenterStr: any, tableCostStr: any) => {
+        if (!costCenterStr && !tableCostStr) return 'Sin asignar';
+        if (costCenterStr) {
+            try {
+                const parsed = typeof costCenterStr === 'string' ? JSON.parse(costCenterStr) : costCenterStr;
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    return (
+                        <div className="flex flex-col gap-1.5 py-1">
+                            {parsed.map((p: any, i: number) => (
+                                <div key={i} className="whitespace-normal break-words leading-tight bg-gray-50/50 rounded p-1">
+                                    <span className="text-[#254153] font-extrabold">{p.centroCosto?.split(' - ')[0] || ''}</span>
+                                    <span className="text-gray-300 mx-1.5">|</span>
+                                    <span className="text-gray-600">{p.cuenta || ''}</span>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                }
+            } catch (e) {
+                return <div className="whitespace-normal break-words leading-tight">{String(costCenterStr)}</div>;
+            }
+        }
+        if (tableCostStr) {
+            if (typeof tableCostStr === 'object' && tableCostStr.Url) {
+                return 'Ver tabla adjunta';
+            }
+            return <div className="whitespace-normal break-words leading-tight">{String(tableCostStr)}</div>;
+        }
+        return 'Sin asignar';
+    };
+
+    const sortedDocuments = useMemo(() => {
+        return filteredDocuments;
+    }, [filteredDocuments]);
+
+    const colDefs = useMemo(() => [
+        {
+            headerName: 'Acciones',
+            field: 'id',
+            width: 160,
+            pinned: 'left',
+            filter: false,
+            sortable: false,
+            cellRenderer: (params: any) => {
+                const doc = params.data;
+                if (!doc) return null;
+                return (
+                    <div className="flex items-center justify-start gap-2 h-full py-2">
+                        <Button variant="outline" onClick={() => handleCopyLink(doc)} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Copiar Link Público">
+                            <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" onClick={() => { setSelectedDoc(doc); }} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Ver Detalle">
+                            <Search className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
+                );
+            }
+        },
+        { headerName: 'NIT', field: 'Nit', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || 'N/A'}</div> },
+        { headerName: 'Proveedor', field: 'Proveedor', width: 250, cellRenderer: (p: any) => <div className="text-sm font-bold text-gray-800 h-full flex items-center">{p.value || 'N/A'}</div> },
+        { headerName: 'Documento', field: 'Nro_Factura', width: 160, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="font-bold text-[#254153] leading-none">{p.value || 'S/N'}</div><div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {p.data?.id}</div></div> },
+        { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
+        { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || 'Sin asignar'}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ''}</div></div> },
+        { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || 'Pendiente'}</span></div> },
+        { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || 'Pendiente'}</div> },
+        { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || 'N/A'}</div> },
+        { headerName: 'Fecha Creación', field: 'Created', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : 'Sin fecha'}</div> },
+        { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{formatCostCenter(p.value, p.data?.tablaCostos)}</div> },
+        { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : 'Sin fecha'}</div> },
+        { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || 'Sin observaciones'}</div> },
+        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{p.value ? <a href={`/api/sharepoint/attachment-redirect?itemId=${p.data?.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
+    ], []);
+
     return (
         <div className="min-h-screen bg-[#f8fafc] flex">
             <Sidebar />
@@ -527,97 +645,44 @@ export default function SupportDocumentsPage() {
                         </button>
                     </div>
 
-                    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden">
-                        <div className="overflow-x-auto min-h-[400px]">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-50/50 border-b border-gray-100">
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Documento</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Proveedor</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Valor total</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Responsable</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">Estado</th>
-                                        <th className="px-6 py-5 text-[11px] font-bold text-gray-400 uppercase tracking-widest text-right">Acciones</th>
-                                    </tr>
-                                    <tr className="bg-white border-b border-gray-50">
-                                        <td className="px-3 py-2">
-                                            <input type="text" placeholder="Filtrar..." className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none" value={columnFilters.invoice} onChange={(e) => setColumnFilters({...columnFilters, invoice: e.target.value})} />
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input type="text" placeholder="Filtrar..." className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none" value={columnFilters.provider} onChange={(e) => setColumnFilters({...columnFilters, provider: e.target.value})} />
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input type="text" placeholder="Filtrar..." className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none" value={columnFilters.amount} onChange={(e) => setColumnFilters({...columnFilters, amount: e.target.value})} />
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input type="text" placeholder="Filtrar..." className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none" value={columnFilters.responsible} onChange={(e) => setColumnFilters({...columnFilters, responsible: e.target.value})} />
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input type="text" placeholder="Filtrar..." className="w-full px-2 py-1 text-[10px] border border-gray-100 rounded focus:border-blue-300 outline-none" value={columnFilters.status} onChange={(e) => setColumnFilters({...columnFilters, status: e.target.value})} />
-                                        </td>
-                                        <td className="px-3 py-2" />
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-50">
-                                    {loading ? (
-                                        Array.from({ length: 8 }).map((_, i) => (
-                                            <tr key={`skeleton-${i}`} className="animate-pulse">
-                                                <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
-                                                <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-40" /></td>
-                                                <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-24 ml-auto" /></td>
-                                                <td className="px-6 py-5"><div className="h-4 bg-gray-100 rounded w-32" /></td>
-                                                <td className="px-6 py-5"><div className="h-7 bg-gray-100 rounded-full w-24" /></td>
-                                                <td className="px-6 py-5 text-right"><div className="h-8 bg-gray-100 rounded-lg w-16 ml-auto" /></td>
-                                            </tr>
-                                        ))
-                                    ) : filteredDocuments.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={6} className="px-6 py-20 text-center">
-                                                <div className="flex flex-col items-center gap-3 opacity-30">
-                                                    <Search className="h-12 w-12 text-[#254153]" />
-                                                    <p className="text-lg font-bold text-[#254153]">No se encontraron documentos</p>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        filteredDocuments.map((doc, idx) => (
-                                            <motion.tr initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }} key={doc.id} className="hover:bg-[#f8fafc] transition-colors group">
-                                                <td className="px-6 py-5">
-                                                    <div className="font-bold text-[#254153] leading-none">{doc.Nro_Factura}</div>
-                                                    <div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">ID: {doc.id}</div>
-                                                </td>
-                                                <td className="px-6 py-5">
-                                                    <div className="text-sm font-bold text-gray-800">{doc.Proveedor}</div>
-                                                    <div className="text-[11px] text-gray-500 mt-0.5 font-medium">NIT: {doc.Nit}</div>
-                                                </td>
-                                                <td className="px-6 py-5 text-right">
-                                                    <div className="text-sm font-extrabold text-[#254153]">{formatCurrency(doc.Monto)}</div>
-                                                </td>
-                                                <td className="px-6 py-5">
-                                                    <div className="text-xs font-semibold text-gray-600">{doc.Responsable_de_Autorizar}</div>
-                                                    <div className="text-[10px] text-gray-400 font-medium">{doc.Created ? new Date(doc.Created).toLocaleDateString() : ""}</div>
-                                                </td>
-                                                <td className="px-6 py-5">
-                                                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(doc.Aprobacion_Doliente)}`}>
-                                                        {doc.Aprobacion_Doliente}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-5 text-right flex items-center justify-end gap-2">
-                                                    <Button variant="outline" onClick={() => handleCopyLink(doc)} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg flex items-center justify-center" title="Copiar Enlace">
-                                                        <Copy className="h-3.5 w-3.5" />
-                                                    </Button>
-                                                    <Button variant="outline" onClick={() => setSelectedDoc(doc)} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg flex items-center justify-center" title="Ver Detalle">
-                                                        <Search className="h-3.5 w-3.5" />
-                                                    </Button>
-                                                </td>
-
-                                            </motion.tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                    <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden w-full">
+                        <div style={{ width: '100%', height: '600px' }}>
+                            <AgGridReact
+                                ref={gridRef}
+                                theme={themeQuartz}
+                                localeText={AG_GRID_LOCALE_ES}
+                                rowData={sortedDocuments}
+                                columnDefs={colDefs}
+                                onModelUpdated={(e) => setDisplayedRowCount(e.api.getDisplayedRowCount())}
+                                defaultColDef={{
+                                    sortable: true,
+                                    filter: true,
+                                    filterParams: {
+                                        filterOptions: ['contains'],
+                                        suppressAndOrCondition: true,
+                                        maxNumConditions: 1,
+                                    },
+                                    resizable: true,
+                                    floatingFilter: true,
+                                    suppressMovable: false,
+                                }}
+                                rowHeight={70}
+                                headerHeight={60}
+                                floatingFiltersHeight={50}
+                                animateRows={true}
+                                pagination={false}
+                                overlayLoadingTemplate='<span class="ag-overlay-loading-center text-gray-500 font-bold">Cargando documentos...</span>'
+                                overlayNoRowsTemplate='<span class="ag-overlay-loading-center text-gray-500 font-bold">No se encontraron resultados</span>'
+                            />
                         </div>
                     </div>
+                    {!loading && filteredDocuments.length > 0 && (
+                        <div className="flex items-center justify-between pt-2">
+                            <div className="text-sm text-gray-400 font-medium italic">
+                                Mostrando <span className="text-[#254153] font-bold">{displayedRowCount}</span> de <span className="text-gray-600 font-bold">{filteredDocuments.length}</span> registros
+                            </div>
+                        </div>
+                    )}
                 </div>
             </main>
 
