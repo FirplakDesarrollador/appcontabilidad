@@ -52,27 +52,28 @@ export async function POST(req: NextRequest) {
             
         const fileUrl = publicUrlData.publicUrl;
 
-        // Crear registro en la tabla Registro_Facturas
+        // Crear registro en la tabla EXCLUSIVA de Viventta (Facturas_Viventta)
         const invoiceData = {
-            ID: Date.now(),
             Nit: nit,
             Proveedor: proveedor,
             Nro_Factura: nroFactura,
-            Valor_total: String(Number(monto) || 0), // Schema says text
+            Valor_total: String(Number(monto) || 0),
             Aprobacion_Doliente: 'Por Aprobar',
             Gestion_Contabilidad: 'Pendiente',
-            Responsable_de_Autorizar: responsable || "Sin asignar",
+            Responsable_de_Autorizar: responsable || 'Sin asignar',
+            Responsable_email: responsableEmail || '',
             fp: fileUrl,
             documentos: fileUrl,
-            Datos_adjuntos: 1, // Schema says bigInt
+            Datos_adjuntos: 1,
             Observaciones: observaciones || '',
-            Consecutivo: "CON-" + Math.floor(7000 + Math.random() * 1000), // Usando la misma lógica temporal que antes
+            Consecutivo: 'CON-' + Math.floor(7000 + Math.random() * 1000),
             centro_costos: JSON.stringify([{ centroCosto: centroCosto, cuenta: cuenta }]),
             Creado: new Date().toISOString(),
+            adjuntos_url: [],
         };
 
         const { data: insertData, error: insertError } = await supabaseAdmin
-            .from('Registro_Facturas')
+            .from('Facturas_Viventta')
             .insert([invoiceData])
             .select();
 

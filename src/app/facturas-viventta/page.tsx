@@ -212,17 +212,51 @@ const INITIAL_MOCK_INVOICES: SharePointInvoice[] = [
 export default function ViventtaInvoicesPage() {
     const { toggleSidebar } = useSidebar();
     
-    // Core states — persist invoices in localStorage
-    const [invoices, setInvoices] = useState<SharePointInvoice[]>(() => {
-        if (typeof window === 'undefined') return INITIAL_MOCK_INVOICES;
-        try {
-            const saved = localStorage.getItem('viventta_invoices');
-            if (saved) return JSON.parse(saved) as SharePointInvoice[];
-        } catch { /* ignore */ }
-        return INITIAL_MOCK_INVOICES;
-    });
-    const [loading, setLoading] = useState(false);
+    // Core states — load from Supabase (Facturas_Viventta)
+    const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
+    const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
+
+    // Load invoices from Facturas_Viventta on mount
+    const loadInvoicesFromDB = async () => {
+        setLoading(true);
+        try {
+            const res = await fetch('/api/facturas-viventta/list');
+            const data = await res.json();
+            if (data.success && data.items) {
+                // Map Supabase rows to the SharePointInvoice shape used by the UI
+                const mapped: SharePointInvoice[] = data.items.map((row: any) => ({
+                    id: String(row.id),
+                    ID: row.id,
+                    Nit: row.Nit || '',
+                    Proveedor: row.Proveedor || '',
+                    Nro_Factura: row.Nro_Factura || '',
+                    Valor_total: row.Valor_total || '0',
+                    Aprobacion_Doliente: row.Aprobacion_Doliente || 'Por Aprobar',
+                    Gestion_Contabilidad: row.Gestion_Contabilidad || 'Pendiente',
+                    Responsable_de_Autorizar: row.Responsable_de_Autorizar || '',
+                    Observaciones: row.Observaciones || '',
+                    Consecutivo: row.Consecutivo || '',
+                    Created: row.created_at || row.Creado || '',
+                    Creado: row.Creado || row.created_at || '',
+                    FechaAprobacion: row.FechaAprobacion || null,
+                    centro_costos: row.centro_costos || '[]',
+                    Attachments: !!(row.fp || row.documentos),
+                    documentInfo: row.fp ? { fileName: row.Nro_Factura + '.pdf', serverRelativeUrl: row.fp } : { fileName: '', serverRelativeUrl: '#' },
+                    adjuntos_url: row.adjuntos_url || [],
+                }));
+                setInvoices(mapped);
+            }
+        } catch (e) {
+            console.error('Error loading Facturas_Viventta:', e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadInvoicesFromDB();
+    }, []);
 
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
     const [loadLimit, setLoadLimit] = useState<number | 'all'>(100);
@@ -419,11 +453,9 @@ export default function ViventtaInvoicesPage() {
     const handleRefreshInvoices = async () => {
         setIsSyncingSharePoint(true);
         setDataSource('loading');
-        setTimeout(() => {
-            setIsSyncingSharePoint(false);
-            setDataSource('cache');
-            alert("✅ Sincronización con SharePoint de Viventta completada (Simulada).");
-        }, 1500);
+        await loadInvoicesFromDB();
+        setIsSyncingSharePoint(false);
+        setDataSource('cache');
     };
 
     useEffect(() => {
@@ -623,29 +655,9 @@ export default function ViventtaInvoicesPage() {
                 centroCosto: "VIV-ADM - Viventta Administración",
                 cuenta: "519595"
             });
-            
-            const newId = String(Date.now());
-            const newInvoice: SharePointInvoice = {
-                id: data.item?.id || newId,
-                ID: Number(data.item?.id) || Math.floor(Math.random() * 1000),
-                Nit: createFormData.nit,
-                Proveedor: createFormData.proveedor,
-                Nro_Factura: createFormData.nroFactura,
-                Monto: Number(createFormData.monto),
-                Valor_total: Number(createFormData.monto),
-                Responsable_de_Autorizar: createFormData.responsable || "Sin asignar",
-                Aprobacion_Doliente: "Por Aprobar",
-                Gestion_Contabilidad: "Pendiente",
-                Consecutivo: "CON-" + Math.floor(7000 + Math.random() * 1000),
-                Observaciones: createFormData.observaciones,
-                Created: new Date().toISOString(),
-                Creado: new Date().toISOString(),
-                centro_costos: JSON.stringify([{ centroCosto: createFormData.centroCosto, cuenta: createFormData.cuenta }]),
-                Attachments: true,
-                documentInfo: { fileName: createAttachmentFile.name, serverRelativeUrl: data.item?.fp || "#" },
-                adjuntos_url: []
-            };
-            setInvoices(prev => [newInvoice, ...prev]);
+
+            // Recargar lista completa desde Facturas_Viventta
+            await loadInvoicesFromDB();
 
         } catch (error: any) {
             console.error('Error:', error);
