@@ -212,16 +212,64 @@ const INITIAL_MOCK_INVOICES: SharePointInvoice[] = [
 export default function ViventtaInvoicesPage() {
     const { toggleSidebar } = useSidebar();
     
-    // Core states
-    const [invoices, setInvoices] = useState<SharePointInvoice[]>(INITIAL_MOCK_INVOICES);
-    const [loading, setLoading] = useState(false);
+    // Core states — load from Supabase (Facturas_Viventta)
+    const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
+    const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
+
+    // Load invoices from Facturas_Viventta on mount
+    const loadInvoicesFromDB = async () => {
+        setLoading(true);
+        try {
+            const res = await fetch('/api/facturas-viventta/list');
+            const data = await res.json();
+            if (data.success && data.items) {
+                // Map Supabase rows to the SharePointInvoice shape used by the UI
+                const mapped: SharePointInvoice[] = data.items.map((row: any) => ({
+                    id: String(row.id),
+                    ID: row.id,
+                    Nit: row.Nit || '',
+                    Proveedor: row.Proveedor || '',
+                    Nro_Factura: row.Nro_Factura || '',
+                    Valor_total: row.Valor_total || '0',
+                    Aprobacion_Doliente: row.Aprobacion_Doliente || 'Por Aprobar',
+                    Gestion_Contabilidad: row.Gestion_Contabilidad || 'Pendiente',
+                    Responsable_de_Autorizar: row.Responsable_de_Autorizar || '',
+                    Observaciones: row.Observaciones || '',
+                    Consecutivo: row.Consecutivo || '',
+                    Created: row.created_at || row.Creado || '',
+                    Creado: row.Creado || row.created_at || '',
+                    FechaAprobacion: row.FechaAprobacion || null,
+                    centro_costos: row.centro_costos || '[]',
+                    Attachments: !!(row.fp || row.documentos),
+                    documentInfo: row.fp ? { fileName: row.Nro_Factura + '.pdf', serverRelativeUrl: row.fp } : { fileName: '', serverRelativeUrl: '#' },
+                    adjuntos_url: row.adjuntos_url || [],
+                }));
+                setInvoices(mapped);
+            }
+        } catch (e) {
+            console.error('Error loading Facturas_Viventta:', e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadInvoicesFromDB();
+    }, []);
 
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
     const [loadLimit, setLoadLimit] = useState<number | 'all'>(100);
     const [displayedRowCount, setDisplayedRowCount] = useState<number>(0);
     const [selectedInvoice, setSelectedInvoice] = useState<SharePointInvoice | null>(null);
     const [selectedResponsable, setSelectedResponsable] = useState<string>("all");
+
+    // Persist invoices to localStorage on every change
+    useEffect(() => {
+        try {
+            localStorage.setItem('viventta_invoices', JSON.stringify(invoices));
+        } catch { /* quota exceeded — ignore */ }
+    }, [invoices]);
     
 
     
@@ -298,6 +346,8 @@ export default function ViventtaInvoicesPage() {
         centroCosto: "VIV-ADM - Viventta Administración",
         cuenta: "519595"
     });
+    const [createAttachmentFile, setCreateAttachmentFile] = useState<File | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     
     // Column Filters (Excel-style)
     const [columnFilters, setColumnFilters] = useState({
@@ -340,15 +390,22 @@ export default function ViventtaInvoicesPage() {
         }
     }, [selectedInvoice]);
 
+    const MOCK_PDF_URL = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf";
+    const GOOGLE_DOCS_VIEWER = (url: string) =>
+        `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+
     const handlePreview = async (invoice: any) => {
         setPreviewError(null);
         setPreviewLoading(true);
-        // Simulate loading a preview PDF
         setTimeout(() => {
             setPreviewLoading(false);
-            if (invoice.Attachments) {
-                // Return a mock iframe pdf URL
-                setPreviewUrl("https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf");
+            if (invoice.Attachments && invoice.documentInfo?.serverRelativeUrl &&
+                invoice.documentInfo.serverRelativeUrl !== '#') {
+                // Use stored base64 PDF directly
+                setPreviewUrl(invoice.documentInfo.serverRelativeUrl);
+            } else if (invoice.Attachments) {
+                // Fallback: Google Docs viewer with dummy PDF
+                setPreviewUrl(GOOGLE_DOCS_VIEWER(MOCK_PDF_URL));
             } else {
                 setPreviewError("No se ha encontrado factura en PDF adjunta.");
             }
@@ -396,11 +453,9 @@ export default function ViventtaInvoicesPage() {
     const handleRefreshInvoices = async () => {
         setIsSyncingSharePoint(true);
         setDataSource('loading');
-        setTimeout(() => {
-            setIsSyncingSharePoint(false);
-            setDataSource('cache');
-            alert("✅ Sincronización con SharePoint de Viventta completada (Simulada).");
-        }, 1500);
+        await loadInvoicesFromDB();
+        setIsSyncingSharePoint(false);
+        setDataSource('cache');
     };
 
     useEffect(() => {
@@ -446,6 +501,23 @@ export default function ViventtaInvoicesPage() {
             setIsUpdatingResponsible(false);
             alert("✅ Responsable actualizado correctamente (Local).");
         }, 800);
+    };
+
+    const handleApprovalChange = (newStatus: 'Aprobado' | 'Rechazado') => {
+        if (!selectedInvoice) return;
+        const confirmed = window.confirm(`¿Confirmar cambio de estado a "${newStatus}"?`);
+        if (!confirmed) return;
+
+        const updatedFields: Partial<SharePointInvoice> = {
+            Aprobacion_Doliente: newStatus,
+            FechaAprobacion: new Date().toISOString(),
+            ...(newStatus === 'Aprobado' ? { Gestion_Contabilidad: 'Por Procesar' } : { Gestion_Contabilidad: 'Pendiente' })
+        };
+
+        setInvoices(prev => prev.map(inv =>
+            inv.id === selectedInvoice.id ? { ...inv, ...updatedFields } : inv
+        ));
+        setSelectedInvoice(prev => prev ? { ...prev, ...updatedFields } : prev);
     };
 
 
@@ -524,49 +596,75 @@ export default function ViventtaInvoicesPage() {
         }, 1200);
     };
 
-    const handleCreateMockInvoice = (e: React.FormEvent) => {
+    const handleCreateMockInvoice = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!createFormData.nit || !createFormData.proveedor || !createFormData.nroFactura || !createFormData.monto) {
             alert("Por favor completa los campos requeridos.");
             return;
         }
 
-        const newId = String(Date.now());
-        const newInvoice: SharePointInvoice = {
-            id: newId,
-            ID: Math.floor(Math.random() * 1000),
-            Nit: createFormData.nit,
-            Proveedor: createFormData.proveedor,
-            Nro_Factura: createFormData.nroFactura,
-            Monto: Number(createFormData.monto),
-            Valor_total: Number(createFormData.monto),
-            Responsable_de_Autorizar: createFormData.responsable || "Sin asignar",
-            Aprobacion_Doliente: "Por Aprobar",
-            Gestion_Contabilidad: "Pendiente",
-            Consecutivo: "CON-" + Math.floor(7000 + Math.random() * 1000),
-            Observaciones: createFormData.observaciones,
-            Created: new Date().toISOString(),
-            Creado: new Date().toISOString(),
-            centro_costos: JSON.stringify([{ centroCosto: createFormData.centroCosto, cuenta: createFormData.cuenta }]),
-            Attachments: true,
-            documentInfo: { fileName: `${createFormData.nroFactura}.pdf`, serverRelativeUrl: "#" },
-            adjuntos_url: []
-        };
+        if (!createAttachmentFile) {
+            alert("Por favor adjunta la factura en PDF.");
+            return;
+        }
 
-        setInvoices(prev => [newInvoice, ...prev]);
-        setIsCreateModalOpen(false);
-        setProviderSearch("");
-        setCreateFormData({
-            nit: "",
-            proveedor: "",
-            nroFactura: "",
-            monto: "",
-            responsable: "",
-            observaciones: "",
-            centroCosto: "VIV-ADM - Viventta Administración",
-            cuenta: "519595"
-        });
-        alert("✅ Factura Viventta creada localmente.");
+        setIsSubmitting(true);
+
+        try {
+            const formData = new FormData();
+            formData.append('nroFactura', createFormData.nroFactura);
+            formData.append('nit', createFormData.nit);
+            formData.append('proveedor', createFormData.proveedor);
+            formData.append('monto', createFormData.monto);
+            formData.append('centroCosto', createFormData.centroCosto);
+            formData.append('cuenta', createFormData.cuenta);
+            formData.append('observaciones', createFormData.observaciones);
+            formData.append('responsable', createFormData.responsable);
+            
+            const user = MOCK_USERS.find(u => u.name === createFormData.responsable);
+            if (user) {
+                formData.append('responsableEmail', user.email);
+            }
+            
+            formData.append('file', createAttachmentFile);
+
+            const res = await fetch('/api/facturas-viventta/create', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || errData.error || 'Error al crear factura');
+            }
+
+            const data = await res.json();
+
+            alert("✅ Factura Viventta creada y guardada en Supabase correctamente.");
+            
+            setIsCreateModalOpen(false);
+            setProviderSearch("");
+            setCreateAttachmentFile(null);
+            setCreateFormData({
+                nit: "",
+                proveedor: "",
+                nroFactura: "",
+                monto: "",
+                responsable: "",
+                observaciones: "",
+                centroCosto: "VIV-ADM - Viventta Administración",
+                cuenta: "519595"
+            });
+
+            // Recargar lista completa desde Facturas_Viventta
+            await loadInvoicesFromDB();
+
+        } catch (error: any) {
+            console.error('Error:', error);
+            alert(`Error al crear la factura: ${error.message}`);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const formatCostCenter = (costCenterStr: any, tableCostStr: any) => {
@@ -795,15 +893,7 @@ export default function ViventtaInvoicesPage() {
                                 <CloudUpload className="h-4 w-4" />
                                 Crear Factura
                             </Button>
-                            <Button
-                                variant="outline"
-                                onClick={handleRefreshInvoices}
-                                disabled={loading || isSyncingSharePoint}
-                                className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm"
-                            >
-                                {isSyncingSharePoint ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                                {isSyncingSharePoint ? "Actualizando..." : "Actualizar"}
-                            </Button>
+
                         </div>
                     </div>
 
@@ -975,7 +1065,7 @@ export default function ViventtaInvoicesPage() {
                                                             <p className="text-[10px] text-gray-400 font-medium italic">Archivo de SharePoint Viventta</p>
                                                         </div>
                                                         <button
-                                                            onClick={() => previewUrl && setExpandedPdfUrl(previewUrl)}
+                                                            onClick={() => window.open(MOCK_PDF_URL, '_blank', 'noopener,noreferrer')}
                                                             className="h-10 px-4 flex items-center justify-center rounded-xl bg-white border border-gray-100 text-xs font-bold text-[#254153] hover:bg-gray-50 transition-all shadow-sm"
                                                         >
                                                             Ver PDF
@@ -1049,9 +1139,37 @@ export default function ViventtaInvoicesPage() {
                                                 <div className="space-y-4">
                                                     <div>
                                                         <p className="text-[11px] font-bold text-gray-400 uppercase mb-1.5">Estado Aprobación</p>
-                                                        <span className={`inline-flex items-center px-4 py-1.5 rounded-full text-xs font-black border ${getStatusStyles(selectedInvoice.Aprobacion_Doliente)}`}>
-                                                            {selectedInvoice.Aprobacion_Doliente || "Pendiente"}
-                                                        </span>
+                                                        <div className="flex items-center gap-3 flex-wrap">
+                                                            <span className={`inline-flex items-center px-4 py-1.5 rounded-full text-xs font-black border ${getStatusStyles(selectedInvoice.Aprobacion_Doliente)}`}>
+                                                                {selectedInvoice.Aprobacion_Doliente || "Pendiente"}
+                                                            </span>
+                                                            {(selectedInvoice.Aprobacion_Doliente === 'Por Aprobar' || !selectedInvoice.Aprobacion_Doliente) && (
+                                                                <div className="flex gap-2">
+                                                                    <button
+                                                                        onClick={() => handleApprovalChange('Aprobado')}
+                                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black bg-emerald-500 text-white hover:bg-emerald-600 transition-all shadow-sm shadow-emerald-200"
+                                                                    >
+                                                                        <Check className="h-3 w-3" />
+                                                                        Aprobar
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleApprovalChange('Rechazado')}
+                                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black bg-rose-500 text-white hover:bg-rose-600 transition-all shadow-sm shadow-rose-200"
+                                                                    >
+                                                                        <X className="h-3 w-3" />
+                                                                        Rechazar
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                            {(selectedInvoice.Aprobacion_Doliente === 'Aprobado' || selectedInvoice.Aprobacion_Doliente === 'Rechazado') && (
+                                                                <button
+                                                                    onClick={() => handleApprovalChange(selectedInvoice.Aprobacion_Doliente === 'Aprobado' ? 'Rechazado' : 'Aprobado')}
+                                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black bg-gray-100 text-gray-500 hover:bg-gray-200 transition-all border border-gray-200"
+                                                                >
+                                                                    Cambiar
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                     <div>
                                                         <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Responsable de Autorizar</p>
@@ -1171,9 +1289,14 @@ export default function ViventtaInvoicesPage() {
                                                  <div className="flex justify-between items-center mb-3 px-2">
                                                      <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Previsualización</h4>
                                                      <button 
-                                                         onClick={() => previewUrl && setExpandedPdfUrl(previewUrl)} 
-                                                         className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-2"
-                                                         disabled={!previewUrl}
+                                                         onClick={() => {
+                                                             const actualUrl = (selectedInvoice.documentInfo?.serverRelativeUrl && selectedInvoice.documentInfo.serverRelativeUrl !== '#') 
+                                                                 ? selectedInvoice.documentInfo.serverRelativeUrl 
+                                                                 : MOCK_PDF_URL;
+                                                             window.open(actualUrl, '_blank', 'noopener,noreferrer');
+                                                         }}
+                                                         className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-2 disabled:opacity-40"
+                                                         disabled={!selectedInvoice.Attachments}
                                                      >
                                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
                                                          Ampliar
@@ -1195,13 +1318,19 @@ export default function ViventtaInvoicesPage() {
                                                     ) : previewUrl ? (
                                                         <>
                                                             <div 
-                                                                className="absolute inset-0 z-10 cursor-pointer bg-transparent" 
-                                                                onClick={() => setExpandedPdfUrl(previewUrl)} 
-                                                                title="Hacer clic para ampliar" 
+                                                                className="absolute inset-0 z-10 cursor-zoom-in bg-transparent" 
+                                                                onClick={() => {
+                                                                    const actualUrl = (selectedInvoice.documentInfo?.serverRelativeUrl && selectedInvoice.documentInfo.serverRelativeUrl !== '#') 
+                                                                        ? selectedInvoice.documentInfo.serverRelativeUrl 
+                                                                        : MOCK_PDF_URL;
+                                                                    window.open(actualUrl, '_blank', 'noopener,noreferrer');
+                                                                }} 
+                                                                title="Clic para abrir el PDF" 
                                                             />
                                                             <iframe 
-                                                                src={`${previewUrl}#toolbar=0&navpanes=0`} 
+                                                                src={previewUrl}
                                                                 className="w-full h-full border-none pointer-events-none" 
+                                                                title="Vista previa de factura"
                                                             />
                                                         </>
                                                     ) : (
@@ -1415,6 +1544,23 @@ export default function ViventtaInvoicesPage() {
                                                 className="w-full p-4 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:bg-white transition-all text-[#254153] font-medium"
                                             />
                                         </div>
+                                        
+                                        <div>
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider block mb-1">Adjuntar Factura (PDF) *</label>
+                                            <input
+                                                type="file"
+                                                accept=".pdf"
+                                                required
+                                                onChange={(e) => {
+                                                    if (e.target.files && e.target.files.length > 0) {
+                                                        setCreateAttachmentFile(e.target.files[0]);
+                                                    } else {
+                                                        setCreateAttachmentFile(null);
+                                                    }
+                                                }}
+                                                className="w-full p-2.5 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:bg-white transition-all text-[#254153] font-medium file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-[#254153] file:text-white hover:file:bg-[#1a2f3d] cursor-pointer"
+                                            />
+                                        </div>
                                     </div>
 
                                     <div className="flex gap-4">
@@ -1423,14 +1569,23 @@ export default function ViventtaInvoicesPage() {
                                             variant="outline"
                                             onClick={() => setIsCreateModalOpen(false)}
                                             className="flex-1 h-12 rounded-xl text-gray-500 font-bold border-gray-100 hover:bg-gray-50"
+                                            disabled={isSubmitting}
                                         >
                                             Cancelar
                                         </Button>
                                         <Button
                                             type="submit"
+                                            disabled={isSubmitting}
                                             className="flex-1 h-12 rounded-xl bg-[#254153] hover:bg-[#1a2f3d] text-white font-black"
                                         >
-                                            Crear Factura (Local)
+                                            {isSubmitting ? (
+                                                <span className="flex items-center justify-center gap-2">
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                    Guardando...
+                                                </span>
+                                            ) : (
+                                                "Crear Factura"
+                                            )}
                                         </Button>
                                     </div>
                                 </form>
