@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
@@ -13,6 +13,7 @@ import { Menu, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { AgGridReact } from 'ag-grid-react';
 import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
 
 // Configure AG Grid v35+ Modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -94,6 +95,188 @@ function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode
     );
 }
 
+function ProviderRuleManager({ 
+    provider, 
+    onAddRule, 
+    onDeleteRule, 
+    centrosCostosList, 
+    cuentasList 
+}: { 
+    provider: any, 
+    onAddRule: (rule: any) => Promise<boolean>, 
+    onDeleteRule: (ruleId: string) => Promise<void>,
+    centrosCostosList: any[],
+    cuentasList: any[]
+}) {
+    const rules = provider.proveedor_aprobacion_reglas || [];
+    const [isAdding, setIsAdding] = useState(false);
+    const [newRule, setNewRule] = useState({ valor: '', porcentaje_desviacion: '', centro_costos: '', cuenta: '' });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleAdd = async () => {
+        if (!newRule.valor || !newRule.porcentaje_desviacion) {
+            alert('Debe ingresar un valor y una desviación.');
+            return;
+        }
+        setIsSubmitting(true);
+        const success = await onAddRule({
+            valor: Number(newRule.valor),
+            porcentaje_desviacion: Number(newRule.porcentaje_desviacion),
+            centro_costos: newRule.centro_costos || null,
+            cuenta: newRule.cuenta || null
+        });
+        setIsSubmitting(false);
+        if (success) {
+            setNewRule({ valor: '', porcentaje_desviacion: '', centro_costos: '', cuenta: '' });
+            setIsAdding(false);
+        }
+    };
+
+    return (
+        <div className="mt-4 pt-4 border-t border-green-100/50 flex flex-col gap-3">
+            {rules.length > 0 && (
+                <div className="space-y-2 mb-2">
+                    <label className="text-[10px] font-black text-green-800 uppercase tracking-tight block">Valores Permitidos ({rules.length})</label>
+                    {rules.map((r: any) => (
+                        <div key={r.id} className="bg-white rounded-lg p-2.5 border border-green-100 flex flex-col gap-1.5 relative group shadow-sm">
+                            <button 
+                                onClick={() => onDeleteRule(r.id)}
+                                className="absolute top-2 right-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Eliminar valor"
+                            >
+                                <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                            <div className="flex items-center gap-3">
+                                <div>
+                                    <span className="text-[9px] text-gray-400 font-bold uppercase block mb-0.5">Valor (COP)</span>
+                                    <span className="text-sm font-black text-[#254153]">${Number(r.valor).toLocaleString()}</span>
+                                </div>
+                                <div className="border-l border-gray-100 pl-3">
+                                    <span className="text-[9px] text-gray-400 font-bold uppercase block mb-0.5">Desv. (±)</span>
+                                    <span className="text-sm font-bold text-gray-600">{r.porcentaje_desviacion}%</span>
+                                </div>
+                            </div>
+                            <div className="flex gap-2 text-xs text-gray-500 bg-gray-50 p-1.5 rounded-md mt-1">
+                                <span className="flex-1 truncate"><b className="text-gray-700">CC:</b> {r.centro_costos || 'N/A'}</span>
+                                <span className="flex-1 truncate"><b className="text-gray-700">Cta:</b> {r.cuenta || 'N/A'}</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+            
+            {isAdding ? (
+                <div className="bg-green-50/50 p-3 rounded-xl border border-green-200 shadow-inner">
+                    <div className="flex flex-col gap-3 mb-3">
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Valor (COP)</label>
+                                <input 
+                                    type="number" 
+                                    value={newRule.valor} 
+                                    onChange={e => setNewRule(prev => ({...prev, valor: e.target.value}))}
+                                    className="w-full h-8 px-2 bg-white border border-green-200 rounded-lg text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-green-500/20" 
+                                    placeholder="Ej. 150000"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">% Desv.</label>
+                                <input 
+                                    type="number" 
+                                    value={newRule.porcentaje_desviacion} 
+                                    onChange={e => setNewRule(prev => ({...prev, porcentaje_desviacion: e.target.value}))}
+                                    className="w-full h-8 px-2 bg-white border border-green-200 rounded-lg text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-green-500/20" 
+                                    placeholder="Ej. 10"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black text-green-700 uppercase block">C. Costos</label>
+                                <SearchableSelect
+                                    options={centrosCostosList.map((c: any) => ({
+                                        value: `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`,
+                                        label: `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`
+                                    }))}
+                                    value={newRule.centro_costos}
+                                    onChange={(val) => {
+                                        setNewRule(prev => ({ ...prev, centro_costos: val, cuenta: '' }));
+                                    }}
+                                    placeholder="Selecciona CC..."
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black text-green-700 uppercase block">Cuenta</label>
+                                <SearchableSelect
+                                    options={(() => {
+                                        if (!newRule.centro_costos) return [];
+                                        
+                                        const isNoAplica = newRule.centro_costos.toLowerCase().includes("no aplica");
+                                        if (isNoAplica) {
+                                            return cuentasList
+                                                .filter((c: any) => 
+                                                    c.Título?.startsWith("0") || 
+                                                    c.Título?.startsWith("22") ||
+                                                    c.Título?.startsWith("1465") ||
+                                                    c.Título?.startsWith("1105")
+                                                )
+                                                .map((c: any) => ({
+                                                    value: c.Título,
+                                                    label: c.Título
+                                                }));
+                                        }
+
+                                        const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === newRule.centro_costos);
+                                        const prefix = selectedCC?.cuentas_asociadas?.toString();
+                                        const isGV = newRule.centro_costos.toUpperCase().startsWith("GV");
+                                        const filtered = prefix 
+                                            ? cuentasList.filter(c => c.Título?.startsWith(prefix) || (isGV && c.Título?.startsWith("26059510")))
+                                            : cuentasList;
+                                        
+                                        return filtered.map((c: any) => ({
+                                            value: c.Título,
+                                            label: c.Título
+                                        }));
+                                    })()}
+                                    value={newRule.cuenta}
+                                    onChange={(val) => setNewRule(prev => ({ ...prev, cuenta: val }))}
+                                    placeholder="Selecciona Cuenta..."
+                                    disabled={!newRule.centro_costos}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        <Button 
+                            className="flex-1 h-7 text-[10px] bg-green-600 hover:bg-green-700 text-white" 
+                            onClick={handleAdd}
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Guardar'}
+                        </Button>
+                        <Button 
+                            variant="outline" 
+                            className="flex-1 h-7 text-[10px] border-green-200 text-green-700 hover:bg-green-100" 
+                            onClick={() => setIsAdding(false)}
+                            disabled={isSubmitting}
+                        >
+                            Cancelar
+                        </Button>
+                    </div>
+                </div>
+            ) : (
+                <Button 
+                    variant="outline" 
+                    className="w-full h-8 text-[10px] border-green-200 text-green-700 hover:bg-green-50 border-dashed"
+                    onClick={() => setIsAdding(true)}
+                >
+                    <Plus className="h-3 w-3 mr-1" /> Añadir Valor
+                </Button>
+            )}
+        </div>
+    );
+}
+
 export default function InvoicesPage() {
     const gridRef = useRef<AgGridReact>(null);
     const { toggleSidebar } = useSidebar();
@@ -165,6 +348,10 @@ export default function InvoicesPage() {
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewError, setPreviewError] = useState<string | null>(null);
+    
+    // Catalogos para reglas de aprobación
+    const [centrosCostosList, setCentrosCostosList] = useState<any[]>([]);
+    const [cuentasList, setCuentasList] = useState<any[]>([]);
 
     const [columnFilters, setColumnFilters] = useState({
         invoice: "",
@@ -511,7 +698,7 @@ export default function InvoicesPage() {
         try {
             let query = supabase
                 .from('proveedores')
-                .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
+                .select('id, razon_social, numero_identificacion, aprobacion_automatica, proveedor_aprobacion_reglas(id, valor, porcentaje_desviacion, centro_costos, cuenta)')
                 .order('razon_social', { ascending: true });
 
             if (search) {
@@ -564,6 +751,26 @@ export default function InvoicesPage() {
         return () => clearTimeout(timer);
     }, [providersSearch, isProvidersSidebarOpen]);
 
+    const fetchCatalogos = async () => {
+        if (centrosCostosList.length > 0) return; // Ya están cargados
+        try {
+            const res = await fetch('/api/externo/catalogos');
+            const data = await res.json();
+            if (!data.error) {
+                setCentrosCostosList(data.centrosCostos || []);
+                setCuentasList(data.cuentas || []);
+            }
+        } catch (err) {
+            console.error('Error fetching catalogos:', err);
+        }
+    };
+
+    useEffect(() => {
+        if (isProvidersSidebarOpen) {
+            fetchCatalogos();
+        }
+    }, [isProvidersSidebarOpen]);
+
     const toggleProviderAutoApproval = async (id: string, currentValue: boolean) => {
         const newValue = !currentValue;
         setProviders(prev => prev.map(p => p.id === id ? { ...p, aprobacion_automatica: newValue } : p));
@@ -591,6 +798,79 @@ export default function InvoicesPage() {
         } catch (error) {
             console.error(`Error updating provider ${field}:`, error);
             alert('Error al guardar el cambio.');
+        }
+    };
+
+    const checkOverlap = (rules: any[], newValue: number, newDev: number) => {
+        const newMin = newValue - (newValue * newDev / 100);
+        const newMax = newValue + (newValue * newDev / 100);
+        
+        for (const rule of rules) {
+            const rMin = rule.valor - (rule.valor * rule.porcentaje_desviacion / 100);
+            const rMax = rule.valor + (rule.valor * rule.porcentaje_desviacion / 100);
+            
+            // Check for overlap: max(min1, min2) <= min(max1, max2)
+            if (Math.max(newMin, rMin) <= Math.min(newMax, rMax)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const addProviderRule = async (providerId: string, rule: any) => {
+        const provider = providers.find(p => p.id === providerId);
+        if (!provider) return false;
+        
+        const rules = provider.proveedor_aprobacion_reglas || [];
+        if (checkOverlap(rules, rule.valor, rule.porcentaje_desviacion)) {
+            alert('El valor y desviación ingresados se solapan con un valor existente para este proveedor.');
+            return false;
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('proveedor_aprobacion_reglas')
+                .insert({
+                    proveedor_id: providerId,
+                    valor: rule.valor,
+                    porcentaje_desviacion: rule.porcentaje_desviacion,
+                    centro_costos: rule.centro_costos,
+                    cuenta: rule.cuenta
+                })
+                .select();
+
+            if (error) throw error;
+
+            setProviders(prev => prev.map(p => 
+                p.id === providerId 
+                ? { ...p, proveedor_aprobacion_reglas: [...(p.proveedor_aprobacion_reglas || []), data[0]] } 
+                : p
+            ));
+            return true;
+        } catch (error) {
+            console.error('Error adding rule:', error);
+            alert('Error al guardar el valor.');
+            return false;
+        }
+    };
+
+    const deleteProviderRule = async (providerId: string, ruleId: string) => {
+        try {
+            const { error } = await supabase
+                .from('proveedor_aprobacion_reglas')
+                .delete()
+                .eq('id', ruleId);
+                
+            if (error) throw error;
+
+            setProviders(prev => prev.map(p => 
+                p.id === providerId 
+                ? { ...p, proveedor_aprobacion_reglas: (p.proveedor_aprobacion_reglas || []).filter((r: any) => r.id !== ruleId) } 
+                : p
+            ));
+        } catch (error) {
+            console.error('Error deleting rule:', error);
+            alert('Error al eliminar el valor.');
         }
     };
 
@@ -847,8 +1127,8 @@ export default function InvoicesPage() {
         { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
         { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
         { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
-        { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Pendiente"}</div> },
-        { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Por Procesar"}</div> },
+        { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || p.data?.sharepoint_id || "N/A"}</div> },
         { headerName: 'Fecha Creación', field: 'Creado', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{(p.value || p.data?.Created) ? new Date(p.value || p.data?.Created).toLocaleString() : "Sin fecha"}</div> },
         { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{formatCostCenter(p.value, p.data?.tablaCostos)}</div> },
         { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
@@ -1369,35 +1649,13 @@ export default function InvoicesPage() {
                                                     </div>
 
                                                     {p.aprobacion_automatica && (
-                                                        <motion.div 
-                                                            initial={{ opacity: 0, height: 0 }}
-                                                            animate={{ opacity: 1, height: 'auto' }}
-                                                            className="mt-4 pt-4 border-t border-green-100/50 flex gap-3"
-                                                        >
-                                                            <div className="flex-1">
-                                                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Valor Ref. (COP)</label>
-                                                                <div className="relative">
-                                                                    <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-600" />
-                                                                    <input 
-                                                                        type="number"
-                                                                        defaultValue={p.valor_de_referencia || ''}
-                                                                        onBlur={(e) => updateProviderField(p.id, 'valor_de_referencia', e.target.value === '' ? null : Number(e.target.value))}
-                                                                        className="w-full h-8 pl-6 pr-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
-                                                                        placeholder="0.00"
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                            <div className="w-24">
-                                                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">% Desv.</label>
-                                                                <input 
-                                                                    type="number"
-                                                                    defaultValue={p.porcentaje_desviacion || ''}
-                                                                    onBlur={(e) => updateProviderField(p.id, 'porcentaje_desviacion', e.target.value === '' ? null : Number(e.target.value))}
-                                                                    className="w-full h-8 px-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
-                                                                    placeholder="%"
-                                                                />
-                                                            </div>
-                                                        </motion.div>
+                                                        <ProviderRuleManager 
+                                                            provider={p} 
+                                                            onAddRule={(r) => addProviderRule(p.id, r)} 
+                                                            onDeleteRule={(rId) => deleteProviderRule(p.id, rId)} 
+                                                            centrosCostosList={centrosCostosList}
+                                                            cuentasList={cuentasList}
+                                                        />
                                                     )}
                                                 </div>
                                             ))
@@ -1514,35 +1772,13 @@ export default function InvoicesPage() {
                                                 </div>
 
                                                 {p.aprobacion_automatica && (
-                                                    <motion.div
-                                                        initial={{ opacity: 0, height: 0 }}
-                                                        animate={{ opacity: 1, height: 'auto' }}
-                                                        className="mt-4 pt-4 border-t border-green-100/50 flex gap-3"
-                                                    >
-                                                        <div className="flex-1">
-                                                            <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Valor Ref. (COP)</label>
-                                                            <div className="relative">
-                                                                <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-600" />
-                                                                <input
-                                                                    type="number"
-                                                                    defaultValue={p.valor_de_referencia || ''}
-                                                                    onBlur={(e) => updateProviderField(p.id, 'valor_de_referencia', e.target.value === '' ? null : Number(e.target.value))}
-                                                                    className="w-full h-8 pl-6 pr-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
-                                                                    placeholder="0.00"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                        <div className="w-24">
-                                                            <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">% Desv.</label>
-                                                            <input
-                                                                type="number"
-                                                                defaultValue={p.porcentaje_desviacion || ''}
-                                                                onBlur={(e) => updateProviderField(p.id, 'porcentaje_desviacion', e.target.value === '' ? null : Number(e.target.value))}
-                                                                className="w-full h-8 px-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
-                                                                placeholder="%"
-                                                            />
-                                                        </div>
-                                                    </motion.div>
+                                                    <ProviderRuleManager 
+                                                        provider={p} 
+                                                        onAddRule={(r) => addProviderRule(p.id, r)} 
+                                                        onDeleteRule={(rId) => deleteProviderRule(p.id, rId)}
+                                                        centrosCostosList={centrosCostosList}
+                                                        cuentasList={cuentasList}
+                                                    />
                                                 )}
                                             </div>
                                         ))
@@ -1620,7 +1856,7 @@ export default function InvoicesPage() {
                                                     </div>
                                                     <div>
                                                         <p className="text-[11px] font-bold text-gray-400 uppercase">Consecutivo</p>
-                                                        <p className="font-bold text-gray-600">{selectedInvoice.Consecutivo || "N/A"}</p>
+                                                        <p className="font-bold text-gray-600">{selectedInvoice.Consecutivo || selectedInvoice.sharepoint_id || "N/A"}</p>
                                                     </div>
                                                 </div>
                                             </div>
