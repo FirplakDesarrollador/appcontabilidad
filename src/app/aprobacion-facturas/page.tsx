@@ -930,6 +930,22 @@ export default function InvoicesPage() {
                                 <span className="hidden lg:inline">Aprobación Automática</span>
                             </button>
                             <Button
+                                onClick={() => {
+                                    const url = `${window.location.origin}/externo/crear-factura`;
+                                    navigator.clipboard.writeText(url).then(() => {
+                                        alert("Enlace público copiado al portapapeles");
+                                    }).catch(err => {
+                                        console.error("Error al copiar:", err);
+                                        alert("No se pudo copiar el enlace");
+                                    });
+                                }}
+                                className="bg-emerald-600 text-white rounded-xl h-11 px-4 font-black hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-900/10 flex items-center gap-2"
+                                title="Copiar link público para crear facturas"
+                            >
+                                <Copy className="h-4 w-4" />
+                                <span className="hidden lg:inline">Link Público</span>
+                            </Button>
+                            <Button
                                 onClick={() => setIsCreateModalOpen(true)}
                                 className="bg-[#254153] text-white rounded-xl h-11 px-6 font-black hover:bg-[#1a2f3d] transition-all shadow-lg shadow-blue-900/10 flex items-center gap-2"
                             >
