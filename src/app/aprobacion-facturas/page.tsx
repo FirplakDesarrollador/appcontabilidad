@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
 import { useSidebar } from "@/context/SidebarContext";
-import { Menu } from "lucide-react";
+import { Menu, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 import { AgGridReact } from 'ag-grid-react';
 import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
 
@@ -94,6 +95,7 @@ function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode
 }
 
 export default function InvoicesPage() {
+    const gridRef = useRef<AgGridReact>(null);
     const { toggleSidebar } = useSidebar();
     const [colWidths, setColWidths] = useState<Record<string, number>>({ 'C. Costos / Cuenta': 100 });
 
@@ -854,6 +856,42 @@ export default function InvoicesPage() {
         { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{(p.data?.documentInfo || p.data?.Attachments) ? <a href={`/api/sharepoint/attachment-redirect?itemId=${p.data?.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
     ], [syncingId]);
 
+    const handleExportExcel = () => {
+        if (!gridRef.current || !gridRef.current.api) {
+            alert("El grid no está listo para exportar.");
+            return;
+        }
+
+        const dataToExport: any[] = [];
+        gridRef.current.api.forEachNodeAfterFilterAndSort((node) => {
+            if (node.data) {
+                const inv = node.data;
+                dataToExport.push({
+                    "NIT": inv.Nit || "N/A",
+                    "Proveedor": inv.Proveedor || "N/A",
+                    "Factura": inv.Nro_Factura || "S/N",
+                    "Valor Total": typeof inv.Monto === 'number' ? inv.Monto : parseFloat(String(inv.Monto).replace(/[^\d.,-]/g, "").replace(",", ".")) || 0,
+                    "Responsable": inv.Responsable_de_Autorizar || "Sin asignar",
+                    "Estado": inv.Aprobacion_Doliente || "Pendiente",
+                    "Gestión Contabilidad": inv.Gestion_Contabilidad || "Pendiente",
+                    "Consecutivo": inv.Consecutivo || "N/A",
+                    "Fecha Creación": (inv.Creado || inv.Created) ? new Date(inv.Creado || inv.Created).toLocaleString() : "Sin fecha",
+                    "Observaciones": inv.Observaciones || "Sin observaciones",
+                });
+            }
+        });
+
+        if (dataToExport.length === 0) {
+            alert("No hay datos para exportar con los filtros actuales.");
+            return;
+        }
+
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Facturas");
+        XLSX.writeFile(wb, `Facturas_Exportadas_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
     return (
         <div className="h-screen bg-[#f8fafc] flex overflow-hidden">
             <Sidebar />
@@ -951,6 +989,14 @@ export default function InvoicesPage() {
                             >
                                 <CloudUpload className="h-4 w-4" />
                                 Crear Factura
+                            </Button>
+                            <Button
+                                onClick={handleExportExcel}
+                                className="bg-[#254153]/10 text-[#254153] rounded-xl h-11 px-4 font-black hover:bg-[#254153]/20 transition-all flex items-center gap-2"
+                                title="Descargar lista actual en Excel"
+                            >
+                                <Download className="h-4 w-4" />
+                                <span className="hidden lg:inline">Descargar Excel</span>
                             </Button>
                             <Button
                                 variant="outline"
@@ -1060,6 +1106,7 @@ export default function InvoicesPage() {
                     <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden flex-1 flex flex-col min-h-[500px]">
                         <div className="w-full flex-1 min-h-0">
                             <AgGridReact
+                                ref={gridRef}
                                 theme={themeQuartz}
                                 localeText={AG_GRID_LOCALE_ES}
                                 rowData={sortedInvoices}
@@ -1609,6 +1656,28 @@ export default function InvoicesPage() {
                                             <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Centro de Costos y Cuenta</h4>
                                             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                                                 {renderCostCenterForModal(selectedInvoice.centro_costos, selectedInvoice.tablaCostos)}
+                                            </div>
+                                        </div>
+
+                                        {/* Observaciones */}
+                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Observaciones</h4>
+                                                {selectedInvoice.Observaciones && (
+                                                    <button
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(selectedInvoice.Observaciones);
+                                                            alert("Observaciones copiadas al portapapeles");
+                                                        }}
+                                                        className="h-7 px-3 flex items-center gap-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors font-bold text-[10px] uppercase"
+                                                        title="Copiar observaciones"
+                                                    >
+                                                        <Copy className="h-3 w-3" /> Copiar
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm text-sm font-medium text-gray-600 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
+                                                {selectedInvoice.Observaciones || <span className="text-gray-400 italic font-bold">Sin observaciones</span>}
                                             </div>
                                         </div>
 

@@ -1026,8 +1026,9 @@ export default function PublicApprovalPage() {
 
                                                                                 const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === distribucion.centroCostos);
                                                                                 const prefix = selectedCC?.cuentas_asociadas?.toString();
+                                                                                const isGV = distribucion.centroCostos?.toUpperCase().startsWith("GV");
                                                                                 const filtered = prefix 
-                                                                                    ? cuentasList.filter(c => c.Título?.startsWith(prefix))
+                                                                                    ? cuentasList.filter(c => c.Título?.startsWith(prefix) || (isGV && c.Título?.startsWith("26059510")))
                                                                                     : cuentasList;
                                                                                 
                                                                                 return filtered.map((c: any) => ({
