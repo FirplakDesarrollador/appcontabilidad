@@ -20,7 +20,8 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
         nroFactura: "",
         nit: "",
         proveedor: "",
-        responsableEmail: ""
+        responsableEmail: "",
+        valorTotal: ""
     });
     
     const [file, setFile] = useState<File | null>(null);
@@ -156,6 +157,9 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
             data.append("nit", formData.nit);
             data.append("proveedor", formData.proveedor);
             data.append("responsableEmail", formData.responsableEmail);
+            if (formData.valorTotal) {
+                data.append("valorTotal", formData.valorTotal);
+            }
             data.append("file", file);
 
             const res = await fetch("/api/sharepoint/create", {
@@ -189,7 +193,8 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
             nroFactura: "",
             nit: "",
             proveedor: "",
-            responsableEmail: ""
+            responsableEmail: "",
+            valorTotal: ""
         });
         setFile(null);
         setSuccess(false);
@@ -435,6 +440,24 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                             {duplicateMessage}
                                         </p>
                                     )}
+                                </div>
+
+                                {/* Valor de la Factura */}
+                                <div className="md:col-span-2 space-y-1.5">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Valor Total</label>
+                                    <div className="relative group">
+                                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">$</div>
+                                        <input
+                                            required
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={formData.valorTotal}
+                                            onChange={(e) => setFormData({...formData, valorTotal: e.target.value})}
+                                            className="w-full pl-8 pr-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-[#254153]"
+                                            placeholder="0.00"
+                                        />
+                                    </div>
                                 </div>
 
                                 {/* Responsable */}

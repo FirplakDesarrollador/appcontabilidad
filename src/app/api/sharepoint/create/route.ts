@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
         const proveedor = formData.get('proveedor') as string;
         const responsableEmail = formData.get('responsableEmail') as string;
         const file = formData.get('file') as File;
+        const valorTotal = formData.get('valorTotal') as string;
 
         if (!nroFactura || !nit || !file) {
             return NextResponse.json({ error: 'Faltan campos obligatorios (Número, NIT o Archivo)' }, { status: 400 });
@@ -91,6 +92,10 @@ export async function POST(req: NextRequest) {
             fp: fileUrl
         };
 
+        if (valorTotal) {
+            fields['Valor_total'] = valorTotal;
+        }
+
         if (responsableLookupId) {
             fields['ResponsabledeAutorizarLookupId'] = responsableLookupId;
         }
@@ -162,6 +167,7 @@ export async function POST(req: NextRequest) {
                 Nro_Factura: nroFactura,
                 Aprobacion_Doliente: 'Por Aprobar',
                 Gestion_Contabilidad: 'Pendiente',
+                Valor_total: valorTotal || '0',
                 fp: fileUrl,
                 documentos: fileUrl,
                 "Datos adjuntos": 1,
