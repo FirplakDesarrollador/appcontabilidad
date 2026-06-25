@@ -13,21 +13,32 @@ export async function GET(request: Request) {
     try {
         console.log('--- CRON: STARTING TRM UPDATE ---');
 
-        // 1. Fetch USD TRM from datos.gov.co
-        const usdResponse = await fetch("https://www.datos.gov.co/resource/32sa-8pi3.json?$limit=1&$order=vigenciadesde DESC");
-        if (!usdResponse.ok) throw new Error("Failed to fetch USD TRM");
-        const usdData = await usdResponse.json();
-        if (!usdData || usdData.length === 0) throw new Error("No USD TRM data found");
-
-        const usdRate = parseFloat(usdData[0].valor);
-
-        // Use current date (today) instead of the API date to ensure SAP has a rate for the current day
-        // This covers weekends and holidays where the API date might be from a previous day.
+        // Define current date for SAP and API query
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const day = String(now.getDate()).padStart(2, '0');
         const rateDate = `${year}${month}${day}`;
+        
+        // Format date for datos.gov.co API (YYYY-MM-DDT00:00:00.000)
+        const apiDate = `${year}-${month}-${day}T00:00:00.000`;
+
+        // 1. Fetch USD TRM from datos.gov.co valid specifically for TODAY
+        const usdUrl = `https://www.datos.gov.co/resource/32sa-8pi3.json?$where=vigenciadesde<='${apiDate}' AND vigenciahasta>='${apiDate}'`;
+        const usdResponse = await fetch(usdUrl);
+        if (!usdResponse.ok) throw new Error("Failed to fetch USD TRM");
+        const usdData = await usdResponse.json();
+        
+        let usdRate: number;
+        if (!usdData || usdData.length === 0) {
+            console.warn(`No TRM data found exactly for ${apiDate}. Falling back to latest available.`);
+            const fallbackResponse = await fetch("https://www.datos.gov.co/resource/32sa-8pi3.json?$limit=1&$order=vigenciadesde DESC");
+            const fallbackData = await fallbackResponse.json();
+            if (!fallbackData || fallbackData.length === 0) throw new Error("No USD TRM data found");
+            usdRate = parseFloat(fallbackData[0].valor);
+        } else {
+            usdRate = parseFloat(usdData[0].valor);
+        }
 
         // 2. Fetch USD/EUR Cross Rate
         const crossResponse = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
