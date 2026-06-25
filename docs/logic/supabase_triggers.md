@@ -18,16 +18,52 @@ Cada vez que se inserta una nueva factura en la tabla `Registro_Facturas`, la ba
 ```sql
 DECLARE
     auto_aprobar BOOLEAN;
+    val_ref NUMERIC;
+    pct_desv NUMERIC;
+    valor_factura NUMERIC;
+    min_valor NUMERIC;
+    max_valor NUMERIC;
 BEGIN
-    -- Busca en la tabla proveedores cruzando por el Nit de la nueva factura
-    SELECT aprobacion_automatica INTO auto_aprobar
-    FROM public.proveedores
-    WHERE numero_identificacion = NEW."Nit"
-    LIMIT 1;
+    -- Solo actuar si es un INSERT o si el 'Valor_total' ha cambiado en un UPDATE
+    IF (TG_OP = 'INSERT') OR (TG_OP = 'UPDATE' AND (NEW."Valor_total" IS DISTINCT FROM OLD."Valor_total")) THEN
+        
+        -- Solo intentar aprobación si el estado actual es Pendiente, Por Aprobar, NULL o vacío
+        IF NEW."Aprobacion_Doliente" IS NULL OR NEW."Aprobacion_Doliente" = '' OR NEW."Aprobacion_Doliente" = 'Pendiente' OR NEW."Aprobacion_Doliente" = 'Por Aprobar' THEN
+            
+            SELECT aprobacion_automatica, valor_de_referencia, porcentaje_desviacion 
+            INTO auto_aprobar, val_ref, pct_desv
+            FROM public.proveedores
+            WHERE numero_identificacion = NEW."Nit"
+            LIMIT 1;
 
-    -- Si el proveedor tiene aprobacion_automatica en TRUE, cambia el estado a 'Aprobado'
-    IF auto_aprobar = true THEN
-        NEW."Aprobacion_Doliente" := 'Aprobado';
+            IF auto_aprobar = true THEN
+                -- Validar que el valor sea numérico y mayor a 0 antes de proceder
+                IF NEW."Valor_total" IS NOT NULL AND NEW."Valor_total" != '' AND NEW."Valor_total" != '0' THEN
+                    
+                    -- Intentamos el cast. Si falla, el trigger simplemente continúa sin aprobar
+                    BEGIN
+                        valor_factura := NEW."Valor_total"::NUMERIC;
+                    EXCEPTION WHEN OTHERS THEN
+                        RETURN NEW;
+                    END;
+
+                    IF valor_factura > 0 THEN
+                        -- Si existen valores de validación de rango, procedemos a calcular
+                        IF val_ref IS NOT NULL AND pct_desv IS NOT NULL THEN
+                            min_valor := val_ref * (1 - (pct_desv / 100.0));
+                            max_valor := val_ref * (1 + (pct_desv / 100.0));
+                            
+                            IF valor_factura >= min_valor AND valor_factura <= max_valor THEN
+                                NEW."Aprobacion_Doliente" := 'Aprobado';
+                            END IF;
+                        ELSE
+                            -- Si el proveedor tiene aprobación automática activa pero sin rango, se aprueba directo
+                            NEW."Aprobacion_Doliente" := 'Aprobado';
+                        END IF;
+                    END IF;
+                END IF;
+            END IF;
+        END IF;
     END IF;
 
     RETURN NEW;
