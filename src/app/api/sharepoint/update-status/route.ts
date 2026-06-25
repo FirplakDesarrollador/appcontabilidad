@@ -23,12 +23,21 @@ export async function POST(req: NextRequest) {
         if (!list) throw new Error(`SharePoint list "${listName}" not found`);
         const listId = list.id;
 
-        // 3. Update SharePoint
-        await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch({
-            Gestion_Contabilidad: status
-        });
+        const updateData: any = {};
+        if (listName === 'Documento_Soporte') {
+            updateData.gestion_contabilidad = status;
+        } else {
+            updateData.Aprobacion_Doliente = status;
+            if (status === 'Aprobado') {
+                updateData.Gestion_Contabilidad = 'Por Procesar';
+            }
+            updateData.FechaAprobacion = new Date().toISOString();
+        }
 
-        console.log(`Successfully updated Gestion_Contabilidad to ${status} for item ${itemId}`);
+        // 3. Update SharePoint
+        await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updateData);
+
+        console.log(`Successfully updated status for item ${itemId}`);
 
         // 4. Update Supabase
         try {
@@ -41,12 +50,18 @@ export async function POST(req: NextRequest) {
                     })
                     .eq('id', Number(itemId));
             } else {
+                const supaUpdate: any = {
+                    Aprobacion_Doliente: status,
+                    FechaAprobacion: updateData.FechaAprobacion,
+                    updated_at: new Date().toISOString()
+                };
+                if (status === 'Aprobado') {
+                    supaUpdate.Gestion_Contabilidad = 'Por Procesar';
+                }
+
                 await supabase
                     .from('Registro_Facturas')
-                    .update({
-                        Gestion_Contabilidad: status,
-                        updated_at: new Date().toISOString()
-                    })
+                    .update(supaUpdate)
                     .eq('ID', Number(itemId));
             }
         } catch (supaErr) {

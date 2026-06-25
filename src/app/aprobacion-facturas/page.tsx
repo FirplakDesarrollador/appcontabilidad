@@ -898,13 +898,20 @@ export default function InvoicesPage() {
             });
 
             if (res.ok) {
-                setPendingInvoices(prev => prev.map(inv => 
-                    inv.id === selectedInvoice.id ? { ...inv, Gestion_Contabilidad: action } : inv
-                ));
-                setProcessedInvoices(prev => prev.map(inv => 
-                    inv.id === selectedInvoice.id ? { ...inv, Gestion_Contabilidad: action } : inv
-                ));
-                setSelectedInvoice(prev => prev ? { ...prev, Gestion_Contabilidad: action } : null);
+                const nowIso = new Date().toISOString();
+                
+                const updateInvoiceState = (inv: any) => {
+                    if (inv.id !== selectedInvoice.id) return inv;
+                    const updated = { ...inv, Aprobacion_Doliente: action, FechaAprobacion: nowIso };
+                    if (action === 'Aprobado') {
+                        updated.Gestion_Contabilidad = 'Por Procesar';
+                    }
+                    return updated;
+                };
+
+                setPendingInvoices(prev => prev.map(updateInvoiceState));
+                setProcessedInvoices(prev => prev.map(updateInvoiceState));
+                setSelectedInvoice(prev => prev ? updateInvoiceState(prev) : null);
                 alert(`Factura ${action.toLowerCase()} correctamente`);
             } else {
                 const data = await res.json();
@@ -1128,7 +1135,7 @@ export default function InvoicesPage() {
         { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
         { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
         { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Por Procesar"}</div> },
-        { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || p.data?.sharepoint_id || "N/A"}</div> },
+        { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || ""}</div> },
         { headerName: 'Fecha Creación', field: 'Creado', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{(p.value || p.data?.Created) ? new Date(p.value || p.data?.Created).toLocaleString() : "Sin fecha"}</div> },
         { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{formatCostCenter(p.value, p.data?.tablaCostos)}</div> },
         { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
@@ -1856,7 +1863,7 @@ export default function InvoicesPage() {
                                                     </div>
                                                     <div>
                                                         <p className="text-[11px] font-bold text-gray-400 uppercase">Consecutivo</p>
-                                                        <p className="font-bold text-gray-600">{selectedInvoice.Consecutivo || selectedInvoice.sharepoint_id || "N/A"}</p>
+                                                        <p className="font-bold text-gray-600">{selectedInvoice.Consecutivo || ""}</p>
                                                     </div>
                                                 </div>
                                             </div>
