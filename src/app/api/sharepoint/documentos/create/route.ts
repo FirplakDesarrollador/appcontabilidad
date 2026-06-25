@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
             Title: nit,
             tsic: proveedor,
             AprobacionDoliente: 'Por Aprobar',
-            Gestion_Contabilidad: 'Pendiente'
+            Gestion_Contabilidad: 'Por Procesar'
         };
 
         if (responsableLookupId) {
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
                 nit: nit,
                 proveedor: proveedor,
                 aprobacion_doliente: 'Por Aprobar',
-                gestion_contabilidad: 'Pendiente',
+                gestion_contabilidad: 'Por Procesar',
                 attachments: true,
                 fecha_creacion: new Date().toISOString(),
                 created_at: new Date().toISOString(),

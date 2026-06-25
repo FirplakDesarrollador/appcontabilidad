@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
             Nro_Factura: nroFactura,
             Proveedor: proveedor,
             Aprobacion_Doliente: 'Por Aprobar',
-            Gestion_Contabilidad: 'Pendiente',
+            Gestion_Contabilidad: 'Por Procesar',
             fp: fileUrl
         };
 
@@ -166,7 +166,7 @@ export async function POST(req: NextRequest) {
                 Proveedor: proveedor,
                 Nro_Factura: nroFactura,
                 Aprobacion_Doliente: 'Por Aprobar',
-                Gestion_Contabilidad: 'Pendiente',
+                Gestion_Contabilidad: 'Por Procesar',
                 Valor_total: valorTotal || '0',
                 fp: fileUrl,
                 documentos: fileUrl,
