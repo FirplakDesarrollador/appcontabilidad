@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
         };
 
         if (valorTotal) {
-            fields['Valor_total'] = valorTotal;
+            fields['Valortotal'] = valorTotal;
         }
 
         if (responsableLookupId) {
