@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-);
+import { supabase } from '@/lib/supabaseClient';
 
 export async function POST(req: NextRequest) {
     try {
@@ -32,7 +27,7 @@ export async function POST(req: NextRequest) {
 
         // Subir a Supabase Storage
         const fileBuffer = await file.arrayBuffer();
-        const { data: uploadData, error: uploadError } = await supabaseAdmin
+        const { data: uploadData, error: uploadError } = await supabase
             .storage
             .from('adjuntos_facturas')
             .upload(filePath, fileBuffer, {
@@ -45,12 +40,12 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Error al subir archivo adjunto' }, { status: 500 });
         }
 
-        const { data: publicUrlData } = supabaseAdmin
+        const { data, error } = await supabase
             .storage
             .from('adjuntos_facturas')
             .getPublicUrl(filePath);
             
-        const fileUrl = publicUrlData.publicUrl;
+        const fileUrl = data.publicUrl;
 
         // Crear registro en la tabla EXCLUSIVA de Viventta (Facturas_Viventta)
         const invoiceData = {
@@ -72,7 +67,7 @@ export async function POST(req: NextRequest) {
             adjuntos_url: [],
         };
 
-        const { data: insertData, error: insertError } = await supabaseAdmin
+        const { data: insertData, error: insertError } = await supabase
             .from('Facturas_Viventta')
             .insert([invoiceData])
             .select();

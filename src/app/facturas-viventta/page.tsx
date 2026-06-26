@@ -488,22 +488,34 @@ export default function ViventtaInvoicesPage() {
         if (!selectedInvoice || !pendingResponsibleUser) return;
 
         setIsUpdatingResponsible(true);
-        setTimeout(() => {
+        try {
+            const res = await fetch(`/api/facturas-viventta/update`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: selectedInvoice.id, Responsable_de_Autorizar: pendingResponsibleUser.name }),
+            });
+
+            if (!res.ok) throw new Error('Failed to update responsible');
+
             setInvoices(prev => prev.map(inv =>
                 inv.id === selectedInvoice.id
                     ? { ...inv, Responsable_de_Autorizar: pendingResponsibleUser.name }
                     : inv
             ));
-            setSelectedInvoice({ ...selectedInvoice, Responsable_de_Autorizar: pendingResponsibleUser.name });
+            setSelectedInvoice({ ...selectedInvoice as any, Responsable_de_Autorizar: pendingResponsibleUser.name });
             setIsEditingResponsible(false);
             setPendingResponsibleUser(null);
             setUserSearchQuery("");
+            alert("✅ Responsable actualizado correctamente.");
+        } catch (error) {
+            console.error(error);
+            alert("Error al actualizar responsable");
+        } finally {
             setIsUpdatingResponsible(false);
-            alert("✅ Responsable actualizado correctamente (Local).");
-        }, 800);
+        }
     };
 
-    const handleApprovalChange = (newStatus: 'Aprobado' | 'Rechazado') => {
+    const handleApprovalChange = async (newStatus: 'Aprobado' | 'Rechazado') => {
         if (!selectedInvoice) return;
         const confirmed = window.confirm(`¿Confirmar cambio de estado a "${newStatus}"?`);
         if (!confirmed) return;
@@ -514,10 +526,23 @@ export default function ViventtaInvoicesPage() {
             ...(newStatus === 'Aprobado' ? { Gestion_Contabilidad: 'Por Procesar' } : { Gestion_Contabilidad: 'Pendiente' })
         };
 
-        setInvoices(prev => prev.map(inv =>
-            inv.id === selectedInvoice.id ? { ...inv, ...updatedFields } : inv
-        ));
-        setSelectedInvoice(prev => prev ? { ...prev, ...updatedFields } : prev);
+        try {
+            const res = await fetch(`/api/facturas-viventta/update`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: selectedInvoice.id, ...updatedFields }),
+            });
+
+            if (!res.ok) throw new Error('Failed to update status');
+
+            setInvoices(prev => prev.map(inv =>
+                inv.id === selectedInvoice.id ? { ...inv, ...updatedFields } : inv
+            ));
+            setSelectedInvoice(prev => prev ? { ...prev, ...updatedFields } : prev);
+        } catch (error) {
+            console.error(error);
+            alert('Error al actualizar la factura');
+        }
     };
 
 
@@ -534,56 +559,38 @@ export default function ViventtaInvoicesPage() {
     const handleAction = async (action: string) => {
         if (!selectedInvoice) return;
         setActionLoading(action);
-        setTimeout(() => {
-            setInvoices(prev => prev.map(inv => {
-                if (inv.id === selectedInvoice.id) {
-                    if (action === 'Aprobado') {
-                        return { 
-                            ...inv, 
-                            Aprobacion_Doliente: 'Aprobado', 
-                            Gestion_Contabilidad: 'Por Procesar',
-                            FechaAprobacion: new Date().toISOString()
-                        };
-                    } else if (action === 'Rechazado') {
-                        return { 
-                            ...inv, 
-                            Aprobacion_Doliente: 'Rechazado', 
-                            Gestion_Contabilidad: 'Pendiente',
-                            FechaAprobacion: new Date().toISOString()
-                        };
-                    } else {
-                        // Standard updates like contabilidad values
-                        return { ...inv, Gestion_Contabilidad: action };
-                    }
-                }
-                return inv;
-            }));
+        
+        try {
+            const updateData: any = {};
+            if (action === 'Aprobado') {
+                updateData.Aprobacion_Doliente = 'Aprobado';
+                updateData.Gestion_Contabilidad = 'Por Procesar';
+                updateData.FechaAprobacion = new Date().toISOString();
+            } else if (action === 'Rechazado') {
+                updateData.Aprobacion_Doliente = 'Rechazado';
+                updateData.Gestion_Contabilidad = 'Pendiente';
+                updateData.FechaAprobacion = new Date().toISOString();
+            } else {
+                updateData.Gestion_Contabilidad = action;
+            }
 
-            // Sync with local selected reference
-            setSelectedInvoice(prev => {
-                if (!prev) return null;
-                if (action === 'Aprobado') {
-                    return { 
-                        ...prev, 
-                        Aprobacion_Doliente: 'Aprobado', 
-                        Gestion_Contabilidad: 'Por Procesar',
-                        FechaAprobacion: new Date().toISOString()
-                    };
-                } else if (action === 'Rechazado') {
-                    return { 
-                        ...prev, 
-                        Aprobacion_Doliente: 'Rechazado', 
-                        Gestion_Contabilidad: 'Pendiente',
-                        FechaAprobacion: new Date().toISOString()
-                    };
-                } else {
-                    return { ...prev, Gestion_Contabilidad: action };
-                }
+            const res = await fetch(`/api/facturas-viventta/update`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: selectedInvoice.id, ...updateData }),
             });
 
+            if (!res.ok) throw new Error('Failed to update status');
+
+            setInvoices(prev => prev.map(inv => inv.id === selectedInvoice.id ? { ...inv, ...updateData } : inv));
+            setSelectedInvoice(prev => prev ? { ...prev, ...updateData } : prev);
+            alert(`Factura gestionada como ${action} correctamente.`);
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error al actualizar estado.');
+        } finally {
             setActionLoading(null);
-            alert(`Factura gestionada como ${action} correctamente (Local).`);
-        }, 1000);
+        }
     };
 
     const handleManualSapSync = async (inv: SharePointInvoice) => {
