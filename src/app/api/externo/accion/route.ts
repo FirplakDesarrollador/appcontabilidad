@@ -37,13 +37,94 @@ export async function POST(req: NextRequest) {
 
         // 3. Update the Item AND Fetch current fields for SAP
         const isDocSoporte = listName === 'Documento_Soporte';
+        // If it's Documento_Soporte, skip SharePoint entirely
+        if (isDocSoporte) {
+            let consecutivoReal = String(itemId);
+            let proveedorReal = "Proveedor Desconocido";
+
+            try {
+                const supabaseUpdate: any = {
+                    aprobacion_doliente: action,
+                    updated_at: new Date().toISOString()
+                };
+                if (action === 'Aprobado') {
+                    supabaseUpdate.fecha_aprobacion = new Date().toISOString(); // Setting approval date!
+                }
+                if (cleanValor !== null) {
+                    supabaseUpdate.valor_total = cleanValor;
+                }
+                if (observaciones) {
+                    supabaseUpdate.observaciones = observaciones;
+                }
+                if (anticipo) {
+                    supabaseUpdate.tiene_anticipo = anticipo;
+                }
+                if (jsonDist) {
+                    supabaseUpdate.centro_costos = jsonDist;
+                }
+
+                const { data: updatedDoc, error: supaErr } = await supabase
+                    .from('Documento_Soporte')
+                    .update(supabaseUpdate)
+                    .eq('id', Number(itemId))
+                    .select('consecutivo, proveedor')
+                    .single();
+                
+                if (supaErr) throw supaErr;
+                
+                if (updatedDoc) {
+                    if (updatedDoc.consecutivo) consecutivoReal = String(updatedDoc.consecutivo);
+                    if (updatedDoc.proveedor) proveedorReal = updatedDoc.proveedor;
+                }
+                console.log(`Supabase cache updated for Documento_Soporte item ${itemId}`);
+            } catch (supaErr) {
+                console.error('Failed to update Supabase for Documento Soporte:', supaErr);
+                throw new Error('Error al actualizar Documento Soporte en Supabase');
+            }
+
+            // Trigger SAP Draft Creation on Approval
+            let sapResult = null;
+            if (action === 'Aprobado') {
+                try {
+                    console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
+
+                    sapResult = await createSapDraft({
+                        nit: nit || "",
+                        total: cleanValor !== null ? cleanValor : (valor || "0"),
+                        distribuciones: distribuciones || [],
+                        anticipo: anticipo === 'Con anticipo' ? 't' : 'f',
+                        observations: observaciones || 'Aprobado vía portal externo',
+                        nroFactura: nroFactura || itemId,
+                        docTypeDesc: 'DOCUMENTO SOPORTE',
+                        itemId: consecutivoReal,
+                        proveedorName: proveedorReal,
+                        seriesName: 'DSE3'
+                    });
+                } catch (sapErr: any) {
+                    console.error('Failed to trigger SAP Draft registration:', sapErr.message);
+                    sapResult = { success: false, error: sapErr.message };
+
+                    try {
+                        await supabase.from('log_errores_sap').insert({
+                            factura_id: Number(itemId),
+                            nro_factura: nroFactura || String(itemId),
+                            proveedor: proveedorReal,
+                            error_mensaje: sapErr.message,
+                            detalles: sapErr
+                        });
+                    } catch (logErr) {
+                        console.error('Failed to log SAP error to database:', logErr);
+                    }
+                }
+            }
+
+            return NextResponse.json({ success: true, sap: sapResult });
+        }
+
+        // --- For Registro_de_Facturas (SharePoint flow) ---
         const updatePayload: any = {};
 
-        if (isDocSoporte) {
-            updatePayload.AprobacionDoliente = action;
-        } else {
-            updatePayload.Aprobacion_Doliente = action;
-        }
+        updatePayload.Aprobacion_Doliente = action;
 
         if (action === 'Aprobado') {
             updatePayload.FechaAprobacion = new Date().toISOString();
@@ -84,58 +165,31 @@ export async function POST(req: NextRequest) {
 
         // Sync to Supabase for immediate feedback
         try {
-            if (isDocSoporte) {
-                const supabaseUpdate: any = {
-                    aprobacion_doliente: action,
-                    updated_at: new Date().toISOString()
-                };
-                if (cleanValor !== null) {
-                    supabaseUpdate.valor_total = cleanValor;
-                }
-                if (observaciones) {
-                    supabaseUpdate.observaciones = observaciones;
-                }
-                if (anticipo) {
-                    supabaseUpdate.tiene_anticipo = anticipo;
-                }
-                if (updatePayload.centro_costos) {
-                    supabaseUpdate.centro_costos = updatePayload.centro_costos;
-                }
-
-                const { error: supaErr } = await supabase
-                    .from('Documento_Soporte')
-                    .update(supabaseUpdate)
-                    .eq('id', Number(itemId));
-                
-                if (supaErr) throw supaErr;
-                console.log(`Supabase cache updated for Documento_Soporte item ${itemId}`);
-            } else {
-                const supabaseUpdate: any = {
-                    Aprobacion_Doliente: action,
-                    updated_at: new Date().toISOString()
-                };
-                if (updatePayload.FechaAprobacion) {
-                    supabaseUpdate.FechaAprobacion = updatePayload.FechaAprobacion;
-                }
-                if (cleanValor !== null) {
-                    supabaseUpdate["Valor_total"] = cleanValor;
-                }
-                if (observaciones) {
-                    supabaseUpdate.Observaciones = observaciones;
-                }
-                if (updatePayload.centro_costos) {
-                    supabaseUpdate.centro_costos = updatePayload.centro_costos;
-                    supabaseUpdate.tablaCostos = jsonDist; // Keep full version in Supabase
-                }
-
-                const { error: supaErr } = await supabase
-                    .from('Registro_Facturas')
-                    .update(supabaseUpdate)
-                    .eq('ID', Number(itemId));
-                
-                if (supaErr) throw supaErr;
-                console.log(`Supabase cache updated for Registro_Facturas item ${itemId}`);
+            const supabaseUpdate: any = {
+                Aprobacion_Doliente: action,
+                updated_at: new Date().toISOString()
+            };
+            if (updatePayload.FechaAprobacion) {
+                supabaseUpdate.FechaAprobacion = updatePayload.FechaAprobacion;
             }
+            if (cleanValor !== null) {
+                supabaseUpdate["Valor_total"] = cleanValor;
+            }
+            if (observaciones) {
+                supabaseUpdate.Observaciones = observaciones;
+            }
+            if (updatePayload.centro_costos) {
+                supabaseUpdate.centro_costos = updatePayload.centro_costos;
+                supabaseUpdate.tablaCostos = jsonDist; // Keep full version in Supabase
+            }
+
+            const { error: supaErr } = await supabase
+                .from('Registro_Facturas')
+                .update(supabaseUpdate)
+                .eq('ID', Number(itemId));
+            
+            if (supaErr) throw supaErr;
+            console.log(`Supabase cache updated for Registro_Facturas item ${itemId}`);
         } catch (supaErr) {
             console.error('Failed to update Supabase cache:', supaErr);
         }

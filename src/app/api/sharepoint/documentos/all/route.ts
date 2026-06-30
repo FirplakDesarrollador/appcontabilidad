@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
         console.log(`[API] Fetching Documento_Soporte from Supabase (pending=${pending}, offset=${offset})...`);
         
-        const columns = 'id, sharepoint_id, nit, proveedor, valor_total, consecutivo, aprobacion_doliente, gestion_contabilidad, observaciones, responsable_id, centro_costos, attachments, fecha_creacion, responsable_nombre, tiene_anticipo, pdf_url, adjunto';
+        const columns = 'id, sharepoint_id, nit, proveedor, valor_total, consecutivo, aprobacion_doliente, gestion_contabilidad, observaciones, responsable_id, centro_costos, attachments, fecha_creacion, responsable_nombre, tiene_anticipo, pdf_url, adjunto, fecha_aprobacion';
 
         let query = supabase.from('Documento_Soporte').select(columns);
         
@@ -31,10 +31,22 @@ export async function GET(req: Request) {
             throw error;
         }
 
+        const mappedData = (data || []).map(item => ({
+            ...item,
+            // SharePoint fallbacks for the frontend
+            FechaAprobacion: item.fecha_aprobacion,
+            AprobacionDoliente: item.aprobacion_doliente,
+            Gestion_Contabilidad: item.gestion_contabilidad,
+            Valortotal: item.valor_total,
+            Observaciones: item.observaciones,
+            Consecutivo_Doc_Soporte: item.consecutivo,
+            Responsable_de_Autorizar: item.responsable_nombre
+        }));
+
         return NextResponse.json({
             success: true,
-            total: data?.length || 0,
-            items: data || [],
+            total: mappedData.length,
+            items: mappedData,
             source: 'supabase'
         });
         
