@@ -10,6 +10,20 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing itemId or status' }, { status: 400 });
         }
 
+        if (listName === 'Documento_Soporte') {
+            const { error: supaErr } = await supabase
+                .from('Documento_Soporte')
+                .update({
+                    gestion_contabilidad: status,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', Number(itemId));
+                
+            if (supaErr) throw new Error(supaErr.message);
+            console.log(`Successfully updated status for Documento_Soporte item ${itemId} in Supabase`);
+            return NextResponse.json({ success: true });
+        }
+
         const client = await getGraphClient();
 
         // 1. Resolve Site ID
@@ -24,46 +38,32 @@ export async function POST(req: NextRequest) {
         const listId = list.id;
 
         const updateData: any = {};
-        if (listName === 'Documento_Soporte') {
-            updateData.gestion_contabilidad = status;
-        } else {
-            updateData.Aprobacion_Doliente = status;
-            if (status === 'Aprobado') {
-                updateData.Gestion_Contabilidad = 'Por Procesar';
-            }
-            updateData.FechaAprobacion = new Date().toISOString();
+        updateData.Aprobacion_Doliente = status;
+        if (status === 'Aprobado') {
+            updateData.Gestion_Contabilidad = 'Por Procesar';
         }
+        updateData.FechaAprobacion = new Date().toISOString();
 
         // 3. Update SharePoint
         await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updateData);
 
-        console.log(`Successfully updated status for item ${itemId}`);
+        console.log(`Successfully updated status for item ${itemId} in SharePoint`);
 
         // 4. Update Supabase
         try {
-            if (listName === 'Documento_Soporte') {
-                await supabase
-                    .from('Documento_Soporte')
-                    .update({
-                        gestion_contabilidad: status,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', Number(itemId));
-            } else {
-                const supaUpdate: any = {
-                    Aprobacion_Doliente: status,
-                    FechaAprobacion: updateData.FechaAprobacion,
-                    updated_at: new Date().toISOString()
-                };
-                if (status === 'Aprobado') {
-                    supaUpdate.Gestion_Contabilidad = 'Por Procesar';
-                }
-
-                await supabase
-                    .from('Registro_Facturas')
-                    .update(supaUpdate)
-                    .eq('ID', Number(itemId));
+            const supaUpdate: any = {
+                Aprobacion_Doliente: status,
+                FechaAprobacion: updateData.FechaAprobacion,
+                updated_at: new Date().toISOString()
+            };
+            if (status === 'Aprobado') {
+                supaUpdate.Gestion_Contabilidad = 'Por Procesar';
             }
+
+            await supabase
+                .from('Registro_Facturas')
+                .update(supaUpdate)
+                .eq('ID', Number(itemId));
         } catch (supaErr) {
             console.error('Failed to update Supabase cache:', supaErr);
         }

@@ -40,6 +40,41 @@ interface SharePointDocument {
     [key: string]: any;
 }
 
+const renderCostCenterForModal = (costCenterStr: any, tableCostStr: any) => {
+    if (!costCenterStr && !tableCostStr) return <span className="text-gray-400 italic">Sin asignar</span>;
+    
+    if (costCenterStr) {
+        try {
+            const parsed = typeof costCenterStr === 'string' ? JSON.parse(costCenterStr) : costCenterStr;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                return (
+                    <div className="flex flex-col gap-2">
+                        {parsed.map((p: any, i: number) => (
+                            <div key={i} className="flex flex-col bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Centro de Costo</div>
+                                <div className="text-sm font-black text-[#254153] mb-2 cursor-text select-text">{p.centroCosto || 'N/A'}</div>
+                                <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Cuenta</div>
+                                <div className="text-sm font-black text-[#254153] cursor-text select-text">{p.cuenta || 'N/A'}</div>
+                            </div>
+                        ))}
+                    </div>
+                );
+            }
+        } catch (e) {
+            return <div className="text-sm font-bold text-[#254153] whitespace-pre-wrap cursor-text select-text">{String(costCenterStr)}</div>;
+        }
+    }
+    
+    if (tableCostStr) {
+        if (typeof tableCostStr === 'object' && tableCostStr.Url) {
+            return <a href={tableCostStr.Url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm font-bold">Ver tabla adjunta</a>;
+        }
+        return <div className="text-sm font-bold text-[#254153] whitespace-pre-wrap cursor-text select-text">{String(tableCostStr)}</div>;
+    }
+    
+    return <span className="text-gray-400 italic">Sin asignar</span>;
+};
+
 export default function SupportDocumentsPage() {
     const { toggleSidebar } = useSidebar();
     const [documents, setDocuments] = useState<SharePointDocument[]>([]);
@@ -47,6 +82,46 @@ export default function SupportDocumentsPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [activeTab, setActiveTab] = useState<'pending' | 'processed'>('pending');
     const [selectedDoc, setSelectedDoc] = useState<SharePointDocument | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewError, setPreviewError] = useState<string | null>(null);
+    const [expandedPdfUrl, setExpandedPdfUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (selectedDoc) {
+            handlePreview(selectedDoc);
+        } else {
+            setPreviewUrl(null);
+            setPreviewError(null);
+        }
+    }, [selectedDoc]);
+
+    const handlePreview = async (doc: any) => {
+        try {
+            setPreviewError(null);
+            setPreviewLoading(true);
+            
+            const res = await fetch(`/api/externo/documento/${doc.id}`);
+            const data = await res.json();
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            if (data.documentInfo?.pdfUrl) {
+                setPreviewUrl(data.documentInfo.pdfUrl);
+            } else if (data.documentInfo?.fileName && data.documentInfo.fileName !== "Ver en SharePoint") {
+                setPreviewUrl(`/api/externo/documento/${doc.id}/download?file=${encodeURIComponent(data.documentInfo.fileName)}`);
+            } else {
+                throw new Error("No se encontraron adjuntos PDF válidos");
+            }
+        } catch (err: any) {
+            console.error('Preview error:', err);
+            setPreviewError(err.message || "No se pudo cargar la vista previa");
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
     const [selectedResponsable, setSelectedResponsable] = useState<string>("all");
     const [isEditingResponsible, setIsEditingResponsible] = useState(false);
     const [userSearchQuery, setUserSearchQuery] = useState("");
@@ -109,7 +184,11 @@ export default function SupportDocumentsPage() {
         Responsable_de_Autorizar: item.responsable_nombre || item.Responsable_de_Autorizar || "Sin asignar",
         Aprobacion_Doliente: item.aprobacion_doliente || item.AprobacionDoliente || "Pendiente",
         Gestion_Contabilidad: item.gestion_contabilidad || item.Gestion_Contabilidad || "Pendiente",
-        Created: item.fecha_creacion || item.Created || item.created_at
+        FechaAprobacion: item.FechaAprobacion || item.fecha_aprobacion || null,
+        Anticipo: item.Anticipo || item.anticipo || "N/A",
+        Created: item.fecha_creacion || item.Created || item.created_at,
+        centro_costos: item.centro_costos || item.CentroCostos || item.Centro_x0020_de_x0020_Costos || "",
+        tablaCostos: item.tablaCostos || item.TablaCostos || ""
     }));
 
     const fetchDocuments = async (refresh = false) => {
@@ -511,7 +590,7 @@ export default function SupportDocumentsPage() {
         { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{formatCostCenter(p.value, p.data?.tablaCostos)}</div> },
         { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : 'Sin fecha'}</div> },
         { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || 'Sin observaciones'}</div> },
-        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{p.value ? <a href={`/api/sharepoint/attachment-redirect?itemId=${p.data?.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
+        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{p.data?.pdf_url || p.data?.adjunto ? <a href={p.data.pdf_url || p.data.adjunto} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
     ], []);
 
     return (
@@ -757,37 +836,95 @@ export default function SupportDocumentsPage() {
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="space-y-6">
-                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-3">
-                                            <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Proveedor</p>
-                                            <p className="text-lg font-black text-[#254153] leading-tight">{selectedDoc.Proveedor}</p>
-                                            <p className="text-sm font-bold text-gray-500">NIT: {selectedDoc.Nit}</p>
-                                        </div>
-                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 grid grid-cols-2 gap-4">
-                                            <div>
-                                                <p className="text-[11px] font-bold text-gray-400 uppercase">Valor Total</p>
-                                                <p className="text-xl font-black text-[#254153]">{formatCurrency(selectedDoc.Monto)}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-[11px] font-bold text-gray-400 uppercase">Fecha Registro</p>
-                                                <p className="font-bold text-gray-600">{selectedDoc.Created ? new Date(selectedDoc.Created).toLocaleDateString() : "N/A"}</p>
-                                            </div>
-                                        </div>
-                                        {selectedDoc.Attachments && (
-                                            <div className="bg-blue-50/50 p-6 rounded-[24px] border border-blue-100 flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    <Paperclip className="h-5 w-5 text-blue-500" />
-                                                    <p className="text-sm font-bold text-blue-700">Documento Adjunto disponible</p>
+                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Información del Proveedor</h4>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Proveedor</p>
+                                                    <p className="text-lg font-black text-[#254153] leading-tight">{selectedDoc.Proveedor || "N/A"}</p>
                                                 </div>
-                                                <a href={`https://firplaksa.sharepoint.com/sites/FPKContabilidad/Lists/Documento_Soporte/DispForm.aspx?ID=${selectedDoc.id}`} target="_blank" rel="noreferrer" className="px-4 py-2 bg-white rounded-xl text-xs font-bold text-blue-600 shadow-sm border border-blue-100">Ver en SP</a>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <p className="text-[11px] font-bold text-gray-400 uppercase">NIT</p>
+                                                        <p className="font-bold text-gray-600">{selectedDoc.Nit || "N/A"}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[11px] font-bold text-gray-400 uppercase">Consecutivo</p>
+                                                        <p className="font-bold text-gray-600">{selectedDoc.Nro_Factura || "S/N"}</p>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        )}
+                                        </div>
+
+                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Montos y Fechas</h4>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Valor Total</p>
+                                                    <p className="text-xl font-black text-[#254153]">{formatCurrency(selectedDoc.Monto)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Fecha Registro</p>
+                                                    <p className="font-bold text-gray-600">{selectedDoc.Created ? new Date(selectedDoc.Created).toLocaleDateString() : "N/A"}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Fecha Aprobación</p>
+                                                    <p className="font-bold text-gray-600">
+                                                        {selectedDoc.FechaAprobacion ? new Date(selectedDoc.FechaAprobacion).toLocaleString() : "Pendiente"}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Anticipo / Tarjeta</p>
+                                                    <p className="font-bold text-gray-600">{selectedDoc.Anticipo || "N/A"}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Centro de Costos y Cuenta</h4>
+                                            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                                                {renderCostCenterForModal(selectedDoc.centro_costos, selectedDoc.tablaCostos)}
+                                            </div>
+                                        </div>
+
+                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Observaciones</h4>
+                                            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                                                <p className="text-sm font-medium text-gray-600 italic">"{selectedDoc.Observaciones || 'Sin observaciones'}"</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documento Adjunto</h4>
+                                                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[9px] font-black uppercase">LINK</span>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-blue-200 transition-colors" onClick={() => { if (selectedDoc.pdf_url || selectedDoc.adjunto) window.open(selectedDoc.pdf_url || selectedDoc.adjunto, '_blank'); else window.open(`/api/externo/documento/${selectedDoc.id}/download`, '_blank'); }}>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+                                                        <FileText className="h-5 w-5 text-blue-500" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-bold text-[#254153]">Documento_Soporte_{selectedDoc.id}</p>
+                                                        <p className="text-[10px] text-gray-400 font-medium mt-0.5">Ver Documento</p>
+                                                    </div>
+                                                </div>
+                                                <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500 transition-colors" />
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <div className="space-y-6">
                                         <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
-                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Aprobación</h4>
+                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Gestión y Aprobación</h4>
+                                            
                                             <div>
-                                                <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Responsable</p>
+                                                <p className="text-[11px] font-bold text-gray-400 uppercase mb-1.5">Estado Aprobación</p>
+                                                <span className={`inline-flex px-4 py-1.5 rounded-full text-xs font-black border ${getStatusStyles(selectedDoc.Aprobacion_Doliente)}`}>{selectedDoc.Aprobacion_Doliente}</span>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Responsable de Autorizar</p>
                                                 {!isEditingResponsible ? (
                                                     <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingResponsible(true)}>
                                                         <p className="font-extrabold text-[#254153]">{selectedDoc.Responsable_de_Autorizar}</p>
@@ -806,9 +943,12 @@ export default function SupportDocumentsPage() {
                                                     </div>
                                                 )}
                                             </div>
+
                                             <div>
-                                                <p className="text-[11px] font-bold text-gray-400 uppercase mb-1.5">Estado</p>
-                                                <span className={`inline-flex px-4 py-1.5 rounded-full text-xs font-black border ${getStatusStyles(selectedDoc.Aprobacion_Doliente)}`}>{selectedDoc.Aprobacion_Doliente}</span>
+                                                <p className="text-[11px] font-bold text-gray-400 uppercase mb-1.5">Gestión Contabilidad</p>
+                                                <div className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold text-[#254153]">
+                                                    {selectedDoc.Gestion_Contabilidad}
+                                                </div>
                                             </div>
                                         </div>
                                         
@@ -818,14 +958,100 @@ export default function SupportDocumentsPage() {
                                             </Button>
                                         )}
 
-                                        <div className="p-6 bg-[#254153]/5 rounded-[24px] border border-[#254153]/10">
-                                            <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Observaciones</p>
-                                            <p className="text-sm font-medium text-gray-600 italic">"{selectedDoc.Observaciones || 'Sin observaciones'}"</p>
+                                        <div className="grid grid-cols-2 gap-4 pt-2">
+                                            <Button variant="outline" className="h-12 rounded-2xl border-gray-200 hover:bg-gray-50 text-[#254153] font-bold flex items-center justify-center gap-2">
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                                Cargar a SAP
+                                            </Button>
+                                            <Button variant="outline" className="h-12 rounded-2xl border-gray-200 hover:bg-gray-50 text-[#254153] font-bold flex items-center justify-center gap-2" onClick={() => window.print()}>
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                                                Imprimir
+                                            </Button>
+                                        </div>
+
+                                        <div className="bg-gray-50/50 p-4 rounded-[24px] border border-gray-100 relative group h-[400px] flex flex-col mt-4">
+                                             <div className="flex justify-between items-center mb-3 px-2">
+                                                 <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Previsualización</h4>
+                                                 <button 
+                                                     onClick={() => previewUrl && setExpandedPdfUrl(previewUrl)} 
+                                                     className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-2"
+                                                     disabled={!previewUrl}
+                                                 >
+                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+                                                     Ampliar
+                                                 </button>
+                                             </div>
+                                             <div className="flex-1 relative rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm flex items-center justify-center">
+                                                {previewLoading ? (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-10 transition-all">
+                                                        <Loader2 className="h-8 w-8 text-[#254153] animate-spin mb-3" />
+                                                        <p className="text-[10px] font-black text-[#254153] uppercase tracking-[2px]">Cargando vista previa...</p>
+                                                    </div>
+                                                ) : previewError ? (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center bg-red-50/50">
+                                                        <div className="bg-white p-3 rounded-full shadow-sm mb-3">
+                                                            <X className="h-6 w-6 text-red-500" />
+                                                        </div>
+                                                        <p className="text-[11px] font-black text-red-900 mb-3 px-2">{previewError}</p>
+                                                        <Button 
+                                                            onClick={() => handlePreview(selectedDoc)} 
+                                                            className="h-8 text-[10px] bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-all"
+                                                        >
+                                                            Reintentar
+                                                        </Button>
+                                                    </div>
+                                                ) : previewUrl ? (
+                                                    <>
+                                                        <div 
+                                                            className="absolute inset-0 z-10 cursor-pointer bg-transparent" 
+                                                            onClick={() => setExpandedPdfUrl(previewUrl)} 
+                                                            title="Hacer clic para ampliar" 
+                                                        />
+                                                        <iframe 
+                                                            src={`${previewUrl}#toolbar=0&navpanes=0`} 
+                                                            className="w-full h-full border-none pointer-events-none" 
+                                                            onError={(e) => console.log('Error loading preview iframe')}
+                                                        />
+                                                    </>
+                                                ) : (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50/80 backdrop-blur-sm z-10">
+                                                        <FileText className="h-8 w-8 text-gray-300 mb-3" />
+                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[2px]">Sin previsualización</p>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Modal de Previsualización Expandida */}
+            <AnimatePresence>
+                {expandedPdfUrl && (
+                    <div className="fixed inset-0 z-[200] bg-[#254153]/90 backdrop-blur-xl flex flex-col">
+                        <div className="h-20 flex items-center justify-between px-8 bg-white/5 border-b border-white/10">
+                            <div className="flex items-center gap-4">
+                                <div className="h-12 w-12 rounded-2xl bg-white/10 flex items-center justify-center">
+                                    <FileText className="h-6 w-6 text-white" />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-black text-white">Vista Completa del Documento</h3>
+                                    <p className="text-white/60 text-sm font-medium">Use los controles del visor para acercar, alejar o imprimir</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setExpandedPdfUrl(null)} className="h-12 px-6 rounded-2xl bg-white/10 hover:bg-white/20 hover:text-white transition-all text-white/70 font-bold flex items-center gap-2">
+                                <X className="h-5 w-5" /> Cerrar Visor
+                            </button>
+                        </div>
+                        <div className="flex-1 p-8">
+                            <div className="w-full h-full bg-white rounded-2xl overflow-hidden shadow-2xl">
+                                <iframe src={expandedPdfUrl} className="w-full h-full border-none" />
+                            </div>
+                        </div>
                     </div>
                 )}
             </AnimatePresence>
