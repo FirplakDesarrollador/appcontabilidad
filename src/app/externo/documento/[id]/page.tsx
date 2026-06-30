@@ -213,7 +213,11 @@ export default function PublicDocumentApprovalPage() {
                         cuenta: d.cuenta || "",
                         valor: d.valor || "0"
                     }));
-                    setDistribuciones(normalized);
+                    if (normalized.length === 0 && data.valorTotal) {
+                        setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
+                    } else {
+                        setDistribuciones(normalized);
+                    }
                 } catch (e) {
                     console.error("Error parsing distributions:", e);
                     if (data.valorTotal) {
