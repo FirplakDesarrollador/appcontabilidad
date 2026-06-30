@@ -35,6 +35,7 @@ export async function GET(req: Request) {
             ...item,
             // SharePoint fallbacks for the frontend
             FechaAprobacion: item.fecha_aprobacion,
+            Created: item.fecha_creacion || item.created_at,
             AprobacionDoliente: item.aprobacion_doliente,
             Gestion_Contabilidad: item.gestion_contabilidad,
             Valortotal: item.valor_total,
