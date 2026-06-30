@@ -712,6 +712,8 @@ export default function PublicDocumentApprovalPage() {
                                                                                             c.Título?.startsWith("0") || 
                                                                                             c.Título?.startsWith("22") ||
                                                                                             c.Título?.startsWith("1465") ||
+                                                                                            c.Título?.startsWith("740105") ||
+                                                                                            c.Título?.startsWith("530515") ||
                                                                                             c.Título?.startsWith("1105")
                                                                                         )
                                                                                         .map((c: any) => ({
