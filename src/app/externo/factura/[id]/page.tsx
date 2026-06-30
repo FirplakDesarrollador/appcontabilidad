@@ -104,7 +104,7 @@ export default function PublicApprovalPage() {
     const [isExtractingValue, setIsExtractingValue] = useState(false);
 
     const [observaciones, setObservaciones] = useState<string>("");
-    const [distribuciones, setDistribuciones] = useState<{ centroCostos: string; cuenta: string; valor: string }[]>([]);
+    const [distribuciones, setDistribuciones] = useState<{ centroCostos: string; cuenta: string; valor: string }[]>([{ centroCostos: "", cuenta: "", valor: "" }]);
     const [anticipo, setAnticipo] = useState<string>("");
     const [editableTotal, setEditableTotal] = useState<string>("");
 
