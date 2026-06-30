@@ -41,6 +41,16 @@ export async function POST(req: NextRequest) {
         const listId = list.id;
 
         // 3. Update the Item AND Fetch current fields for SAP
+        let jsonDist = "";
+        if (distribuciones && Array.isArray(distribuciones) && distribuciones.length > 0) {
+            const centroCostosArray = distribuciones.map((d: any) => ({
+                centroCosto: d.centroCosto || d.centroCostos || "",
+                cuenta: d.cuenta || "",
+                valor: d.valor ? String(d.valor) : "0"
+            }));
+            jsonDist = JSON.stringify(centroCostosArray);
+        }
+
         const isDocSoporte = listName === 'Documento_Soporte';
         // If it's Documento_Soporte, skip SharePoint entirely
         if (isDocSoporte) {
@@ -147,14 +157,7 @@ export async function POST(req: NextRequest) {
             updatePayload.Valortotal = cleanValor;
         }
 
-        let jsonDist = "";
-        if (distribuciones && Array.isArray(distribuciones) && distribuciones.length > 0) {
-            const centroCostosArray = distribuciones.map((d: any) => ({
-                centroCosto: d.centroCosto || d.centroCostos || "",
-                cuenta: d.cuenta || "",
-                valor: d.valor ? String(d.valor) : "0"
-            }));
-            jsonDist = JSON.stringify(centroCostosArray);
+        if (jsonDist) {
             updatePayload.centro_costos = jsonDist;
         }
 
