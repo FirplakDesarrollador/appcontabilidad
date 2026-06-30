@@ -122,6 +122,9 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
             data.append("nit", formData.nit);
             data.append("proveedor", formData.proveedor);
             data.append("responsableEmail", formData.responsableEmail);
+            if (userSearch) {
+                data.append("responsableNombre", userSearch);
+            }
             data.append("file", file);
 
             const res = await fetch("/api/sharepoint/documentos/create", {
