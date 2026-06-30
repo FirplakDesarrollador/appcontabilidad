@@ -67,7 +67,7 @@ export default function PublicDocumentApprovalPage() {
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
     const [observaciones, setObservaciones] = useState<string>("");
-    const [distribuciones, setDistribuciones] = useState<{ centroCostos: string; cuenta: string; valor: string }[]>([{ centroCostos: "", cuenta: "", valor: "" }]);
+    const [distribuciones, setDistribuciones] = useState<{ centroCostos: string; cuenta: string; valor: string }[]>([]);
     const [anticipo, setAnticipo] = useState<string>("");
     const [editableTotal, setEditableTotal] = useState<string>("");
 
