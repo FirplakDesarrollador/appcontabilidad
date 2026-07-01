@@ -86,6 +86,32 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, error: 'Error al guardar el documento' }, { status: 500 });
         }
 
+        // Auto-registrar proveedor si no existe
+        if (responsableEmail && responsableNombreRecibido) {
+            try {
+                const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
+                const { data: existingProvider, error: lookupError } = await supabaseAdmin
+                    .from("Proveedores_con_Responsable")
+                    .select('"Nit"')
+                    .like("Nit", `${baseNit}%`)
+                    .limit(1);
+
+                if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
+                    await supabaseAdmin.from("Proveedores_con_Responsable").insert({
+                        "Nit": nit,
+                        "Nombre de socio de negocios": proveedor,
+                        "Responsable": responsableNombreRecibido,
+                        "Autorizador": responsableNombreRecibido,
+                        "Correo": responsableEmail,
+                        "Creado": new Date().toISOString()
+                    });
+                    console.log(`[Supabase] Registrado nuevo proveedor con responsable (Doc Soporte): ${nit} - ${responsableNombreRecibido}`);
+                }
+            } catch (providerErr) {
+                console.error("[Supabase] Error registrando Proveedor_con_Responsable (Doc Soporte):", providerErr);
+            }
+        }
+
         // 5. Notificación webhook Power Automate
         try {
             if (responsableEmail) {

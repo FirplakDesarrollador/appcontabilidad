@@ -66,11 +66,13 @@ export async function POST(req: NextRequest) {
 
         // 5. Resolver Responsable (Lookup ID) asegurando que exista en SharePoint
         let responsableLookupId = null;
+        let responsableName = null;
         if (responsableEmail) {
             try {
                 const spUser = await ensureSharePointUserByEmail(responsableEmail);
                 if (spUser) {
                     responsableLookupId = spUser.id;
+                    responsableName = spUser.title;
                 } else {
                     console.warn('[SharePoint] No se pudo asegurar el responsable por email:', responsableEmail);
                     return NextResponse.json({ error: `El correo responsable (${responsableEmail}) no es válido o no existe en SharePoint.` }, { status: 400 });
@@ -180,6 +182,32 @@ export async function POST(req: NextRequest) {
 
             if (supabaseError) {
                 console.error('Error al sincronizar con Supabase inmediatamente:', supabaseError.message);
+            }
+
+            // Auto-registrar proveedor si no existe
+            if (responsableEmail && responsableName) {
+                try {
+                    const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
+                    const { data: existingProvider, error: lookupError } = await supabaseAdmin
+                        .from("Proveedores_con_Responsable")
+                        .select('"Nit"')
+                        .like("Nit", `${baseNit}%`)
+                        .limit(1);
+
+                    if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
+                        await supabaseAdmin.from("Proveedores_con_Responsable").insert({
+                            "Nit": nit,
+                            "Nombre de socio de negocios": proveedor,
+                            "Responsable": responsableName,
+                            "Autorizador": responsableName,
+                            "Correo": responsableEmail,
+                            "Creado": new Date().toISOString()
+                        });
+                        console.log(`[Supabase] Registrado nuevo proveedor con responsable: ${nit} - ${responsableName}`);
+                    }
+                } catch (providerErr) {
+                    console.error("[Supabase] Error registrando Proveedor_con_Responsable:", providerErr);
+                }
             }
         } catch (supabaseCatchError) {
             console.error('Error fatal al sincronizar con Supabase:', supabaseCatchError);
