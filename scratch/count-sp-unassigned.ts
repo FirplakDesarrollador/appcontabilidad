@@ -44,7 +44,8 @@ async function run() {
             targetInvoices.slice(0, 20).forEach((inv, idx) => {
                 const facturaId = inv.fields?.Nro_Factura || inv.Nro_Factura || 'Sin Numero';
                 const proveedor = inv.fields?.Proveedor || inv.Proveedor || 'Desconocido';
-                console.log(`${idx + 1}. Factura: ${facturaId} | Proveedor: ${proveedor}`);
+                const modificado = inv.fields?.Modified || inv.fields?.Modificado || inv.Modified || 'Desconocido';
+                console.log(`${idx + 1}. Factura: ${facturaId} | Proveedor: ${proveedor} | Modificado: ${modificado}`);
             });
         }
         
