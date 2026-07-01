@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 export async function POST(req: NextRequest) {
     try {
-        const { itemId, status, listName = 'Registro_de_Facturas' } = await req.json();
+        const { itemId, status, listName = 'Registro_de_Facturas', field = 'Aprobacion_Doliente' } = await req.json();
 
         if (!itemId || !status) {
             return NextResponse.json({ error: 'Missing itemId or status' }, { status: 400 });
@@ -38,11 +38,15 @@ export async function POST(req: NextRequest) {
         const listId = list.id;
 
         const updateData: any = {};
-        updateData.Aprobacion_Doliente = status;
-        if (status === 'Aprobado') {
-            updateData.Gestion_Contabilidad = 'Por Procesar';
+        if (field === 'Gestion_Contabilidad') {
+            updateData.Gestion_Contabilidad = status;
+        } else {
+            updateData.Aprobacion_Doliente = status;
+            if (status === 'Aprobado') {
+                updateData.Gestion_Contabilidad = 'Por Procesar';
+            }
+            updateData.FechaAprobacion = new Date().toISOString();
         }
-        updateData.FechaAprobacion = new Date().toISOString();
 
         // 3. Update SharePoint
         await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updateData);
@@ -52,12 +56,16 @@ export async function POST(req: NextRequest) {
         // 4. Update Supabase
         try {
             const supaUpdate: any = {
-                Aprobacion_Doliente: status,
-                FechaAprobacion: updateData.FechaAprobacion,
                 updated_at: new Date().toISOString()
             };
-            if (status === 'Aprobado') {
-                supaUpdate.Gestion_Contabilidad = 'Por Procesar';
+            if (field === 'Gestion_Contabilidad') {
+                supaUpdate.Gestion_Contabilidad = status;
+            } else {
+                supaUpdate.Aprobacion_Doliente = status;
+                supaUpdate.FechaAprobacion = updateData.FechaAprobacion;
+                if (status === 'Aprobado') {
+                    supaUpdate.Gestion_Contabilidad = 'Por Procesar';
+                }
             }
 
             await supabase

@@ -986,7 +986,7 @@ export default function InvoicesPage() {
         });
     };
 
-    const handleAction = async (action: string) => {
+    const handleAction = async (action: string, field: string = 'Aprobacion_Doliente') => {
         if (!selectedInvoice) return;
         setActionLoading(action);
         try {
@@ -995,7 +995,8 @@ export default function InvoicesPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     itemId: selectedInvoice.id,
-                    status: action
+                    status: action,
+                    field
                 })
             });
 
@@ -1004,9 +1005,15 @@ export default function InvoicesPage() {
                 
                 const updateInvoiceState = (inv: any) => {
                     if (inv.id !== selectedInvoice.id) return inv;
-                    const updated = { ...inv, Aprobacion_Doliente: action, FechaAprobacion: nowIso };
-                    if (action === 'Aprobado') {
-                        updated.Gestion_Contabilidad = 'Por Procesar';
+                    const updated = { ...inv };
+                    if (field === 'Gestion_Contabilidad') {
+                        updated.Gestion_Contabilidad = action;
+                    } else {
+                        updated.Aprobacion_Doliente = action;
+                        updated.FechaAprobacion = nowIso;
+                        if (action === 'Aprobado') {
+                            updated.Gestion_Contabilidad = 'Por Procesar';
+                        }
                     }
                     return updated;
                 };
@@ -2212,7 +2219,7 @@ export default function InvoicesPage() {
                                                     <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Gestión Contabilidad</p>
                                                     <select
                                                         value={selectedInvoice.Gestion_Contabilidad || "Por Procesar"}
-                                                        onChange={(e) => handleAction(e.target.value)}
+                                                        onChange={(e) => handleAction(e.target.value, 'Gestion_Contabilidad')}
                                                         disabled={!!actionLoading}
                                                         className="w-full h-10 px-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254153]/20 transition-all cursor-pointer hover:border-[#254153]/30"
                                                     >
