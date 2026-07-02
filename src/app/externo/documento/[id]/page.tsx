@@ -286,7 +286,7 @@ export default function PublicDocumentApprovalPage() {
                 
                 if (action === 'Aprobado' && data.sap) {
                     if (data.sap.success) {
-                        setSuccessMessage(`Documento ${actionText} exitosamente y registrado directamente en SAP (#${data.sap.invoiceId})`);
+                        setSuccessMessage(`Documento ${actionText} exitosamente y borrador creado en SAP (#${data.sap.draftId})`);
                     } else {
                         setSuccessMessage(`Documento ${actionText} en SharePoint, pero hubo un error en SAP: ${data.sap.error}`);
                     }

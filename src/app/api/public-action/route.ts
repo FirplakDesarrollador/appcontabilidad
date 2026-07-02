@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { updateSharePointInvoiceStatus } from '@/lib/sharepoint';
-import { createSapInvoice } from '@/lib/sap';
+import { createSapDraft } from '@/lib/sap';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
             await updateSharePointInvoiceStatus(invoice.Nro_Factura!, action);
             
             if (action === 'Aprobado') {
-                console.log(`Public Action: Triggering SAP Invoice for invoice ${invoice.Nro_Factura}`);
+                console.log(`Public Action: Triggering SAP Draft for invoice ${invoice.Nro_Factura}`);
                 
                 const { getSharePointInvoiceById } = await import('@/lib/sharepoint');
                 const spItem = await getSharePointInvoiceById(id);
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
                 }
 
                 try {
-                    sapResult = await createSapInvoice({
+                    sapResult = await createSapDraft({
                         nit: invoice.Nit!,
                         total: invoice["Valor_total"]!,
                         distribuciones: distribuciones,
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
                         proveedorName: proveedorReal
                     });
                 } catch (sapErr: any) {
-                    console.error('Failed to trigger SAP Invoice registration:', sapErr.message);
+                    console.error('Failed to trigger SAP Draft registration:', sapErr.message);
                     sapResult = { success: false, error: sapErr.message };
 
                     // LOG ERROR TO SUPABASE

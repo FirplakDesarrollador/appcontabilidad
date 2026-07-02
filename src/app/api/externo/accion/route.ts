@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGraphClient } from '@/lib/sharepoint';
-import { createSapInvoice } from '@/lib/sap';
+import { createSapDraft } from '@/lib/sap';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -97,13 +97,13 @@ export async function POST(req: NextRequest) {
                 throw new Error('Error al actualizar Documento Soporte en Supabase');
             }
 
-            // Trigger SAP Invoice Creation on Approval
+            // Trigger SAP Draft Creation on Approval
             let sapResult = null;
             if (action === 'Aprobado') {
                 try {
-                    console.log(`Externo Accion: Triggering SAP Invoice for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
+                    console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
 
-                    sapResult = await createSapInvoice({
+                    sapResult = await createSapDraft({
                         nit: nit || "",
                         total: cleanValor !== null ? cleanValor : (valor || "0"),
                         distribuciones: distribuciones || [],
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
                         seriesName: 'DSE3'
                     });
                 } catch (sapErr: any) {
-                    console.error('Failed to trigger SAP Invoice registration:', sapErr.message);
+                    console.error('Failed to trigger SAP Draft registration:', sapErr.message);
                     sapResult = { success: false, error: sapErr.message };
 
                     try {
@@ -207,13 +207,13 @@ export async function POST(req: NextRequest) {
         const consecutivoReal = spItem.Consecutivo || itemId;
         const proveedorReal = spItem.Proveedor || spItem.tsic || spItem.Nombre_proveedor || spItem.Razon_social || "Proveedor Desconocido";
 
-        // 4. Trigger SAP Invoice Creation on Approval
+        // 4. Trigger SAP Draft Creation on Approval
         let sapResult = null;
         if (action === 'Aprobado') {
             try {
-                console.log(`Externo Accion: Triggering SAP Invoice for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
+                console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
 
-                sapResult = await createSapInvoice({
+                sapResult = await createSapDraft({
                     nit: nit || "",
                     total: cleanValor !== null ? cleanValor : (valor || "0"),
                     distribuciones: distribuciones || [],
@@ -226,7 +226,7 @@ export async function POST(req: NextRequest) {
                     seriesName: isDocSoporte ? 'DSE3' : undefined
                 });
             } catch (sapErr: any) {
-                console.error('Failed to trigger SAP Invoice registration:', sapErr.message);
+                console.error('Failed to trigger SAP Draft registration:', sapErr.message);
                 sapResult = { success: false, error: sapErr.message };
 
                 // LOG ERROR TO SUPABASE

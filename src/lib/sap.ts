@@ -101,7 +101,7 @@ async function sapRequestWithRetry(url: string, options: { method?: string; head
     throw new Error(`SAP request failed after ${retries} retries`);
 }
 
-export async function createSapInvoice(payload: SapDraftPayload) {
+export async function createSapDraft(payload: SapDraftPayload) {
     const { 
         nit, 
         total, 
@@ -122,7 +122,7 @@ export async function createSapInvoice(payload: SapDraftPayload) {
     const baseUrl = loginUrl.replace('/Login', '');
     
     // 1. LOGIN
-    console.log(`SAP Invoice [${nroFactura}]: Logging in to SAP...`);
+    console.log(`SAP Draft [${nroFactura}]: Logging in to SAP...`);
     const loginRes = await sapRequestWithRetry(loginUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -144,11 +144,11 @@ export async function createSapInvoice(payload: SapDraftPayload) {
     const cookieStr = Array.isArray(rawCookies) ? rawCookies.join('; ') : (rawCookies || '');
     const authHeaders = { 'Cookie': `B1SESSION=${sessionId}; ${cookieStr}` };
 
-    console.log(`SAP Invoice [${nroFactura}]: Login successful (Session: ${sessionId})`);
+    console.log(`SAP Draft [${nroFactura}]: Login successful (Session: ${sessionId})`);
 
     try {
         // 2. SEARCH BUSINESS PARTNER BY NIT (Búsqueda flexible: exacta, parcial o por CardCode)
-        console.log(`SAP Invoice [${nroFactura}]: Buscando Socio de Negocio para NIT ${nit}...`);
+        console.log(`SAP Draft [${nroFactura}]: Buscando Socio de Negocio para NIT ${nit}...`);
         
         const rawNit = nit;
         const cleanNit = nit.replace(/[^0-9]/g, '');
@@ -193,14 +193,14 @@ export async function createSapInvoice(payload: SapDraftPayload) {
         const cardName = match.CardName;
         const cardType = match.CardType;
         
-        console.log(`SAP Invoice [${nroFactura}]: Found BP ${cardCode} (${cardName}) type [${cardType}] for NIT ${nit}`);
+        console.log(`SAP Draft [${nroFactura}]: Found BP ${cardCode} (${cardName}) type [${cardType}] for NIT ${nit}`);
         
         if (cardType !== 'sSupplier' && cardType !== 'S') {
-            console.warn(`SAP Invoice [${nroFactura}]: ADVERTENCIA - El Socio de Negocio encontrado no es de tipo Proveedor (Tipo: ${cardType}). SAP podría rechazar el documento.`);
+            console.warn(`SAP Draft [${nroFactura}]: ADVERTENCIA - El Socio de Negocio encontrado no es de tipo Proveedor (Tipo: ${cardType}). SAP podría rechazar el documento.`);
         }
 
         // 3. BUILD DOCUMENT LINES — Look up ItemCode, Description and TaxCode from Supabase Articulos table
-        const invoiceUrl = process.env.SAP_PURCHASE_INVOICES_URL || `${baseUrl}/PurchaseInvoices`;
+        const draftUrl = process.env.SAP_DRAFTS_URL || `${baseUrl}/Drafts`;
         const documentLines: any[] = [];
         
         if (Array.isArray(distribuciones) && distribuciones.length > 0) {
@@ -245,7 +245,7 @@ export async function createSapInvoice(payload: SapDraftPayload) {
                 // Find mapped article from bulk result
                 // Compare as strings since AcctCode comes from a BIGINT DB column
                 const mappedArticulo = allArticulos.find(a => String(a.AcctCode) === String(accountCode));
-                console.log(`SAP Invoice: Mapping dist account ${accountCode} -> found item: ${mappedArticulo?.ItemCode}`);
+                console.log(`SAP Draft: Mapping dist account ${accountCode} -> found item: ${mappedArticulo?.ItemCode}`);
                 
                 const itemCode = mappedArticulo?.ItemCode || "";
                 const itemDescription = mappedArticulo?.Dscription || `${docTypeDesc} ${nroFactura}`;
@@ -273,29 +273,30 @@ export async function createSapInvoice(payload: SapDraftPayload) {
         }
 
         if (documentLines.length === 0) {
-            throw new Error('No valid distribution lines provided for SAP Invoice');
+            throw new Error('No valid distribution lines provided for SAP Draft');
         }
 
         // 4. GET SERIES ID IF PROVIDED
         let internalSeriesId = -1;
         if (payload.seriesName) {
-            console.log(`SAP Invoice [${nroFactura}]: Buscando ID para la serie '${payload.seriesName}'...`);
-            // Document 18 corresponds to oPurchaseInvoices (Factura de Proveedores)
+            console.log(`SAP Draft [${nroFactura}]: Buscando ID para la serie '${payload.seriesName}'...`);
+            // Document 18 corresponds to oPurchaseInvoices (Factura de Proveedores) which applies to Drafts of this type
             const seriesUrl = `${baseUrl}/Series?$filter=Name eq '${payload.seriesName}' and Document eq '18'`;
             const seriesRes = await sapRequestWithRetry(seriesUrl, { headers: authHeaders });
             if (seriesRes.status === 200 && seriesRes.data.value && seriesRes.data.value.length > 0) {
                 internalSeriesId = seriesRes.data.value[0].Series;
-                console.log(`SAP Invoice [${nroFactura}]: Found Series ID ${internalSeriesId} for '${payload.seriesName}'`);
+                console.log(`SAP Draft [${nroFactura}]: Found Series ID ${internalSeriesId} for '${payload.seriesName}'`);
             } else {
-                console.warn(`SAP Invoice [${nroFactura}]: Series Name '${payload.seriesName}' not found for Document 18. Falling back to manual.`);
+                console.warn(`SAP Draft [${nroFactura}]: Series Name '${payload.seriesName}' not found for Document 18. Falling back to manual.`);
             }
         }
 
-        // 5. CREATE INVOICE (PurchaseInvoices)
+        // 5. CREATE DRAFT (oPurchaseInvoices)
         const displayProveedor = proveedorName || cardName || 'N/A';
         const finalComments = `Proveedor: ${displayProveedor} | Factura: ${nroFactura} | ID: ${itemId || 'N/A'} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`;
         
-        const invoiceBody: any = {
+        const draftBody: any = {
+            DocObjectCode: "oPurchaseInvoices",
             DocType: "dDocument_Items",
             CardCode: String(cardCode).substring(0, 50),
             NumAtCard: String(nroFactura || '').substring(0, 100),
@@ -306,57 +307,59 @@ export async function createSapInvoice(payload: SapDraftPayload) {
 
         if (internalSeriesId !== -1) {
             // Usa numeración automática con la serie especificada (por ejemplo DSE3)
-            invoiceBody.Series = internalSeriesId;
-            console.log(`SAP Invoice [${nroFactura}]: Asignando Serie Automática [${payload.seriesName} -> ID ${internalSeriesId}]`);
+            draftBody.Series = internalSeriesId;
+            console.log(`SAP Draft [${nroFactura}]: Asignando Serie Automática [${payload.seriesName} -> ID ${internalSeriesId}]`);
         } else if (itemId) {
-            // Si no hay serie válida, pero hay ID de SharePoint, usa numeración manual
-            invoiceBody.Series = -1; // Manual
-            invoiceBody.HandWritten = "tYES";
-            invoiceBody.DocNum = parseInt(itemId.toString(), 10);
-            console.log(`SAP Invoice [${nroFactura}]: Consecutivo Manual [${invoiceBody.DocNum}] - ${cardName}`);
+            // Si no hay serie válida, pero hay ID de SharePoint, usa numeración manual (como en Facturas)
+            draftBody.Series = -1; // Manual
+            draftBody.HandWritten = "tYES";
+            draftBody.DocNum = parseInt(itemId.toString(), 10);
+            console.log(`SAP Draft [${nroFactura}]: Consecutivo Manual [${draftBody.DocNum}] - ${cardName}`);
         }
 
-        console.log(`SAP Invoice [${nroFactura}]: Creating invoice with ${documentLines.length} lines...`);
+        console.log(`SAP Draft [${nroFactura}]: Creating draft with ${documentLines.length} lines...`);
 
-        let createInvoiceRes = await sapRequestWithRetry(invoiceUrl, {
+        let createDraftRes = await sapRequestWithRetry(draftUrl, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
                 ...authHeaders
             },
-            body: JSON.stringify(invoiceBody),
+            body: JSON.stringify(draftBody),
         });
 
-        // FALLBACK PARA 502 PROXY ERROR
-        if (createInvoiceRes.status === 502 && invoiceBody.Series === -1) {
-            console.warn(`SAP Invoice [${nroFactura}]: 502 Proxy Error detectado. Reintentando sin DocNum manual para evitar conflictos...`);
-            delete invoiceBody.Series;
-            delete invoiceBody.HandWritten;
-            delete invoiceBody.DocNum;
+        // FALLBACK PARA 502 PROXY ERROR:
+        // A veces el Service Layer se cae (502) si se envía un DocNum duplicado en Series manual (-1).
+        // Si recibimos 502, reintentamos la creación permitiendo que SAP asigne el DocNum automáticamente.
+        if (createDraftRes.status === 502 && draftBody.Series === -1) {
+            console.warn(`SAP Draft [${nroFactura}]: 502 Proxy Error detectado. Reintentando sin DocNum manual para evitar conflictos...`);
+            delete draftBody.Series;
+            delete draftBody.HandWritten;
+            delete draftBody.DocNum;
             
-            createInvoiceRes = await sapRequestWithRetry(invoiceUrl, {
+            createDraftRes = await sapRequestWithRetry(draftUrl, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
                     ...authHeaders
                 },
-                body: JSON.stringify(invoiceBody),
+                body: JSON.stringify(draftBody),
             });
         }
 
-        if (createInvoiceRes.status !== 201 && createInvoiceRes.status !== 200) {
-            const sapError = createInvoiceRes.data?.error?.message?.value || JSON.stringify(createInvoiceRes.data);
+        if (createDraftRes.status !== 201 && createDraftRes.status !== 200) {
+            const sapError = createDraftRes.data?.error?.message?.value || JSON.stringify(createDraftRes.data);
             const firstLineInfo = documentLines.length > 0 
                 ? ` (Línea 1: Cuenta ${documentLines[0].AccountCode}, Item ${documentLines[0].ItemCode}, CC ${documentLines[0].CostingCode})` 
                 : "";
-            throw new Error(`Failed to create SAP Invoice: ${sapError}${firstLineInfo}`);
+            throw new Error(`Failed to create SAP Draft: ${sapError}${firstLineInfo}`);
         }
 
-        console.log(`SAP Invoice [${nroFactura}]: Created successfully with DocEntry ${createInvoiceRes.data.DocEntry}`);
+        console.log(`SAP Draft [${nroFactura}]: Created successfully with DocEntry ${createDraftRes.data.DocEntry}`);
 
         return {
             success: true,
-            invoiceId: createInvoiceRes.data.DocEntry,
+            draftId: createDraftRes.data.DocEntry,
             cardCode
         };
 
@@ -368,7 +371,7 @@ export async function createSapInvoice(payload: SapDraftPayload) {
                 method: 'POST',
                 headers: authHeaders
             });
-            console.log(`SAP Invoice [${nroFactura}]: Session logged out.`);
+            console.log(`SAP Draft [${nroFactura}]: Session logged out.`);
         } catch (logoutErr) {
             console.warn('SAP Logout failed (non-critical):', logoutErr);
         }

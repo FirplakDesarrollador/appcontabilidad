@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import { getSharePointInvoiceById } from '@/lib/sharepoint';
-import { createSapInvoice } from '@/lib/sap';
+import { createSapDraft } from '@/lib/sap';
 
 export async function POST(req: NextRequest) {
     try {
@@ -11,10 +11,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, error: 'Missing invoiceId' }, { status: 400 });
         }
 
-        console.log(`[Manual SAP Invoice] Triggering for invoice ID: ${invoiceId}`);
+        console.log(`[Manual SAP Draft] Triggering for invoice ID: ${invoiceId}`);
 
         // 1. Fetch invoice data (EXCLUSIVELY from SharePoint as requested)
-        console.log(`[Manual SAP Invoice] Fetching from SharePoint...`);
+        console.log(`[Manual SAP Draft] Fetching from SharePoint...`);
         let invoice: any = null;
         
         try {
@@ -46,10 +46,10 @@ export async function POST(req: NextRequest) {
                 Consecutivo: spItem.Consecutivo || String(invoiceId)
             };
 
-            console.log(`[Manual SAP Invoice] SharePoint Item ${invoiceId} loaded successfully.`);
+            console.log(`[Manual SAP Draft] SharePoint Item ${invoiceId} loaded successfully.`);
 
         } catch (spErr: any) {
-            console.error(`[Manual SAP Invoice] SharePoint fetch error:`, spErr.message);
+            console.error(`[Manual SAP Draft] SharePoint fetch error:`, spErr.message);
             throw new Error(`Failed to retrieve invoice from SharePoint: ${spErr.message}`);
         }
 
@@ -77,24 +77,24 @@ export async function POST(req: NextRequest) {
                 raw = raw ? [raw] : [];
             }
             
-            console.log("[Manual SAP Invoice] Raw distribution array:", JSON.stringify(raw, null, 2));
+            console.log("[Manual SAP Draft] Raw distribution array:", JSON.stringify(raw, null, 2));
             
-            // Normalize to what createSapInvoice expects (centroCostos)
+            // Normalize to what createSapDraft expects (centroCostos)
             distribuciones = raw.map((d: any) => ({
                 centroCostos: d.centroCostos || d.centroCosto || d.centro_costos || d.CentroCostos || d.TableCostos || '',
                 cuenta: d.cuenta || d.Cuenta || '',
                 valor: d.valor || d.Valor || d.monto || 0
             }));
             
-            console.log(`[Manual SAP Invoice] Normalized ${distribuciones.length} distribution lines from SharePoint.`);
+            console.log(`[Manual SAP Draft] Normalized ${distribuciones.length} distribution lines from SharePoint.`);
         } catch (e) {
-            console.error("[Manual SAP Invoice] Error parsing centro_costos from SharePoint:", e);
+            console.error("[Manual SAP Draft] Error parsing centro_costos from SharePoint:", e);
         }
 
         // Fallback: try reading from Supabase if SharePoint didn't have distribuciones
         if (distribuciones.length === 0) {
             try {
-                console.log(`[Manual SAP Invoice] Trying Supabase fallback for invoice ${invoiceId}...`);
+                console.log(`[Manual SAP Draft] Trying Supabase fallback for invoice ${invoiceId}...`);
                 const { data: supaRecord } = await supabase
                     .from('Registro_Facturas')
                     .select('distribuciones, centro_costos')
@@ -112,10 +112,10 @@ export async function POST(req: NextRequest) {
                         cuenta: d.cuenta || d.Cuenta || '',
                         valor: d.valor || d.Valor || d.monto || 0
                     }));
-                    console.log(`[Manual SAP Invoice] Got ${distribuciones.length} lines from Supabase fallback.`);
+                    console.log(`[Manual SAP Draft] Got ${distribuciones.length} lines from Supabase fallback.`);
                 }
             } catch (supaErr) {
-                console.error("[Manual SAP Invoice] Supabase fallback error:", supaErr);
+                console.error("[Manual SAP Draft] Supabase fallback error:", supaErr);
             }
         }
 
@@ -126,11 +126,11 @@ export async function POST(req: NextRequest) {
             }, { status: 400 });
         }
 
-        // 4. Trigger SAP Invoice Creation
+        // 4. Trigger SAP Draft Creation
         let sapResult = null;
         try {
-            console.log("[Manual SAP Invoice] Payload distribuciones:", JSON.stringify(distribuciones, null, 2));
-            sapResult = await createSapInvoice({
+            console.log("[Manual SAP Draft] Payload distribuciones:", JSON.stringify(distribuciones, null, 2));
+            sapResult = await createSapDraft({
                 nit: invoice.Nit!,
                 total: invoice["Valor total"]!,
                 distribuciones: distribuciones,
@@ -143,12 +143,12 @@ export async function POST(req: NextRequest) {
 
             return NextResponse.json({ 
                 success: true, 
-                message: 'Factura creada exitosamente en SAP',
+                message: 'Documento preliminar creado exitosamente en SAP',
                 sap: sapResult 
             });
 
         } catch (sapErr: any) {
-            console.error('[Manual SAP Invoice] SAP fail:', sapErr.message);
+            console.error('[Manual SAP Draft] SAP fail:', sapErr.message);
             
             // LOG ERROR TO SUPABASE
             try {
