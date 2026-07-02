@@ -77,6 +77,7 @@ interface SharePointInvoice {
     Documento_x0020_PDF?: string;
     FechaAprobacion?: string;
     adjuntos_url?: ManualAttachment[] | string | null;
+    tiene_anticipo?: string | boolean | null;
     [key: string]: any;
 }
 
@@ -1127,6 +1128,19 @@ export default function InvoicesPage() {
         return <span className="text-gray-400 italic">Sin asignar</span>;
     };
 
+    const formatAnticipo = (val: any) => {
+        if (val === true || val === 'true') return "Con anticipo";
+        if (val === false || val === 'false') return "Sin anticipo";
+        if (typeof val === 'string') {
+            const lower = val.toLowerCase();
+            if (lower.includes('compra')) return "Compra con Tarjeta";
+            if (lower.includes('con anticipo')) return "Con anticipo";
+            if (lower.includes('sin anticipo')) return "Sin anticipo";
+            return val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
+        }
+        return "N/A";
+    };
+
     const formatCurrency = (value: any) => {
         if (value === undefined || value === null || value === "") return "$ 0,00";
 
@@ -1240,6 +1254,7 @@ export default function InvoicesPage() {
         { headerName: 'Proveedor', field: 'Proveedor', width: 250, cellRenderer: (p: any) => <div className="text-sm font-bold text-gray-800 h-full flex items-center">{p.value || "N/A"}</div> },
         { headerName: 'Factura', field: 'Nro_Factura', width: 160, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="font-bold text-[#254153] leading-none">{p.value || "S/N"}</div><div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {p.data?.id}</div></div> },
         { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
+        { headerName: 'Anticipo / Tarjeta', field: 'tiene_anticipo', width: 150, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{formatAnticipo(p.value)}</div> },
         { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
         { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
         { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Por Procesar"}</div> },
@@ -1266,6 +1281,7 @@ export default function InvoicesPage() {
                     "Proveedor": inv.Proveedor || "N/A",
                     "Factura": inv.Nro_Factura || "S/N",
                     "Valor Total": typeof inv.Monto === 'number' ? inv.Monto : parseFloat(String(inv.Monto).replace(/[^\d.,-]/g, "").replace(",", ".")) || 0,
+                    "Anticipo / Tarjeta": formatAnticipo(inv.tiene_anticipo),
                     "Responsable": inv.Responsable_de_Autorizar || "Sin asignar",
                     "Estado": inv.Aprobacion_Doliente || "Pendiente",
                     "Gestión Contabilidad": inv.Gestion_Contabilidad || "Pendiente",
