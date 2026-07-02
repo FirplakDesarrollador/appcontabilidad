@@ -1141,6 +1141,24 @@ export default function InvoicesPage() {
         return "N/A";
     };
 
+    const renderAnticipoBadge = (val: any) => {
+        const str = formatAnticipo(val);
+        if (str === "N/A" || str === "Sin anticipo") {
+            return <span className="text-xs font-bold text-gray-500">{str}</span>;
+        }
+        
+        let bgColor = "bg-amber-100 text-amber-700 border-amber-200";
+        if (str === "Compra con Tarjeta") {
+            bgColor = "bg-purple-100 text-purple-700 border-purple-200";
+        }
+        
+        return (
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border ${bgColor}`}>
+                {str}
+            </span>
+        );
+    };
+
     const formatCurrency = (value: any) => {
         if (value === undefined || value === null || value === "") return "$ 0,00";
 
@@ -1254,7 +1272,7 @@ export default function InvoicesPage() {
         { headerName: 'Proveedor', field: 'Proveedor', width: 250, cellRenderer: (p: any) => <div className="text-sm font-bold text-gray-800 h-full flex items-center">{p.value || "N/A"}</div> },
         { headerName: 'Factura', field: 'Nro_Factura', width: 160, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="font-bold text-[#254153] leading-none">{p.value || "S/N"}</div><div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {p.data?.id}</div></div> },
         { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
-        { headerName: 'Anticipo / Tarjeta', field: 'tiene_anticipo', width: 150, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{formatAnticipo(p.value)}</div> },
+        { headerName: 'Anticipo / Tarjeta', field: 'tiene_anticipo', width: 150, cellRenderer: (p: any) => <div className="h-full flex items-center">{renderAnticipoBadge(p.value)}</div> },
         { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
         { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
         { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Por Procesar"}</div> },
@@ -2012,9 +2030,9 @@ export default function InvoicesPage() {
                                                 </div>
                                                 <div>
                                                     <p className="text-[11px] font-bold text-gray-400 uppercase">Anticipo / Tarjeta</p>
-                                                    <p className="font-bold text-gray-600">
-                                                        {selectedInvoice.tiene_anticipo || "N/A"}
-                                                    </p>
+                                                    <div className="mt-1">
+                                                        {renderAnticipoBadge(selectedInvoice.tiene_anticipo)}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
