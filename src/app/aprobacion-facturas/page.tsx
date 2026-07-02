@@ -1035,8 +1035,8 @@ export default function InvoicesPage() {
     };
 
     const handleManualSapSync = async (inv: SharePointInvoice) => {
-        if (!confirm(`Â¿Estás seguro de crear un documento preliminar en SAP para la factura ${inv.Nro_Factura}?`)) return;
-        
+        if (!confirm(`¿Estás seguro de registrar la factura ${inv.Nro_Factura} directamente en SAP?`)) return;
+
         setSyncingId(inv.id);
         try {
             const res = await fetch("/api/sap/manual-draft", {
@@ -1044,16 +1044,15 @@ export default function InvoicesPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ invoiceId: inv.id })
             });
-
             const data = await res.json();
             if (data.success) {
-                alert(`âœ… Preliminar SAP creado exitosamente\nDocEntry: ${data.sap.draftId}`);
+                alert(`✅ Factura creada exitosamente en SAP\nDocEntry: ${data.sap.invoiceId}`);
             } else {
-                alert(`âŒ Error al crear preliminar SAP: ${data.error}`);
+                alert(`❌ Error al crear factura en SAP: ${data.error}`);
             }
         } catch (error) {
             console.error("Error manual SAP sync:", error);
-            alert("âŒ Error de conexión al sincronizar con SAP. Revisa la consola.");
+            alert("❌ Error de conexión al sincronizar con SAP. Revisa la consola.");
         } finally {
             setSyncingId(null);
         }
