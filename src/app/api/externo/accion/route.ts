@@ -111,7 +111,8 @@ export async function POST(req: NextRequest) {
                         observations: observaciones || 'Aprobado vía portal externo',
                         nroFactura: nroFactura || itemId,
                         docTypeDesc: 'DOCUMENTO SOPORTE',
-                        itemId: consecutivoReal,
+                        itemId: String(itemId),
+                        consecutivo: consecutivoReal,
                         proveedorName: proveedorReal,
                         seriesName: 'DSE3'
                     });
@@ -221,7 +222,8 @@ export async function POST(req: NextRequest) {
                     observations: observaciones || 'Aprobado vía portal externo',
                     nroFactura: nroFactura || itemId,
                     docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA',
-                    itemId: consecutivoReal,
+                    itemId: String(itemId),
+                    consecutivo: consecutivoReal,
                     proveedorName: proveedorReal,
                     seriesName: isDocSoporte ? 'DSE3' : undefined
                 });

@@ -137,7 +137,8 @@ export async function POST(req: NextRequest) {
                 anticipo: invoice.tiene_anticipo ? 't' : 'f',
                 observations: invoice.Observaciones || 'Sincronización manual desde portal de aprobación',
                 nroFactura: invoice.Nro_Factura!,
-                itemId: consecutivoReal,
+                itemId: String(invoiceId),
+                consecutivo: consecutivoReal,
                 proveedorName: proveedorReal
             });
 

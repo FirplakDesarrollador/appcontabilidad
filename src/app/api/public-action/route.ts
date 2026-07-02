@@ -70,7 +70,8 @@ export async function POST(req: NextRequest) {
                         anticipo: invoice.tiene_anticipo ? 't' : 'f',
                         observations: invoice.Observaciones || 'Aprobado vía link rápido',
                         nroFactura: invoice.Nro_Factura!,
-                        itemId: consecutivoReal,
+                        itemId: String(id),
+                        consecutivo: consecutivoReal,
                         proveedorName: proveedorReal
                     });
                 } catch (sapErr: any) {

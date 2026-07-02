@@ -277,20 +277,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         // 4. GET SERIES ID IF PROVIDED
-        let internalSeriesId = -1;
-        if (payload.seriesName) {
-            console.log(`SAP Draft [${nroFactura}]: Buscando ID para la serie '${payload.seriesName}'...`);
-            // Document 18 corresponds to oPurchaseInvoices (Factura de Proveedores) which applies to Drafts of this type
-            const seriesUrl = `${baseUrl}/Series?$filter=Name eq '${payload.seriesName}' and Document eq '18'`;
-            const seriesRes = await sapRequestWithRetry(seriesUrl, { headers: authHeaders });
-            if (seriesRes.status === 200 && seriesRes.data.value && seriesRes.data.value.length > 0) {
-                internalSeriesId = seriesRes.data.value[0].Series;
-                console.log(`SAP Draft [${nroFactura}]: Found Series ID ${internalSeriesId} for '${payload.seriesName}'`);
-            } else {
-                console.warn(`SAP Draft [${nroFactura}]: Series Name '${payload.seriesName}' not found for Document 18. Falling back to manual.`);
-            }
-        }
-
+        // A solicitud del usuario, NUNCA usar Series de SAP. Siempre usar manual con el Consecutivo.
+        
         // 5. CREATE DRAFT (oPurchaseInvoices)
         const displayProveedor = proveedorName || cardName || 'N/A';
         const finalComments = `Proveedor: ${displayProveedor} | Factura: ${nroFactura} | ID: ${itemId || 'N/A'} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`;
@@ -302,19 +290,17 @@ export async function createSapDraft(payload: SapDraftPayload) {
             NumAtCard: String(nroFactura || '').substring(0, 100),
             DocDate: new Date().toISOString().split('T')[0],
             Comments: finalComments.substring(0, 250), // SAP limit is usually 250
-            DocumentLines: documentLines
+            DocumentLines: documentLines,
+            Series: -1, // Manual
+            HandWritten: "tYES"
         };
 
-        if (internalSeriesId !== -1) {
-            // Usa numeración automática con la serie especificada (por ejemplo DSE3)
-            draftBody.Series = internalSeriesId;
-            console.log(`SAP Draft [${nroFactura}]: Asignando Serie Automática [${payload.seriesName} -> ID ${internalSeriesId}]`);
-        } else if (itemId) {
-            // Si no hay serie válida, pero hay ID de SharePoint, usa numeración manual (como en Facturas)
-            draftBody.Series = -1; // Manual
-            draftBody.HandWritten = "tYES";
-            draftBody.DocNum = parseInt(itemId.toString(), 10);
+        const consecutivoValue = payload.consecutivo ? parseInt(payload.consecutivo.toString(), 10) : (itemId ? parseInt(itemId.toString(), 10) : null);
+        if (consecutivoValue && !isNaN(consecutivoValue)) {
+            draftBody.DocNum = consecutivoValue;
             console.log(`SAP Draft [${nroFactura}]: Consecutivo Manual [${draftBody.DocNum}] - ${cardName}`);
+        } else {
+            console.log(`SAP Draft [${nroFactura}]: Sin consecutivo manual válido, se dejará en blanco para asignación automática.`);
         }
 
         console.log(`SAP Draft [${nroFactura}]: Creating draft with ${documentLines.length} lines...`);
