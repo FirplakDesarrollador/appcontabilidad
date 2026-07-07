@@ -440,7 +440,6 @@ export default function InvoicesPage() {
     const [providersSearch, setProvidersSearch] = useState("");
     const [loadingProviders, setLoadingProviders] = useState(false);
     const [syncingId, setSyncingId] = useState<string | null>(null);
-    const [isSyncingSharePoint, setIsSyncingSharePoint] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [sapStatus, setSapStatus] = useState<'loading' | 'found' | 'not_found' | 'error' | null>(null);
@@ -652,30 +651,6 @@ export default function InvoicesPage() {
             console.error("Error fetching invoices:", error);
         } finally {
             setLoading(false);
-        }
-    };
-
-    const handleRefreshInvoices = async () => {
-        setIsSyncingSharePoint(true);
-        try {
-            const response = await fetch("/api/cron/sync-sharepoint?manual=true", {
-                method: "GET",
-            });
-            const data = await response.json();
-
-            if (!response.ok || data.success === false) {
-                throw new Error(data.error || "No se pudo ejecutar la sincronizacion");
-            }
-
-            await fetchInvoices(true);
-            if (activeTab === "processed") {
-                await fetchHistory(true);
-            }
-        } catch (error: unknown) {
-            console.error("Error syncing SharePoint from Supabase function:", error);
-            alert(error instanceof Error ? error.message : "Error al actualizar las facturas");
-        } finally {
-            setIsSyncingSharePoint(false);
         }
     };
 
@@ -1427,16 +1402,6 @@ export default function InvoicesPage() {
                             >
                                 <Download className="h-4 w-4" />
                                 <span className="hidden lg:inline">Descargar Excel</span>
-                            </Button>
-                            <Button
-                                variant="outline"
-
-                                onClick={handleRefreshInvoices}
-                                disabled={loading || isSyncingSharePoint}
-                                className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm"
-                            >
-                                {loading || isSyncingSharePoint ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                                {isSyncingSharePoint ? "Actualizando..." : "Actualizar"}
                             </Button>
                         </div>
                     </div>

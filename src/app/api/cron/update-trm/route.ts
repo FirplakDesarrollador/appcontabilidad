@@ -84,6 +84,7 @@ export async function GET(request: Request) {
 
         for (const db of databases) {
             console.log(`Updating TRM for Database: ${db}`);
+            let sessionId: string | null = null;
             try {
                 // Determine credentials for this DB
                 const isViventta = db === process.env.SAP_COMPANY_DB_VIVENTTA;
@@ -108,7 +109,7 @@ export async function GET(request: Request) {
 
                 if (!loginResponse || !loginResponse.ok) throw new Error(`SAP Login failed for ${db}`);
                 const loginData = await loginResponse.json();
-                const sessionId = loginData.SessionId;
+                sessionId = loginData.SessionId;
 
                 // Service URLs
                 const getRateUrl = process.env.SAP_CURRENCY_RATE_URL || "https://200.7.96.194:50000/b1s/v1/SBOBobService_GetCurrencyRate";
@@ -171,6 +172,20 @@ export async function GET(request: Request) {
                     success: false,
                     error: dbError.message
                 });
+            } finally {
+                // SAP LOGOUT — always release the session if we logged in!
+                if (sessionId) {
+                    try {
+                        const logoutUrl = (process.env.SAP_API_URL || "https://200.7.96.194:50000/b1s/v1/Login").replace(/\/Login\/?$/i, '/Logout');
+                        await fetch(logoutUrl, {
+                            method: 'POST',
+                            headers: { 'Cookie': `B1SESSION=${sessionId}` }
+                        });
+                        console.log(`[${db}] Logout exitoso.`);
+                    } catch (e) {
+                        console.warn(`[${db}] Error en Logout:`, e);
+                    }
+                }
             }
         }
 

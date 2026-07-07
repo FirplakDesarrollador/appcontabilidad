@@ -54,27 +54,9 @@ function mapSharePointInvoiceToSupabase(item: any) {
  * inmediatamente, y la próxima carga ya tendrá el estado actualizado.
  */
 async function syncPendingFromSharePointInBackground(reqUrl: string) {
-    if (pendingSyncInProgress) return;
-    pendingSyncInProgress = true;
-    try {
-        console.log('[BG Sync] Triggering background delta sync...');
-        const baseUrl = new URL(reqUrl).origin;
-        const secret = process.env.CRON_SECRET || '';
-        const syncUrl = `${baseUrl}/api/cron/sync-sharepoint?secret=${secret}`;
-        
-        const response = await fetch(syncUrl, { method: 'GET' });
-        if (!response.ok) {
-            console.error('[BG Sync] Failed to execute background delta sync:', response.statusText);
-        } else {
-            console.log('[BG Sync] Background delta sync completed successfully.');
-        }
-
-        lastPendingSync = Date.now();
-    } catch (err) {
-        console.error('[BG Sync] Error during background pending sync:', err);
-    } finally {
-        pendingSyncInProgress = false;
-    }
+    // Sincronización en segundo plano deshabilitada por solicitud del usuario
+    console.log('[BG Sync] Sync disabled.');
+    lastPendingSync = Date.now();
 }
 
 export async function GET(req: Request) {
