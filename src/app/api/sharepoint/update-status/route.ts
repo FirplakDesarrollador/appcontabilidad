@@ -11,12 +11,25 @@ export async function POST(req: NextRequest) {
         }
 
         if (listName === 'Documento_Soporte') {
+            const updatePayload: any = {
+                updated_at: new Date().toISOString()
+            };
+            
+            if (field === 'Gestion_Contabilidad') {
+                updatePayload.gestion_contabilidad = status;
+            } else if (field === 'Observaciones') {
+                updatePayload.observaciones = status;
+            } else {
+                updatePayload.aprobacion_doliente = status;
+                updatePayload.fecha_aprobacion = new Date().toISOString();
+                if (status === 'Aprobado') {
+                    updatePayload.gestion_contabilidad = 'Por Procesar';
+                }
+            }
+
             const { error: supaErr } = await supabase
                 .from('Documento_Soporte')
-                .update({
-                    gestion_contabilidad: status,
-                    updated_at: new Date().toISOString()
-                })
+                .update(updatePayload)
                 .eq('id', Number(itemId));
                 
             if (supaErr) throw new Error(supaErr.message);
@@ -40,6 +53,8 @@ export async function POST(req: NextRequest) {
         const updateData: any = {};
         if (field === 'Gestion_Contabilidad') {
             updateData.Gestion_Contabilidad = status;
+        } else if (field === 'Observaciones') {
+            updateData.Observaciones = status;
         } else {
             updateData.Aprobacion_Doliente = status;
             if (status === 'Aprobado') {
@@ -60,6 +75,8 @@ export async function POST(req: NextRequest) {
             };
             if (field === 'Gestion_Contabilidad') {
                 supaUpdate.Gestion_Contabilidad = status;
+            } else if (field === 'Observaciones') {
+                supaUpdate.Observaciones = status;
             } else {
                 supaUpdate.Aprobacion_Doliente = status;
                 supaUpdate.FechaAprobacion = updateData.FechaAprobacion;

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { useSidebar } from "@/context/SidebarContext";
@@ -80,7 +80,7 @@ export default function SupportDocumentsPage() {
     const [documents, setDocuments] = useState<SharePointDocument[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
-    const [activeTab, setActiveTab] = useState<'pending' | 'processed'>('pending');
+    const [activeTab, setActiveTab] = useState<'pending' | 'to_process' | 'processed'>('pending');
     const [selectedDoc, setSelectedDoc] = useState<SharePointDocument | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -128,6 +128,9 @@ export default function SupportDocumentsPage() {
     const [userSearchResults, setUserSearchResults] = useState<any[]>([]);
     const [isSearchingUsers, setIsSearchingUsers] = useState(false);
     const [isUpdatingResponsible, setIsUpdatingResponsible] = useState(false);
+    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+    const [isEditingObservaciones, setIsEditingObservaciones] = useState(false);
+    const [tempObservaciones, setTempObservaciones] = useState("");
     const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     
@@ -240,7 +243,7 @@ export default function SupportDocumentsPage() {
     };
 
     useEffect(() => {
-        if (activeTab === 'processed') {
+        if (activeTab === 'processed' || activeTab === 'to_process') {
             fetchHistory();
         }
     }, [activeTab]);
@@ -272,6 +275,7 @@ export default function SupportDocumentsPage() {
     useEffect(() => {
         setPendingResponsibleUser(null);
         setIsEditingResponsible(false);
+        setIsEditingObservaciones(false);
     }, [selectedDoc]);
 
     useEffect(() => {
@@ -341,6 +345,52 @@ export default function SupportDocumentsPage() {
             alert("Error de conexión al actualizar el responsable");
         } finally {
             setIsUpdatingResponsible(false);
+        }
+    };
+
+    const handleUpdateStatus = async (field: 'Aprobacion_Doliente' | 'Gestion_Contabilidad' | 'Observaciones', value: string) => {
+        if (!selectedDoc) return;
+        setIsUpdatingStatus(true);
+        try {
+            const res = await fetch("/api/sharepoint/update-status", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    itemId: selectedDoc.id,
+                    status: value,
+                    listName: 'Documento_Soporte',
+                    field
+                })
+            });
+
+            if (res.ok) {
+                const updatedDocs = documents.map(doc => {
+                    if (doc.id === selectedDoc.id) {
+                        const newDoc = { ...doc, [field]: value };
+                        if (field === 'Aprobacion_Doliente' && value === 'Aprobado') {
+                            newDoc.Gestion_Contabilidad = 'Por Procesar';
+                        }
+                        return newDoc;
+                    }
+                    return doc;
+                });
+                setDocuments(updatedDocs);
+                
+                const newSelected = { ...selectedDoc, [field]: value };
+                if (field === 'Aprobacion_Doliente' && value === 'Aprobado') {
+                    newSelected.Gestion_Contabilidad = 'Por Procesar';
+                }
+                setSelectedDoc(newSelected);
+                alert("Estado actualizado correctamente");
+            } else {
+                const data = await res.json();
+                alert(`Error al actualizar estado: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Error updating status:", error);
+            alert("Error de conexión al actualizar el estado");
+        } finally {
+            setIsUpdatingStatus(false);
         }
     };
 
@@ -461,10 +511,16 @@ export default function SupportDocumentsPage() {
         return state.includes("pendiente") || state.includes("por aprobar");
     };
 
+    const isToProcess = (doc: SharePointDocument) => {
+        const state = (doc.Aprobacion_Doliente || "").toLowerCase();
+        const contabilidad = (doc.Gestion_Contabilidad || "").toLowerCase();
+        return state.includes("aprobado") && !contabilidad.includes("procesado") && !state.includes("rechazado");
+    };
+
     const isProcessed = (doc: SharePointDocument) => {
         const state = (doc.Aprobacion_Doliente || "").toLowerCase();
         const contabilidad = (doc.Gestion_Contabilidad || "").toLowerCase();
-        return state.includes("aprobado") || state.includes("rechazado") || contabilidad.includes("procesado");
+        return contabilidad.includes("procesado") || state.includes("rechazado") || contabilidad.includes("rechazado");
     };
 
     const filteredDocuments = documents.filter(doc => {
@@ -473,7 +529,7 @@ export default function SupportDocumentsPage() {
             doc.Proveedor?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             doc.Nit?.toLowerCase().includes(searchTerm.toLowerCase());
 
-        const matchesTab = activeTab === 'pending' ? isPending(doc) : isProcessed(doc);
+        const matchesTab = activeTab === 'pending' ? isPending(doc) : activeTab === 'to_process' ? isToProcess(doc) : isProcessed(doc);
         const matchesResponsable = selectedResponsable === "all" || doc.Responsable_de_Autorizar === selectedResponsable;
 
         const matchesColInvoice = !columnFilters.invoice || doc.Nro_Factura?.toLowerCase().includes(columnFilters.invoice.toLowerCase());
@@ -663,10 +719,6 @@ export default function SupportDocumentsPage() {
                                 <ShieldCheck className="h-4 w-4" />
                                 <span className="hidden lg:inline">Aprobación Automática</span>
                             </button>
-                            <Button variant="outline" onClick={() => fetchDocuments(true)} disabled={loading} className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm">
-                                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                                Sincronizar SharePoint
-                            </Button>
                             <Button
                                 variant="outline"
                                 onClick={() => {
@@ -683,6 +735,14 @@ export default function SupportDocumentsPage() {
                                 Copiar link para proveedor
                             </Button>
                             <Button
+                                variant="outline"
+                                onClick={handleExportExcel}
+                                className="border-[#254153]/20 text-[#254153] hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 rounded-xl h-11 px-4 font-bold transition-all shadow-sm flex items-center gap-2"
+                            >
+                                <Download className="h-4 w-4" />
+                                <span className="hidden lg:inline">Descargar Excel</span>
+                            </Button>
+                            <Button
                                 onClick={() => setIsCreateModalOpen(true)}
                                 className="bg-[#254153] hover:bg-[#1a2f3d] text-white rounded-xl h-11 px-4 font-bold shadow-sm transition-all"
                             >
@@ -691,10 +751,11 @@ export default function SupportDocumentsPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                         {[
                             { label: "Total Documentos", value: documents.length, icon: Paperclip, color: "bg-blue-500", bg: "bg-blue-50" },
-                            { label: "Pendientes", value: documents.filter(isPending).length, icon: RefreshCw, color: "bg-amber-500", bg: "bg-amber-50" },
+                            { label: "Por Aprobar", value: documents.filter(isPending).length, icon: RefreshCw, color: "bg-amber-500", bg: "bg-amber-50" },
+                            { label: "Por Procesar", value: documents.filter(isToProcess).length, icon: Loader2, color: "bg-indigo-500", bg: "bg-indigo-50" },
                             { label: "Histórico", value: documents.filter(isProcessed).length, icon: Bell, color: "bg-emerald-500", bg: "bg-emerald-50" }
                         ].map((stat, i) => (
                             <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.02)] flex items-center gap-5 group hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all cursor-default">
@@ -716,6 +777,11 @@ export default function SupportDocumentsPage() {
                             <RefreshCw className={`h-4 w-4 ${activeTab === 'pending' ? 'animate-spin-slow' : ''}`} />
                             Por Aprobar
                             {documents.filter(isPending).length > 0 && <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'pending' ? "bg-white/20" : "bg-gray-200"}`}>{documents.filter(isPending).length}</span>}
+                        </button>
+                        <button onClick={() => setActiveTab('to_process')} className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'to_process' ? "bg-[#254153] text-white shadow-lg" : "text-gray-500 hover:bg-white/50"}`}>
+                            <Loader2 className={`h-4 w-4 ${activeTab === 'to_process' ? 'animate-spin-slow' : ''}`} />
+                            Por Procesar
+                            {documents.filter(isToProcess).length > 0 && <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'to_process' ? "bg-white/20" : "bg-gray-200"}`}>{documents.filter(isToProcess).length}</span>}
                         </button>
                         <button onClick={() => setActiveTab('processed')} className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'processed' ? "bg-[#254153] text-white shadow-lg" : "text-gray-500 hover:bg-white/50"}`}>
                             <Bell className="h-4 w-4" />
@@ -887,10 +953,37 @@ export default function SupportDocumentsPage() {
                                             </div>
                                         </div>
 
-                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
-                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Observaciones</h4>
+                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Observaciones</h4>
+                                                {!isEditingObservaciones && (
+                                                    <button onClick={() => { setIsEditingObservaciones(true); setTempObservaciones(selectedDoc.Observaciones || ""); }} className="text-blue-500 hover:text-blue-600 transition-colors p-1 flex items-center gap-1 text-[10px] font-bold uppercase">
+                                                        <Edit2 className="h-3 w-3" />
+                                                        Editar
+                                                    </button>
+                                                )}
+                                            </div>
                                             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
-                                                <p className="text-sm font-medium text-gray-600 italic">"{selectedDoc.Observaciones || 'Sin observaciones'}"</p>
+                                                {!isEditingObservaciones ? (
+                                                    <p className="text-sm font-medium text-gray-600 italic whitespace-pre-wrap">"{selectedDoc.Observaciones || 'Sin observaciones'}"</p>
+                                                ) : (
+                                                    <div className="space-y-3">
+                                                        <textarea 
+                                                            autoFocus
+                                                            className="w-full min-h-[100px] p-3 text-sm text-gray-700 bg-gray-50 border border-blue-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none" 
+                                                            value={tempObservaciones} 
+                                                            onChange={(e) => setTempObservaciones(e.target.value)}
+                                                            placeholder="Escribe las observaciones aquí..."
+                                                        />
+                                                        <div className="flex justify-end gap-2">
+                                                            <Button variant="outline" size="sm" onClick={() => setIsEditingObservaciones(false)} className="h-8 text-xs font-bold" disabled={isUpdatingStatus}>Cancelar</Button>
+                                                            <Button size="sm" onClick={async () => { await handleUpdateStatus('Observaciones', tempObservaciones); setIsEditingObservaciones(false); }} className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold" disabled={isUpdatingStatus}>
+                                                                {isUpdatingStatus ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 mr-1" />}
+                                                                Guardar
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
 
@@ -920,7 +1013,17 @@ export default function SupportDocumentsPage() {
                                             
                                             <div>
                                                 <p className="text-[11px] font-bold text-gray-400 uppercase mb-1.5">Estado Aprobación</p>
-                                                <span className={`inline-flex px-4 py-1.5 rounded-full text-xs font-black border ${getStatusStyles(selectedDoc.Aprobacion_Doliente)}`}>{selectedDoc.Aprobacion_Doliente}</span>
+                                                <select
+                                                    value={selectedDoc.Aprobacion_Doliente || "Pendiente"}
+                                                    onChange={(e) => handleUpdateStatus('Aprobacion_Doliente', e.target.value)}
+                                                    disabled={isUpdatingStatus}
+                                                    className={`w-full appearance-none px-4 py-2 rounded-xl text-xs font-black border focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${getStatusStyles(selectedDoc.Aprobacion_Doliente)} cursor-pointer disabled:opacity-50`}
+                                                >
+                                                    <option value="Pendiente">Pendiente</option>
+                                                    <option value="Por Aprobar">Por Aprobar</option>
+                                                    <option value="Aprobado">Aprobado</option>
+                                                    <option value="Rechazado">Rechazado</option>
+                                                </select>
                                             </div>
 
                                             <div>
@@ -946,9 +1049,17 @@ export default function SupportDocumentsPage() {
 
                                             <div>
                                                 <p className="text-[11px] font-bold text-gray-400 uppercase mb-1.5">Gestión Contabilidad</p>
-                                                <div className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold text-[#254153]">
-                                                    {selectedDoc.Gestion_Contabilidad}
-                                                </div>
+                                                <select
+                                                    value={selectedDoc.Gestion_Contabilidad || "Pendiente"}
+                                                    onChange={(e) => handleUpdateStatus('Gestion_Contabilidad', e.target.value)}
+                                                    disabled={isUpdatingStatus}
+                                                    className="w-full appearance-none px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-[#254153] focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer disabled:opacity-50"
+                                                >
+                                                    <option value="Pendiente">Pendiente</option>
+                                                    <option value="Por Procesar">Por Procesar</option>
+                                                    <option value="Procesado">Procesado</option>
+                                                    <option value="Rechazado">Rechazado</option>
+                                                </select>
                                             </div>
                                         </div>
                                         
