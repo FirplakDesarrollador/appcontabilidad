@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, Download } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, Download, CloudUpload } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { useSidebar } from "@/context/SidebarContext";
@@ -129,6 +129,7 @@ export default function SupportDocumentsPage() {
     const [isSearchingUsers, setIsSearchingUsers] = useState(false);
     const [isUpdatingResponsible, setIsUpdatingResponsible] = useState(false);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+    const [syncingId, setSyncingId] = useState<string | null>(null);
     const [isEditingObservaciones, setIsEditingObservaciones] = useState(false);
     const [tempObservaciones, setTempObservaciones] = useState("");
     const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
@@ -348,6 +349,31 @@ export default function SupportDocumentsPage() {
         }
     };
 
+    const handleManualSapSync = async (doc: SharePointDocument, isAuto: boolean = false) => {
+        if (!isAuto && !confirm(`¿Estás seguro de crear un documento preliminar en SAP para el documento soporte ${doc.Nro_Factura}?`)) return;
+        
+        setSyncingId(doc.id.toString());
+        try {
+            const res = await fetch("/api/sap/manual-draft", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ invoiceId: doc.id, source: "Documento_Soporte" })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                alert(`✅ Preliminar SAP creado exitosamente\nDocEntry: ${data.sap.draftId}`);
+            } else {
+                alert(`❌ Error al crear preliminar SAP: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Error manual SAP sync:", error);
+            alert("❌ Error de conexión al sincronizar con SAP. Revisa la consola.");
+        } finally {
+            setSyncingId(null);
+        }
+    };
+
     const handleUpdateStatus = async (field: 'Aprobacion_Doliente' | 'Gestion_Contabilidad' | 'Observaciones', value: string) => {
         if (!selectedDoc) return;
         setIsUpdatingStatus(true);
@@ -364,6 +390,10 @@ export default function SupportDocumentsPage() {
             });
 
             if (res.ok) {
+                if (field === 'Aprobacion_Doliente' && value === 'Aprobado') {
+                    await handleManualSapSync(selectedDoc, true);
+                }
+
                 const updatedDocs = documents.map(doc => {
                     if (doc.id === selectedDoc.id) {
                         const newDoc = { ...doc, [field]: value };
@@ -629,6 +659,9 @@ export default function SupportDocumentsPage() {
                         </Button>
                         <Button variant="outline" onClick={() => { setSelectedDoc(doc); }} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Ver Detalle">
                             <Search className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" onClick={() => handleManualSapSync(doc)} disabled={syncingId === doc.id.toString()} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Cargar a SAP">
+                            {syncingId === doc.id.toString() ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="h-3.5 w-3.5" />}
                         </Button>
                     </div>
                 );
