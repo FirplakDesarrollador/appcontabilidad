@@ -246,6 +246,23 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // 5. Enviar Notificación por Webhook de Power Automate
+        if (action === 'Aprobado' || action === 'Rechazado') {
+            try {
+                const { sendApprovalNotification } = await import('@/lib/sendApprovalNotification');
+                await sendApprovalNotification({
+                    factura: nroFactura || String(itemId),
+                    proveedor: proveedorReal,
+                    nit: nit || "",
+                    responsable_aprobacion: spItem.Responsable_de_Autorizar || "Responsable Desconocido",
+                    estado_aprobacion: action === 'Aprobado' ? "Aprobada" : "Rechazada",
+                    observaciones: observaciones || (action === 'Aprobado' ? 'Aprobado vía portal externo' : 'Rechazado vía portal externo')
+                });
+            } catch (notifyErr) {
+                console.error('Failed to send approval notification:', notifyErr);
+            }
+        }
+
         return NextResponse.json({ success: true, sap: sapResult });
     } catch (error: any) {
         console.error('Error in externo-accion API:', error);

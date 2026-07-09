@@ -201,6 +201,7 @@ export async function POST(req: NextRequest) {
                             if (listId) {
                                 await client.api(`/sites/${siteIdFPK}/lists/${listId}/items/${newItemId}/fields`).patch({
                                     Aprobacion_Doliente: 'Aprobado',
+                                    Observaciones: 'Aprobado automáticamente',
                                     centro_costos: checkData.centro_costos
                                 });
                             }

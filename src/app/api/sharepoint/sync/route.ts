@@ -199,6 +199,7 @@ export async function POST(req: Request) {
                         try {
                             await client.api(`/sites/${siteId}/lists/${listId}/items/${spItemId}/fields`).patch({
                                 Aprobacion_Doliente: 'Aprobado',
+                                Observaciones: 'Aprobado automáticamente',
                                 centro_costos: checkData.centro_costos
                             });
                         } catch(spErr) {
