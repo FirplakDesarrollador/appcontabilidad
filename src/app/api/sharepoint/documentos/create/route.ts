@@ -16,9 +16,10 @@ export async function POST(req: NextRequest) {
         const proveedor = formData.get('proveedor') as string;
         const responsableEmail = formData.get('responsableEmail') as string | null;
         let responsableNombreRecibido = formData.get('responsableNombre') as string | null;
+        const valorTotal = formData.get('valorTotal') as string | null;
         const file = formData.get('file') as File;
 
-        if (!file || !nit || !proveedor) {
+        if (!file || !nit || !proveedor || !valorTotal) {
             return NextResponse.json({ success: false, error: 'Faltan campos obligatorios' }, { status: 400 });
         }
 
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
             sharepoint_id: String(newItemId),
             nit: nit,
             proveedor: proveedor,
+            valor_total: valorTotal || null,
             aprobacion_doliente: 'Por Aprobar',
             gestion_contabilidad: 'Por Procesar',
             attachments: true,
