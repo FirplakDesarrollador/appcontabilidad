@@ -439,6 +439,7 @@ export default function InvoicesPage() {
     const [providers, setProviders] = useState<any[]>([]);
     const [providersSearch, setProvidersSearch] = useState("");
     const [loadingProviders, setLoadingProviders] = useState(false);
+    const [showOnlyActive, setShowOnlyActive] = useState(false);
     const [syncingId, setSyncingId] = useState<string | null>(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -771,7 +772,7 @@ export default function InvoicesPage() {
 
 
 
-    const fetchProviders = async (search?: string) => {
+    const fetchProviders = async (search?: string, onlyActive?: boolean) => {
         setLoadingProviders(true);
         try {
             let query = supabase
@@ -782,6 +783,9 @@ export default function InvoicesPage() {
             if (search) {
                 query = query.or(`razon_social.ilike.%${search}%,numero_identificacion.ilike.%${search}%`);
             }
+            if (onlyActive) {
+                query = query.eq('aprobacion_automatica', true);
+            }
             
             // Limitamos a 500 para que sea rápido, si busca algo específico lo encontrará
             const { data, error } = await query.limit(500);
@@ -790,7 +794,12 @@ export default function InvoicesPage() {
 
             if (search) {
                 // Si es búsqueda, reemplazamos los resultados
-                setProviders(data || []);
+                const sortedData = (data || []).sort((a, b) => {
+                    if (a.aprobacion_automatica && !b.aprobacion_automatica) return -1;
+                    if (!a.aprobacion_automatica && b.aprobacion_automatica) return 1;
+                    return (a.razon_social || '').localeCompare(b.razon_social || '');
+                });
+                setProviders(sortedData);
             } else {
                 // Si es carga inicial, combinamos con los que ya tienen aprobación automática activos
                 // (Para que no desaparezcan de la vista los que ya configuró)
@@ -804,7 +813,12 @@ export default function InvoicesPage() {
                             combined.push(p);
                         }
                     });
-                    return combined;
+                    
+                    return combined.sort((a, b) => {
+                        if (a.aprobacion_automatica && !b.aprobacion_automatica) return -1;
+                        if (!a.aprobacion_automatica && b.aprobacion_automatica) return 1;
+                        return (a.razon_social || '').localeCompare(b.razon_social || '');
+                    });
                 });
             }
         } catch (error) {
@@ -820,14 +834,14 @@ export default function InvoicesPage() {
 
         const timer = setTimeout(() => {
             if (providersSearch.length >= 2) {
-                fetchProviders(providersSearch);
+                fetchProviders(providersSearch, showOnlyActive);
             } else if (providersSearch.length === 0) {
-                fetchProviders();
+                fetchProviders("", showOnlyActive);
             }
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [providersSearch, isProvidersSidebarOpen]);
+    }, [providersSearch, showOnlyActive, isProvidersSidebarOpen]);
 
     const fetchCatalogos = async () => {
         if (centrosCostosList.length > 0) return; // Ya están cargados
@@ -1721,6 +1735,18 @@ export default function InvoicesPage() {
                                             className="w-full h-11 pl-10 pr-4 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153]/30 transition-all font-medium"
                                         />
                                     </div>
+                                    <div className="flex items-center mt-3">
+                                        <button
+                                            onClick={() => setShowOnlyActive(!showOnlyActive)}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                                                showOnlyActive 
+                                                ? 'bg-green-100 text-green-700 border border-green-200' 
+                                                : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200 shadow-xs'
+                                            }`}
+                                        >
+                                            <Check className="h-3 w-3" /> Proveedores Activos
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
@@ -1731,8 +1757,9 @@ export default function InvoicesPage() {
                                     ) : (
                                         providers
                                             .filter(p => 
-                                                p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) || 
-                                                p.numero_identificacion?.includes(providersSearch)
+                                                (!showOnlyActive || p.aprobacion_automatica) &&
+                                                (p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) || 
+                                                p.numero_identificacion?.includes(providersSearch))
                                             )
                                             .map((p) => (
                                                 <div 
@@ -1844,6 +1871,18 @@ export default function InvoicesPage() {
                                         className="w-full h-11 pl-10 pr-4 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153]/30 transition-all font-medium"
                                     />
                                 </div>
+                                <div className="flex items-center mt-3">
+                                    <button
+                                        onClick={() => setShowOnlyActive(!showOnlyActive)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                                            showOnlyActive 
+                                            ? 'bg-green-100 text-green-700 border border-green-200' 
+                                            : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200 shadow-xs'
+                                        }`}
+                                    >
+                                        <Check className="h-3 w-3" /> Proveedores Activos
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -1854,8 +1893,9 @@ export default function InvoicesPage() {
                                 ) : (
                                     providers
                                         .filter(p =>
-                                            p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) ||
-                                            p.numero_identificacion?.includes(providersSearch)
+                                            (!showOnlyActive || p.aprobacion_automatica) &&
+                                            (p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) ||
+                                            p.numero_identificacion?.includes(providersSearch))
                                         )
                                         .map((p) => (
                                             <div

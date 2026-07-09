@@ -184,6 +184,56 @@ export async function POST(req: Request) {
                 console.error(`[SYNC] Error upserting invoice ${spItemId}:`, upsertError.message);
             } else {
                 totalProcessed++;
+                
+                // --- Auto-approval detection ---
+                try {
+                    const { data: checkData } = await supabaseAdmin
+                        .from('Registro_Facturas')
+                        .select('Aprobacion_Doliente, centro_costos')
+                        .eq('ID', Number(spItemId))
+                        .single();
+                        
+                    if (checkData && checkData.Aprobacion_Doliente === 'Aprobado' && invoiceData.Aprobacion_Doliente !== 'Aprobado') {
+                        console.log(`[Auto-Approve] Invoice ${spItemId} auto-approved by DB trigger.`);
+                        
+                        try {
+                            await client.api(`/sites/${siteId}/lists/${listId}/items/${spItemId}/fields`).patch({
+                                Aprobacion_Doliente: 'Aprobado',
+                                centro_costos: checkData.centro_costos
+                            });
+                        } catch(spErr) {
+                            console.error('[Auto-Approve] Error patching SharePoint:', spErr);
+                        }
+                        
+                        try {
+                            const { createSapDraft } = await import('@/lib/sap');
+                            await createSapDraft({
+                                nit: invoiceData.Nit || "",
+                                total: invoiceData.Valor_total || "0",
+                                distribuciones: checkData.centro_costos ? JSON.parse(checkData.centro_costos) : [],
+                                anticipo: 'f',
+                                observations: 'Aprobado automáticamente por regla de proveedor',
+                                nroFactura: invoiceData.Nro_Factura || String(spItemId),
+                                docTypeDesc: 'FACTURA',
+                                itemId: String(spItemId),
+                                consecutivo: invoiceData.Consecutivo || String(spItemId),
+                                proveedorName: invoiceData.Proveedor || "Proveedor Desconocido"
+                            });
+                        } catch (sapErr: any) {
+                            console.error('[Auto-Approve] Error en SAP:', sapErr);
+                            await supabaseAdmin.from('log_errores_sap').insert({
+                                factura_id: Number(spItemId),
+                                nro_factura: invoiceData.Nro_Factura || String(spItemId),
+                                proveedor: invoiceData.Proveedor,
+                                error_mensaje: sapErr.message,
+                                detalles: sapErr
+                            });
+                        }
+                    }
+                } catch(e: any) {
+                    console.error('[Auto-Approve] Error in post-sync auto-approve logic:', e);
+                }
+                // -------------------------------
             }
         }
 

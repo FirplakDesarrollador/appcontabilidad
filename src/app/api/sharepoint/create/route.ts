@@ -182,6 +182,61 @@ export async function POST(req: NextRequest) {
 
             if (supabaseError) {
                 console.error('Error al sincronizar con Supabase inmediatamente:', supabaseError.message);
+            } else {
+                // --- Auto-approval detection ---
+                try {
+                    const { data: checkData } = await supabaseAdmin
+                        .from('Registro_Facturas')
+                        .select('Aprobacion_Doliente, centro_costos')
+                        .eq('ID', Number(newItemId))
+                        .single();
+                        
+                    if (checkData && checkData.Aprobacion_Doliente === 'Aprobado') {
+                        console.log(`[Auto-Approve] Invoice ${newItemId} auto-approved by DB trigger.`);
+                        
+                        try {
+                            const listsResponse = await client.api(`/sites/${siteIdFPK}/lists`).get();
+                            const listId = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas')?.id;
+                            
+                            if (listId) {
+                                await client.api(`/sites/${siteIdFPK}/lists/${listId}/items/${newItemId}/fields`).patch({
+                                    Aprobacion_Doliente: 'Aprobado',
+                                    centro_costos: checkData.centro_costos
+                                });
+                            }
+                        } catch(spErr: any) {
+                            console.error('[Auto-Approve] Error patching SharePoint:', spErr);
+                        }
+                        
+                        try {
+                            const { createSapDraft } = await import('@/lib/sap');
+                            await createSapDraft({
+                                nit: nit || "",
+                                total: valorTotal || "0",
+                                distribuciones: checkData.centro_costos ? JSON.parse(checkData.centro_costos) : [],
+                                anticipo: 'f',
+                                observations: 'Aprobado automáticamente por regla de proveedor',
+                                nroFactura: nroFactura || String(newItemId),
+                                docTypeDesc: 'FACTURA',
+                                itemId: String(newItemId),
+                                consecutivo: String(newItemId),
+                                proveedorName: proveedor || "Proveedor Desconocido"
+                            });
+                        } catch (sapErr: any) {
+                            console.error('[Auto-Approve] Error en SAP:', sapErr);
+                            await supabaseAdmin.from('log_errores_sap').insert({
+                                factura_id: Number(newItemId),
+                                nro_factura: nroFactura || String(newItemId),
+                                proveedor: proveedor,
+                                error_mensaje: sapErr.message,
+                                detalles: sapErr
+                            });
+                        }
+                    }
+                } catch(e: any) {
+                    console.error('[Auto-Approve] Error in post-create auto-approve logic:', e);
+                }
+                // -------------------------------
             }
 
             // Auto-registrar proveedor si no existe
