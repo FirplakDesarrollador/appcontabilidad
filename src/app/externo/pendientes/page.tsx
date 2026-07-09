@@ -27,6 +27,7 @@ interface Invoice {
     fechaRegistro: string;
     aprobacionDoliente: string;
     responsableActual: string;
+    tipo?: string;
 }
 
 function PendientesList() {
@@ -67,7 +68,7 @@ function PendientesList() {
         return (
             <div className="flex flex-col items-center justify-center p-20 text-center">
                 <Loader2 className="h-10 w-10 text-[#254153] animate-spin mb-4" />
-                <p className="text-gray-500 font-medium tracking-tight">Cargando tus facturas pendientes...</p>
+                <p className="text-gray-500 font-medium tracking-tight">Cargando tus pendientes...</p>
             </div>
         );
     }
@@ -99,7 +100,7 @@ function PendientesList() {
                 </div>
                 <h2 className="text-3xl font-black text-[#254153] mb-4">¡Todo en orden!</h2>
                 <p className="text-gray-500 max-w-sm text-lg font-medium">
-                    Está al día con las facturas. No tiene pendientes por aprobar en este momento.
+                    Está al día con sus asignaciones. No tiene pendientes por aprobar en este momento.
                 </p>
                 <div className="mt-10 h-1.5 w-16 bg-green-500/20 rounded-full" />
             </motion.div>
@@ -121,7 +122,7 @@ function PendientesList() {
             <div className="flex items-center justify-between px-4 mb-2">
                 <h2 className="text-lg font-bold text-[#254153] flex items-center gap-2">
                     <Inbox className="h-5 w-5 text-blue-500" />
-                    Tienes {invoices.length} {invoices.length === 1 ? 'factura pendiente' : 'facturas pendientes'}
+                    Tienes {invoices.length} {invoices.length === 1 ? 'pendiente' : 'pendientes'}
                 </h2>
             </div>
             
@@ -142,7 +143,7 @@ function PendientesList() {
                             <div className="flex items-center gap-3 mb-1">
                                 <h3 className="text-lg font-bold text-gray-900 truncate">{inv.proveedor}</h3>
                                 <span className="px-3 py-1 bg-gray-50 text-[10px] font-black uppercase text-gray-400 rounded-lg group-hover:bg-blue-50 group-hover:text-blue-600 transition-all">
-                                    FACTURA: {inv.nroFactura}
+                                    {inv.tipo || 'FACTURA'}: {inv.nroFactura}
                                 </span>
                             </div>
                             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-500 font-medium">
@@ -162,7 +163,7 @@ function PendientesList() {
                         </div>
 
                         <a 
-                            href={`/externo/factura/${inv.id}`}
+                            href={inv.tipo === 'DOCUMENTO SOPORTE' ? `/externo/documento/${inv.id}` : `/externo/factura/${inv.id}`}
                             className="inline-flex items-center justify-center gap-2 bg-[#254153]/5 hover:bg-[#254153] text-[#254153] hover:text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 group/btn border border-[#254153]/5 h-fit shadow-sm hover:shadow-lg shadow-[#254153]/10"
                         >
                             Ver y Aprobar
@@ -184,8 +185,8 @@ export default function PendientesPage() {
                         <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest mb-2 border border-blue-100">
                             Sistema de Gestión
                         </div>
-                        <h1 className="text-4xl font-black text-[#254153] tracking-tight">Facturas por Aprobar</h1>
-                        <p className="text-gray-500 font-medium">Revisa las facturas pendientes asignadas a tu centro de costo.</p>
+                        <h1 className="text-4xl font-black text-[#254153] tracking-tight">Facturas y Documentos por Aprobar</h1>
+                        <p className="text-gray-500 font-medium">Revisa las facturas y documentos soporte pendientes asignados a tu centro de costo.</p>
                     </div>
 
                     <div className="flex-shrink-0">
