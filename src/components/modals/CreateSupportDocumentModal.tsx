@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Upload, Loader2, CheckCircle2, AlertCircle, FileText, User, Search, ChevronDown } from "lucide-react";
+import { X, Upload, Loader2, CheckCircle2, AlertCircle, FileText, User, Search, ChevronDown, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 interface CreateSupportDocumentModalProps {
@@ -19,7 +19,8 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
     const [formData, setFormData] = useState({
         nit: "",
         proveedor: "",
-        responsableEmail: ""
+        responsableEmail: "",
+        valor: ""
     });
     
     const [file, setFile] = useState<File | null>(null);
@@ -125,6 +126,9 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
             if (userSearch) {
                 data.append("responsableNombre", userSearch);
             }
+            if (formData.valor) {
+                data.append("valorTotal", formData.valor);
+            }
             data.append("file", file);
 
             const res = await fetch("/api/sharepoint/documentos/create", {
@@ -154,7 +158,8 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
         setFormData({
             nit: "",
             proveedor: "",
-            responsableEmail: ""
+            responsableEmail: "",
+            valor: ""
         });
         setFile(null);
         setSuccess(false);
@@ -445,6 +450,23 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                         )}
                                     </AnimatePresence>
                                 </div>
+
+                                {/* Valor Total */}
+                                <div className="md:col-span-2 space-y-1.5 relative">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Valor Total</label>
+                                    <div className="relative group">
+                                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                                        <input
+                                            required
+                                            type="number"
+                                            min="0"
+                                            value={formData.valor}
+                                            onChange={(e) => setFormData({ ...formData, valor: e.target.value })}
+                                            className="w-full pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-[#254153]"
+                                            placeholder="Ej: 150000"
+                                        />
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Subida de Archivo */}
@@ -496,7 +518,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                 </Button>
                                 <Button
                                     type="submit"
-                                    disabled={isLoading || !file || !formData.proveedor || !formData.responsableEmail}
+                                    disabled={isLoading || !file || !formData.proveedor || !formData.responsableEmail || !formData.valor}
                                     className="flex-[2] rounded-xl h-12 text-sm font-black bg-[#254153] hover:bg-[#1a2f3d] text-white shadow-lg"
                                 >
                                     {isLoading ? (
