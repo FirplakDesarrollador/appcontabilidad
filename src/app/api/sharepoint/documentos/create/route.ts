@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
         let responsableNombreRecibido = formData.get('responsableNombre') as string | null;
         const valorTotal = formData.get('valorTotal') as string | null;
         const file = formData.get('file') as File;
+        const attachments = formData.getAll('attachments') as File[];
 
         if (!file || !nit || !proveedor || !valorTotal) {
             return NextResponse.json({ success: false, error: 'Faltan campos obligatorios' }, { status: 400 });
@@ -59,6 +60,34 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, error: 'Error interno de almacenamiento' }, { status: 500 });
         }
 
+        let anexosUrls: { name: string, url: string }[] = [];
+        for (const att of attachments) {
+            try {
+                const fileExtension = att.name.split('.').pop() || 'pdf';
+                const storagePath = `${newItemId}_anexo_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
+                const attBuffer = Buffer.from(await att.arrayBuffer());
+                
+                const { error: attError } = await supabaseAdmin
+                    .storage
+                    .from('documento_soporte')
+                    .upload(storagePath, attBuffer, {
+                        contentType: att.type || 'application/octet-stream',
+                        duplex: 'half'
+                    });
+
+                if (!attError) {
+                    const { data: attUrlData } = supabaseAdmin
+                        .storage
+                        .from('documento_soporte')
+                        .getPublicUrl(storagePath);
+                    
+                    anexosUrls.push({ name: att.name, url: attUrlData.publicUrl });
+                }
+            } catch (attErr) {
+                console.error('[Supabase Storage] Error uploading attachment:', attErr);
+            }
+        }
+
         const docData: any = {
             id: Number(newItemId),
             sharepoint_id: String(newItemId),
@@ -75,7 +104,7 @@ export async function POST(req: NextRequest) {
             responsable_id: responsableEmail || null,
             consecutivo: 'S/N',
             pdf_url: publicUrl,
-            adjunto: publicUrl
+            adjunto: anexosUrls.length > 0 ? JSON.stringify(anexosUrls) : publicUrl
         };
 
         console.log('[Supabase] Inserting Documento_Soporte into DB:', docData);

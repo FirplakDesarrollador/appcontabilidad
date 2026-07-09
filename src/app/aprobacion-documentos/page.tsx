@@ -1022,20 +1022,81 @@ export default function SupportDocumentsPage() {
 
                                         <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
                                             <div className="flex items-center justify-between">
-                                                <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documento Adjunto</h4>
-                                                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[9px] font-black uppercase">LINK</span>
+                                                <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documentos Adjuntos</h4>
+                                                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[9px] font-black uppercase">LINKS</span>
                                             </div>
-                                            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-blue-200 transition-colors" onClick={() => { if (selectedDoc.pdf_url || selectedDoc.adjunto) window.open(selectedDoc.pdf_url || selectedDoc.adjunto, '_blank'); else window.open(`/api/externo/documento/${selectedDoc.id}/download`, '_blank'); }}>
-                                                <div className="flex items-center gap-3">
-                                                    <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
-                                                        <FileText className="h-5 w-5 text-blue-500" />
+                                            <div className="space-y-3">
+                                                {/* Documento Principal */}
+                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-blue-200 transition-colors" onClick={() => { if (selectedDoc.pdf_url) window.open(selectedDoc.pdf_url, '_blank'); else window.open(`/api/externo/documento/${selectedDoc.id}/download`, '_blank'); }}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+                                                            <FileText className="h-5 w-5 text-blue-500" />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm font-bold text-[#254153]">Documento_Principal_{selectedDoc.id}</p>
+                                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Ver Documento</p>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <p className="text-sm font-bold text-[#254153]">Documento_Soporte_{selectedDoc.id}</p>
-                                                        <p className="text-[10px] text-gray-400 font-medium mt-0.5">Ver Documento</p>
-                                                    </div>
+                                                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500 transition-colors" />
                                                 </div>
-                                                <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500 transition-colors" />
+
+                                                {/* Anexos Adicionales */}
+                                                {(() => {
+                                                    try {
+                                                        const anexos = selectedDoc.adjunto ? JSON.parse(selectedDoc.adjunto) : null;
+                                                        if (Array.isArray(anexos)) {
+                                                            return anexos.map((anexo, idx) => (
+                                                                <div key={idx} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(anexo.url, '_blank')}>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
+                                                                            <FileText className="h-5 w-5 text-emerald-500" />
+                                                                        </div>
+                                                                        <div className="overflow-hidden">
+                                                                            <p className="text-sm font-bold text-[#254153] truncate max-w-[150px]">{anexo.name || `Anexo_${idx + 1}`}</p>
+                                                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Ver Anexo</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-emerald-500 transition-colors" />
+                                                                </div>
+                                                            ));
+                                                        } else if (selectedDoc.adjunto && selectedDoc.adjunto !== selectedDoc.pdf_url) {
+                                                            // Legacy format where adjunto is just a single string URL and different from pdf_url
+                                                            return (
+                                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(selectedDoc.adjunto, '_blank')}>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
+                                                                            <FileText className="h-5 w-5 text-emerald-500" />
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="text-sm font-bold text-[#254153]">Anexo_Adicional</p>
+                                                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Ver Anexo</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-emerald-500 transition-colors" />
+                                                                </div>
+                                                            );
+                                                        }
+                                                    } catch (e) {
+                                                        // Ignore parsing errors, meaning it's a raw URL. If it's different from pdf_url, show it.
+                                                        if (selectedDoc.adjunto && selectedDoc.adjunto !== selectedDoc.pdf_url && selectedDoc.adjunto.startsWith('http')) {
+                                                            return (
+                                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(selectedDoc.adjunto, '_blank')}>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
+                                                                            <FileText className="h-5 w-5 text-emerald-500" />
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="text-sm font-bold text-[#254153]">Anexo_Adicional</p>
+                                                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Ver Anexo</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-emerald-500 transition-colors" />
+                                                                </div>
+                                                            );
+                                                        }
+                                                    }
+                                                    return null;
+                                                })()}
                                             </div>
                                         </div>
                                     </div>
