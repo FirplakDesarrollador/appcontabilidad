@@ -213,7 +213,11 @@ export default function PublicDocumentApprovalPage() {
                         cuenta: d.cuenta || "",
                         valor: d.valor || "0"
                     }));
-                    setDistribuciones(normalized);
+                    if (normalized.length === 0 && data.valorTotal) {
+                        setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
+                    } else {
+                        setDistribuciones(normalized);
+                    }
                 } catch (e) {
                     console.error("Error parsing distributions:", e);
                     if (data.valorTotal) {
@@ -234,6 +238,13 @@ export default function PublicDocumentApprovalPage() {
 
     const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
         try {
+            if (action === 'Rechazado') {
+                if (!observaciones || observaciones.trim() === "") {
+                    alert("Por favor, ingresa una observación para poder rechazar el documento.");
+                    return;
+                }
+            }
+
             if (action === 'Aprobado') {
                 if (!anticipo) {
                     alert("Por favor, responde las preguntas de validación antes de aprobar.");
@@ -411,7 +422,7 @@ export default function PublicDocumentApprovalPage() {
                                                 document?.aprobacionDoliente === 'Rechazado' ? 'bg-red-500' :
                                                     'bg-[#254153] animate-pulse'
                                                 }`} />
-                                            {document?.aprobacionDoliente === 'Aprobado' ? 'APROBADO ANTERIORMENTE' :
+                                            {document?.aprobacionDoliente === 'Aprobado' ? (document?.observaciones?.toLowerCase().includes('automática') ? 'APROBADO AUTOMÁTICAMENTE POR REGLA' : 'APROBADO ANTERIORMENTE') :
                                                 document?.aprobacionDoliente === 'Rechazado' ? 'RECHAZADO ANTERIORMENTE' :
                                                     'PENDIENTE DE TU ACCIÓN'}
                                         </div>
@@ -629,7 +640,7 @@ export default function PublicDocumentApprovalPage() {
                                                     value={observaciones}
                                                     onChange={(e) => setObservaciones(e.target.value)}
                                                     className="w-full rounded-2xl border border-gray-200 p-5 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all resize-none h-28 text-sm text-gray-700 placeholder-gray-400"
-                                                    placeholder="Añade observaciones (opcional)..."
+                                                    placeholder="Añade observaciones (obligatorio para rechazar)..."
                                                     disabled={!!actionLoading}
                                                 />
                                             </div>
@@ -705,6 +716,8 @@ export default function PublicDocumentApprovalPage() {
                                                                                             c.Título?.startsWith("0") || 
                                                                                             c.Título?.startsWith("22") ||
                                                                                             c.Título?.startsWith("1465") ||
+                                                                                            c.Título?.startsWith("740105") ||
+                                                                                            c.Título?.startsWith("530515") ||
                                                                                             c.Título?.startsWith("1105")
                                                                                         )
                                                                                         .map((c: any) => ({
@@ -715,8 +728,9 @@ export default function PublicDocumentApprovalPage() {
 
                                                                                 const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === distribucion.centroCostos);
                                                                                 const prefix = selectedCC?.cuentas_asociadas?.toString();
+                                                                                const isGV = distribucion.centroCostos?.toUpperCase().startsWith("GV");
                                                                                 const filtered = prefix 
-                                                                                    ? cuentasList.filter(c => c.Título?.startsWith(prefix))
+                                                                                    ? cuentasList.filter(c => c.Título?.startsWith(prefix) || (isGV && c.Título?.startsWith("26059510")))
                                                                                     : cuentasList;
                                                                                 
                                                                                 return filtered.map((c: any) => ({

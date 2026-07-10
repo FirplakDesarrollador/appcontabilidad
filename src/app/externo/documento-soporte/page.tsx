@@ -14,7 +14,8 @@ import {
     ArrowRight,
     Search,
     ChevronDown,
-    User
+    User,
+    DollarSign
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -26,10 +27,12 @@ export default function DocumentoSoporteExternoPage() {
     const [formData, setFormData] = useState({
         nit: "",
         proveedor: "",
-        responsableEmail: ""
+        responsableEmail: "",
+        valor: ""
     });
 
     const [file, setFile] = useState<File | null>(null);
+    const [attachments, setAttachments] = useState<File[]>([]);
     const [isLookingUp, setIsLookingUp] = useState(false);
     const [autoFilled, setAutoFilled] = useState(false);
 
@@ -100,7 +103,20 @@ export default function DocumentoSoporteExternoPage() {
                         const users = userData.users || [];
                         
                         if (users.length > 0) {
-                            return users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase())) || users[0];
+                            // 1. Intentar match exacto con el searchQuery
+                            let match = users.find((u: any) => u.name.toLowerCase().includes(searchQuery.toLowerCase()));
+                            // 2. Si no, intentar que incluya todas las partes principales
+                            if (!match && parts.length > 1) {
+                                match = users.find((u: any) => {
+                                    const uName = u.name.toLowerCase();
+                                    return uName.includes(parts[0].toLowerCase()) && uName.includes(parts[1].toLowerCase());
+                                });
+                            }
+                            // 3. Fallback al primer nombre
+                            if (!match) {
+                                match = users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase()));
+                            }
+                            return match || users[0];
                         }
                         return null;
                     };
@@ -132,8 +148,8 @@ export default function DocumentoSoporteExternoPage() {
             return;
         }
 
-        if (!formData.nit || !formData.proveedor) {
-            setError("El NIT y la Razón Social son obligatorios.");
+        if (!formData.nit || !formData.proveedor || !formData.valor) {
+            setError("El NIT, la Razón Social y el Valor Total son obligatorios.");
             return;
         }
 
@@ -150,7 +166,13 @@ export default function DocumentoSoporteExternoPage() {
             if ((formData as any).responsableNombre) {
                 data.append("responsableNombre", (formData as any).responsableNombre);
             }
+            if (formData.valor) {
+                data.append("valorTotal", formData.valor);
+            }
             data.append("file", file);
+            attachments.forEach(att => {
+                data.append("attachments", att);
+            });
 
             const res = await fetch("/api/sharepoint/documentos/create", {
                 method: "POST",
@@ -196,8 +218,9 @@ export default function DocumentoSoporteExternoPage() {
                     <Button
                         onClick={() => {
                             setSuccess(false);
-                            setFormData({ nit: "", proveedor: "", responsableEmail: "" });
+                            setFormData({ nit: "", proveedor: "", responsableEmail: "", valor: "" });
                             setFile(null);
+                            setAttachments([]);
                             setAutoFilled(false);
                         }}
                         className="w-full h-12 rounded-xl bg-[#254153] hover:bg-[#1a2f3d] text-white font-bold"
@@ -338,6 +361,23 @@ export default function DocumentoSoporteExternoPage() {
                                 </div>
                             </div>
 
+                            {/* Valor Total */}
+                            <div className="space-y-1.5 pt-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Valor Total</label>
+                                <div className="relative group">
+                                    <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-[#254153] transition-colors" />
+                                    <input
+                                        required
+                                        type="number"
+                                        min="0"
+                                        value={formData.valor}
+                                        onChange={(e) => setFormData({ ...formData, valor: e.target.value })}
+                                        className="w-full h-14 pl-12 pr-4 bg-white border border-gray-200 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153] transition-all font-bold text-[#254153]"
+                                        placeholder="Ej: 150000"
+                                    />
+                                </div>
+                            </div>
+
                             {/* Archivo PDF */}
                             <div className="space-y-1.5 pt-2">
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Documento PDF</label>
@@ -376,11 +416,67 @@ export default function DocumentoSoporteExternoPage() {
                                     )}
                                 </div>
                             </div>
+
+                            {/* Anexos (Opcional) */}
+                            <div className="space-y-1.5 pt-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Anexos / Archivos Adjuntos (Opcional)</label>
+                                <div 
+                                    className={`relative border-2 border-dashed rounded-3xl p-6 flex flex-col items-center text-center space-y-3 transition-all cursor-pointer group
+                                        ${attachments.length > 0 ? "border-[#254153]/50 bg-[#254153]/5" : "border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300"}`}
+                                >
+                                    <input
+                                        type="file"
+                                        multiple
+                                        onChange={(e) => {
+                                            if (e.target.files) {
+                                                setAttachments(prev => [...prev, ...Array.from(e.target.files as FileList)]);
+                                            }
+                                        }}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                    />
+                                    {attachments.length > 0 ? (
+                                        <div className="flex flex-col gap-2 w-full text-left relative z-20">
+                                            {attachments.map((att, i) => (
+                                                <div key={i} className="flex items-center justify-between bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                                    <div className="flex items-center gap-3 overflow-hidden">
+                                                        <FileText className="h-5 w-5 text-[#254153] shrink-0" />
+                                                        <div className="overflow-hidden">
+                                                            <p className="text-sm font-bold text-[#254153] truncate">{att.name}</p>
+                                                            <p className="text-xs text-gray-500 font-medium">{(att.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setAttachments(prev => prev.filter((_, index) => index !== i));
+                                                        }}
+                                                        className="p-2 hover:bg-rose-50 text-gray-400 hover:text-rose-500 rounded-lg transition-colors"
+                                                    >
+                                                        <AlertCircle className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            <p className="text-xs text-[#254153] font-bold underline mt-2 text-center">Haz clic o arrastra para añadir más archivos</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="h-14 w-14 rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center group-hover:scale-110 transition-transform">
+                                                <Upload className="h-6 w-6 text-gray-400 group-hover:text-[#254153] transition-colors" />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-[#254153]">Selecciona o arrastra anexos adicionales aquí</p>
+                                                <p className="text-xs text-gray-400 font-medium mt-1">Puedes subir múltiples archivos</p>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
                         <Button
                             type="submit"
-                            disabled={isLoading || !file || !formData.nit || !formData.proveedor}
+                            disabled={isLoading || !file || !formData.nit || !formData.proveedor || !formData.valor}
                             className="w-full h-14 rounded-2xl bg-[#254153] hover:bg-[#1a2f3d] text-white font-black text-lg shadow-xl shadow-[#254153]/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                         >
                             {isLoading ? (

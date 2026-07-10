@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
             Nro_Factura: nroFactura,
             Valor_total: String(Number(monto) || 0),
             Aprobacion_Doliente: 'Por Aprobar',
-            Gestion_Contabilidad: 'Pendiente',
+            Gestion_Contabilidad: 'Por Procesar',
             Responsable_de_Autorizar: responsable || 'Sin asignar',
             Responsable_email: responsableEmail || '',
             fp: fileUrl,

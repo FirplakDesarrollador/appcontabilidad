@@ -37,6 +37,9 @@ export const getGraphClient = async () => {
     const token = await getAccessToken();
     return Client.init({
         authProvider: (done) => { done(null, token!); },
+        fetchOptions: {
+            cache: 'no-store'
+        }
     });
 };
 
@@ -96,56 +99,59 @@ export async function getCachedUserMap(client: Client, siteId: string): Promise<
  */
 export async function ensureSharePointUserByEmail(email: string): Promise<{ id: number, title: string } | null> {
     try {
-        const restToken = await getSharePointRESTToken();
-        if (!restToken) return null;
-
-        const spBaseUrl = 'https://firplaksa.sharepoint.com/sites/FPKContabilidad';
+        const client = await getGraphClient();
+        const siteSlug = 'FPKContabilidad';
         
-        // 1. Obtener el Request Digest (necesario para POST en SharePoint REST)
-        let digest = "";
+        // Obtenemos el siteId
+        const siteResponse = await client.api(`/sites/firplaksa.sharepoint.com:/sites/${siteSlug}`).get();
+        const siteId = siteResponse.id;
+
+        // 1. Intentar buscar en la User Information List usando Microsoft Graph
+        const cleanEmail = email.trim();
         try {
-            const digestRes = await fetch(`${spBaseUrl}/_api/contextinfo`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${restToken}`,
-                    'Accept': 'application/json;odata=verbose',
-                }
-            });
-            if (digestRes.ok) {
-                const digestData = await digestRes.json();
-                digest = digestData.d.GetContextWebInformation.FormDigestValue;
-            }
-        } catch (e) {
-            console.warn('[SharePoint] Could not fetch digest for ensureUser...');
-        }
+            const userInfoRes = await client.api(`/sites/${siteId}/lists('User Information List')/items`)
+                .header('Prefer', 'HonorNonIndexedQueriesWarningMayFailRandomly')
+                .expand('fields($select=id,EMail,Title)')
+                .filter(`fields/EMail eq '${cleanEmail}'`)
+                .get();
 
-        // 2. Llamar a ensureUser
-        const ensureUrl = `${spBaseUrl}/_api/web/ensureuser`;
-        const payload = JSON.stringify({ 'logonName': `i:0#.f|membership|${email}` });
-        
-        const ensureRes = await fetch(ensureUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${restToken}`,
-                'Accept': 'application/json;odata=verbose',
-                'Content-Type': 'application/json;odata=verbose',
-                ...(digest ? { 'X-RequestDigest': digest } : {})
-            },
-            body: payload
-        });
-
-        if (ensureRes.ok) {
-            const data = await ensureRes.json();
-            if (data.d && data.d.Id) {
+            if (userInfoRes && userInfoRes.value && userInfoRes.value.length > 0) {
+                const user = userInfoRes.value[0];
                 return {
-                    id: data.d.Id,
-                    title: data.d.Title
+                    id: user.fields.id || user.id,
+                    title: user.fields.Title
                 };
             }
-        } else {
-            const errText = await ensureRes.text();
-            console.warn(`[SharePoint] ensureUser failed for ${email}:`, errText);
+        } catch (graphErr: any) {
+            console.warn('[SharePoint] Graph filtered search failed, trying full list search:', graphErr.message);
         }
+
+        // Búsqueda completa iterando por las páginas (porque puede haber miles de usuarios)
+        try {
+            let nextLink: string | null = `/sites/${siteId}/lists('User Information List')/items?$expand=fields($select=id,EMail,Title)&$top=500`;
+            while (nextLink) {
+                const allUsers = await client.api(nextLink).get();
+                const foundUser = allUsers.value.find((u: any) =>
+                    u.fields?.EMail?.toLowerCase() === cleanEmail.toLowerCase()
+                );
+                
+                if (foundUser) {
+                    return {
+                        id: foundUser.fields.id || foundUser.id,
+                        title: foundUser.fields.Title
+                    };
+                }
+                nextLink = allUsers['@odata.nextLink'] ? allUsers['@odata.nextLink'].split('v1.0')[1] : null;
+            }
+        } catch (fullSearchErr: any) {
+            console.warn('[SharePoint] Graph pagination search failed:', fullSearchErr.message);
+        }
+
+        // Si el usuario no está en la lista de información del sitio, no podemos asegurar el usuario usando un token de App-Only 
+        // porque _api/web/ensureuser retorna "Unsupported app only token". 
+        // Tendremos que pedir que el usuario acceda a la lista al menos una vez, o usar otra estrategia si es necesario.
+        console.warn(`[SharePoint] El usuario ${cleanEmail} no se encuentra en la User Information List y ensureuser no es compatible con tokens App-Only.`);
+
     } catch (e) {
         console.error('[SharePoint] Exception in ensureUser:', e);
     }

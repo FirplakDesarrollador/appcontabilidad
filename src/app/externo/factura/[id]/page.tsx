@@ -216,9 +216,16 @@ export default function PublicApprovalPage() {
         try {
             setPreviewError(null);
             setPreviewLoading(true);
-            const blob = await fetchPdfBlob();
-            const url = window.URL.createObjectURL(blob);
-            setPreviewUrl(url);
+            const fileName = invoice?.documentInfo?.fileName || 'Factura';
+            const apiUrl = `/api/externo/factura/${itemId}/download?file=${encodeURIComponent(fileName)}`;
+            
+            const res = await fetch(apiUrl);
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || "No se ha encontrado factura en PDF");
+            }
+            
+            setPreviewUrl(apiUrl);
         } catch (err: any) {
             console.error('Preview error:', err);
             setPreviewError(err.message || "No se pudo cargar la vista previa");
@@ -278,7 +285,11 @@ export default function PublicApprovalPage() {
                         cuenta: d.cuenta || "",
                         valor: d.valor || "0"
                     }));
-                    setDistribuciones(normalized);
+                    if (normalized.length === 0 && data.valorTotal) {
+                        setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
+                    } else {
+                        setDistribuciones(normalized);
+                    }
                 } catch (e) {
                     console.error("Error parsing distributions:", e);
                     if (data.valorTotal) {
@@ -422,6 +433,13 @@ export default function PublicApprovalPage() {
 
     const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
         try {
+            if (action === 'Rechazado') {
+                if (!observaciones || observaciones.trim() === "") {
+                    alert("Por favor, ingresa una observación para poder rechazar la factura.");
+                    return;
+                }
+            }
+
             // Validate distributions sum equals invoice total if approved
             if (action === 'Aprobado') {
                 if (!anticipo) {
@@ -640,7 +658,7 @@ export default function PublicApprovalPage() {
                                                 invoice?.aprobacionDoliente === 'Rechazado' ? 'bg-red-500' :
                                                     'bg-[#254153] animate-pulse'
                                                 }`} />
-                                            {invoice?.aprobacionDoliente === 'Aprobado' ? 'APROBADA ANTERIORMENTE' :
+                                            {invoice?.aprobacionDoliente === 'Aprobado' ? (invoice?.observaciones?.toLowerCase().includes('automática') ? 'APROBADA AUTOMÁTICAMENTE POR REGLA' : 'APROBADA ANTERIORMENTE') :
                                                 invoice?.aprobacionDoliente === 'Rechazado' ? 'RECHAZADA ANTERIORMENTE' :
                                                     'PENDIENTE DE TU ACCIÓN'}
                                         </div>
@@ -890,7 +908,7 @@ export default function PublicApprovalPage() {
                                                     value={observaciones}
                                                     onChange={(e) => setObservaciones(e.target.value)}
                                                     className="w-full rounded-2xl border border-gray-200 p-5 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all resize-none h-28 text-sm text-gray-700 placeholder-gray-400"
-                                                    placeholder="Añade observaciones (opcional)..."
+                                                    placeholder="Añade observaciones (obligatorio para rechazar)..."
                                                     disabled={!!actionLoading || isReadOnly}
                                                 />
                                             </div>
@@ -1002,6 +1020,8 @@ export default function PublicApprovalPage() {
                                                                                             c.Título?.startsWith("0") || 
                                                                                             c.Título?.startsWith("22") ||
                                                                                             c.Título?.startsWith("1465") ||
+                                                                                            c.Título?.startsWith("740105") ||
+                                                                                            c.Título?.startsWith("530515") ||
                                                                                             c.Título?.startsWith("1105")
                                                                                         )
                                                                                         .map((c: any) => ({
@@ -1012,8 +1032,9 @@ export default function PublicApprovalPage() {
 
                                                                                 const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === distribucion.centroCostos);
                                                                                 const prefix = selectedCC?.cuentas_asociadas?.toString();
+                                                                                const isGV = distribucion.centroCostos?.toUpperCase().startsWith("GV");
                                                                                 const filtered = prefix 
-                                                                                    ? cuentasList.filter(c => c.Título?.startsWith(prefix))
+                                                                                    ? cuentasList.filter(c => c.Título?.startsWith(prefix) || (isGV && c.Título?.startsWith("26059510")))
                                                                                     : cuentasList;
                                                                                 
                                                                                 return filtered.map((c: any) => ({

@@ -17,8 +17,32 @@ export async function POST(req: NextRequest) {
         } = await req.json();
 
         if (!itemId || !userEmail) {
-
             return NextResponse.json({ error: 'Missing itemId or userEmail' }, { status: 400 });
+        }
+
+        if (listName === 'Documento_Soporte') {
+            const { error: supaErr } = await supabase
+                .from('Documento_Soporte')
+                .update({
+                    responsable_id: userEmail,
+                    responsable_nombre: userName,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', Number(itemId));
+                
+            if (supaErr) throw new Error(supaErr.message);
+            console.log(`Successfully updated responsible for Documento_Soporte item ${itemId} in Supabase`);
+            
+            const notificationSent = await sendReassignmentNotification({
+                itemId,
+                recipientEmail: userEmail,
+                recipientName: userName,
+                assignedByName,
+                invoiceNumber,
+                providerName,
+                listName
+            });
+            return NextResponse.json({ success: true, notificationSent });
         }
 
         const client = await getGraphClient();

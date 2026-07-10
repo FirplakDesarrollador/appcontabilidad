@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGraphClient, getSharePointItemById } from '@/lib/sharepoint';
+import { supabase } from '@/lib/supabaseClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,36 +16,31 @@ export async function GET(
             return NextResponse.json({ error: 'Missing itemId' }, { status: 400 });
         }
 
-        const client = await getGraphClient();
-        const docDetails = await getSharePointItemById(itemId, 'Documento_Soporte');
-        
-        let fileBuffer: ArrayBuffer | null = null;
-        let finalFileName = requestFileName || `documento_${docDetails.Consecutivo_Doc_Soporte || itemId}.pdf`;
+        const { data: dbDoc, error } = await supabase
+            .from('Documento_Soporte')
+            .select('pdf_url, adjunto, consecutivo')
+            .eq('id', Number(itemId))
+            .maybeSingle();
 
-        // Support Documents usually have attachments in the same list item
-        if (requestFileName && requestFileName !== 'Ver en SharePoint') {
-            try {
-                const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-                const siteId = siteResponse.id;
-                const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-                const list = listsResponse.value.find((l: any) => l.name === 'Documento_Soporte' || l.displayName === 'Documento_Soporte');
-                
-                if (list) {
-                    const attResponse = await client.api(`/sites/${siteId}/lists/${list.id}/items/${itemId}/attachments/${requestFileName}/$value`).get();
-                    if (attResponse) {
-                        fileBuffer = attResponse;
-                        finalFileName = requestFileName;
-                    }
-                }
-            } catch (attErr) {
-                console.warn(`[Direct Download] Failed to fetch attachment from Documento_Soporte:`, attErr);
-            }
+        if (error || !dbDoc) {
+            return NextResponse.json({ error: 'Documento no encontrado' }, { status: 404 });
         }
 
-        if (!fileBuffer) {
+        const pdfUrl = dbDoc.pdf_url || dbDoc.adjunto;
+
+        if (!pdfUrl) {
             return NextResponse.json({ error: 'No se ha encontrado documento en PDF' }, { status: 404 });
         }
 
+        // Fetch the file from the public URL to return it as an attachment blob
+        const fileResponse = await fetch(pdfUrl);
+        if (!fileResponse.ok) {
+            throw new Error(`Failed to fetch file from storage: ${fileResponse.statusText}`);
+        }
+
+        const fileBuffer = await fileResponse.arrayBuffer();
+
+        let finalFileName = requestFileName || `documento_${dbDoc.consecutivo || itemId}.pdf`;
         if (!finalFileName.toLowerCase().endsWith('.pdf')) {
             finalFileName = finalFileName.includes('.') 
                 ? finalFileName.replace(/\.[^/.]+$/, ".pdf")

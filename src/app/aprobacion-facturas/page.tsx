@@ -1,17 +1,20 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle, Plus, Trash2 } from "lucide-react";
+import { ProviderRuleManager } from '@/components/ProviderRuleManager';
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
 import { useSidebar } from "@/context/SidebarContext";
-import { Menu } from "lucide-react";
+import { Menu, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 import { AgGridReact } from 'ag-grid-react';
 import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
 
 // Configure AG Grid v35+ Modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -75,6 +78,7 @@ interface SharePointInvoice {
     Documento_x0020_PDF?: string;
     FechaAprobacion?: string;
     adjuntos_url?: ManualAttachment[] | string | null;
+    tiene_anticipo?: string | boolean | null;
     [key: string]: any;
 }
 
@@ -94,6 +98,7 @@ function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode
 }
 
 export default function InvoicesPage() {
+    const gridRef = useRef<AgGridReact>(null);
     const { toggleSidebar } = useSidebar();
     const [colWidths, setColWidths] = useState<Record<string, number>>({ 'C. Costos / Cuenta': 100 });
 
@@ -151,8 +156,8 @@ export default function InvoicesPage() {
     const [providers, setProviders] = useState<any[]>([]);
     const [providersSearch, setProvidersSearch] = useState("");
     const [loadingProviders, setLoadingProviders] = useState(false);
+    const [showOnlyActive, setShowOnlyActive] = useState(false);
     const [syncingId, setSyncingId] = useState<string | null>(null);
-    const [isSyncingSharePoint, setIsSyncingSharePoint] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [sapStatus, setSapStatus] = useState<'loading' | 'found' | 'not_found' | 'error' | null>(null);
@@ -163,6 +168,10 @@ export default function InvoicesPage() {
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewError, setPreviewError] = useState<string | null>(null);
+    
+    // Catalogos para reglas de aprobación
+    const [centrosCostosList, setCentrosCostosList] = useState<any[]>([]);
+    const [cuentasList, setCuentasList] = useState<any[]>([]);
 
     const [columnFilters, setColumnFilters] = useState({
         invoice: "",
@@ -255,14 +264,13 @@ export default function InvoicesPage() {
             setPreviewError(null);
             setPreviewLoading(true);
             const fileName = invoice?.documentInfo?.fileName || 'Factura';
-            const res = await fetch(`/api/externo/factura/${invoice.id}/download?file=${encodeURIComponent(fileName)}`);
+            const apiUrl = `/api/externo/factura/${invoice.id}/download?file=${encodeURIComponent(fileName)}`;
+            const res = await fetch(apiUrl);
             if (!res.ok) {
                 const data = await res.json();
                 throw new Error(data.error || "No se ha encontrado factura en PDF");
             }
-            const blob = await res.blob();
-            const url = window.URL.createObjectURL(blob);
-            setPreviewUrl(url);
+            setPreviewUrl(apiUrl);
         } catch (err: any) {
             console.error('Preview error:', err);
             setPreviewError(err.message || "No se pudo cargar la vista previa");
@@ -361,30 +369,6 @@ export default function InvoicesPage() {
             console.error("Error fetching invoices:", error);
         } finally {
             setLoading(false);
-        }
-    };
-
-    const handleRefreshInvoices = async () => {
-        setIsSyncingSharePoint(true);
-        try {
-            const response = await fetch("/api/cron/sync-sharepoint?manual=true", {
-                method: "GET",
-            });
-            const data = await response.json();
-
-            if (!response.ok || data.success === false) {
-                throw new Error(data.error || "No se pudo ejecutar la sincronizacion");
-            }
-
-            await fetchInvoices(true);
-            if (activeTab === "processed") {
-                await fetchHistory(true);
-            }
-        } catch (error: unknown) {
-            console.error("Error syncing SharePoint from Supabase function:", error);
-            alert(error instanceof Error ? error.message : "Error al actualizar las facturas");
-        } finally {
-            setIsSyncingSharePoint(false);
         }
     };
 
@@ -505,16 +489,19 @@ export default function InvoicesPage() {
 
 
 
-    const fetchProviders = async (search?: string) => {
+    const fetchProviders = async (search?: string, onlyActive?: boolean) => {
         setLoadingProviders(true);
         try {
             let query = supabase
                 .from('proveedores')
-                .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
+                .select('id, razon_social, numero_identificacion, aprobacion_automatica, proveedor_aprobacion_reglas(id, valor, porcentaje_desviacion, centro_costos, cuenta)')
                 .order('razon_social', { ascending: true });
 
             if (search) {
                 query = query.or(`razon_social.ilike.%${search}%,numero_identificacion.ilike.%${search}%`);
+            }
+            if (onlyActive) {
+                query = query.eq('aprobacion_automatica', true);
             }
             
             // Limitamos a 500 para que sea rápido, si busca algo específico lo encontrará
@@ -524,7 +511,12 @@ export default function InvoicesPage() {
 
             if (search) {
                 // Si es búsqueda, reemplazamos los resultados
-                setProviders(data || []);
+                const sortedData = (data || []).sort((a, b) => {
+                    if (a.aprobacion_automatica && !b.aprobacion_automatica) return -1;
+                    if (!a.aprobacion_automatica && b.aprobacion_automatica) return 1;
+                    return (a.razon_social || '').localeCompare(b.razon_social || '');
+                });
+                setProviders(sortedData);
             } else {
                 // Si es carga inicial, combinamos con los que ya tienen aprobación automática activos
                 // (Para que no desaparezcan de la vista los que ya configuró)
@@ -538,7 +530,12 @@ export default function InvoicesPage() {
                             combined.push(p);
                         }
                     });
-                    return combined;
+                    
+                    return combined.sort((a, b) => {
+                        if (a.aprobacion_automatica && !b.aprobacion_automatica) return -1;
+                        if (!a.aprobacion_automatica && b.aprobacion_automatica) return 1;
+                        return (a.razon_social || '').localeCompare(b.razon_social || '');
+                    });
                 });
             }
         } catch (error) {
@@ -554,14 +551,34 @@ export default function InvoicesPage() {
 
         const timer = setTimeout(() => {
             if (providersSearch.length >= 2) {
-                fetchProviders(providersSearch);
+                fetchProviders(providersSearch, showOnlyActive);
             } else if (providersSearch.length === 0) {
-                fetchProviders();
+                fetchProviders("", showOnlyActive);
             }
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [providersSearch, isProvidersSidebarOpen]);
+    }, [providersSearch, showOnlyActive, isProvidersSidebarOpen]);
+
+    const fetchCatalogos = async () => {
+        if (centrosCostosList.length > 0) return; // Ya están cargados
+        try {
+            const res = await fetch('/api/externo/catalogos');
+            const data = await res.json();
+            if (!data.error) {
+                setCentrosCostosList(data.centrosCostos || []);
+                setCuentasList(data.cuentas || []);
+            }
+        } catch (err) {
+            console.error('Error fetching catalogos:', err);
+        }
+    };
+
+    useEffect(() => {
+        if (isProvidersSidebarOpen) {
+            fetchCatalogos();
+        }
+    }, [isProvidersSidebarOpen]);
 
     const toggleProviderAutoApproval = async (id: string, currentValue: boolean) => {
         const newValue = !currentValue;
@@ -593,6 +610,79 @@ export default function InvoicesPage() {
         }
     };
 
+    const checkOverlap = (rules: any[], newValue: number, newDev: number) => {
+        const newMin = newValue - (newValue * newDev / 100);
+        const newMax = newValue + (newValue * newDev / 100);
+        
+        for (const rule of rules) {
+            const rMin = rule.valor - (rule.valor * rule.porcentaje_desviacion / 100);
+            const rMax = rule.valor + (rule.valor * rule.porcentaje_desviacion / 100);
+            
+            // Check for overlap: max(min1, min2) <= min(max1, max2)
+            if (Math.max(newMin, rMin) <= Math.min(newMax, rMax)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const addProviderRule = async (providerId: string, rule: any) => {
+        const provider = providers.find(p => p.id === providerId);
+        if (!provider) return false;
+        
+        const rules = provider.proveedor_aprobacion_reglas || [];
+        if (checkOverlap(rules, rule.valor, rule.porcentaje_desviacion)) {
+            alert('El valor y desviación ingresados se solapan con un valor existente para este proveedor.');
+            return false;
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('proveedor_aprobacion_reglas')
+                .insert({
+                    proveedor_id: providerId,
+                    valor: rule.valor,
+                    porcentaje_desviacion: rule.porcentaje_desviacion,
+                    centro_costos: rule.centro_costos,
+                    cuenta: rule.cuenta
+                })
+                .select();
+
+            if (error) throw error;
+
+            setProviders(prev => prev.map(p => 
+                p.id === providerId 
+                ? { ...p, proveedor_aprobacion_reglas: [...(p.proveedor_aprobacion_reglas || []), data[0]] } 
+                : p
+            ));
+            return true;
+        } catch (error) {
+            console.error('Error adding rule:', error);
+            alert('Error al guardar el valor.');
+            return false;
+        }
+    };
+
+    const deleteProviderRule = async (providerId: string, ruleId: string) => {
+        try {
+            const { error } = await supabase
+                .from('proveedor_aprobacion_reglas')
+                .delete()
+                .eq('id', ruleId);
+                
+            if (error) throw error;
+
+            setProviders(prev => prev.map(p => 
+                p.id === providerId 
+                ? { ...p, proveedor_aprobacion_reglas: (p.proveedor_aprobacion_reglas || []).filter((r: any) => r.id !== ruleId) } 
+                : p
+            ));
+        } catch (error) {
+            console.error('Error deleting rule:', error);
+            alert('Error al eliminar el valor.');
+        }
+    };
+
     const handleCopyLink = (inv: SharePointInvoice) => {
         const url = `${window.location.origin}/externo/factura/${inv.id}`;
         navigator.clipboard.writeText(url).then(() => {
@@ -603,7 +693,7 @@ export default function InvoicesPage() {
         });
     };
 
-    const handleAction = async (action: string) => {
+    const handleAction = async (action: string, field: string = 'Aprobacion_Doliente') => {
         if (!selectedInvoice) return;
         setActionLoading(action);
         try {
@@ -612,18 +702,32 @@ export default function InvoicesPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     itemId: selectedInvoice.id,
-                    status: action
+                    status: action,
+                    field
                 })
             });
 
             if (res.ok) {
-                setPendingInvoices(prev => prev.map(inv => 
-                    inv.id === selectedInvoice.id ? { ...inv, Gestion_Contabilidad: action } : inv
-                ));
-                setProcessedInvoices(prev => prev.map(inv => 
-                    inv.id === selectedInvoice.id ? { ...inv, Gestion_Contabilidad: action } : inv
-                ));
-                setSelectedInvoice(prev => prev ? { ...prev, Gestion_Contabilidad: action } : null);
+                const nowIso = new Date().toISOString();
+                
+                const updateInvoiceState = (inv: any) => {
+                    if (inv.id !== selectedInvoice.id) return inv;
+                    const updated = { ...inv };
+                    if (field === 'Gestion_Contabilidad') {
+                        updated.Gestion_Contabilidad = action;
+                    } else {
+                        updated.Aprobacion_Doliente = action;
+                        updated.FechaAprobacion = nowIso;
+                        if (action === 'Aprobado') {
+                            updated.Gestion_Contabilidad = 'Por Procesar';
+                        }
+                    }
+                    return updated;
+                };
+
+                setPendingInvoices(prev => prev.map(updateInvoiceState));
+                setProcessedInvoices(prev => prev.map(updateInvoiceState));
+                setSelectedInvoice(prev => prev ? updateInvoiceState(prev) : null);
                 alert(`Factura ${action.toLowerCase()} correctamente`);
             } else {
                 const data = await res.json();
@@ -729,6 +833,37 @@ export default function InvoicesPage() {
         }
         
         return <span className="text-gray-400 italic">Sin asignar</span>;
+    };
+
+    const formatAnticipo = (val: any) => {
+        if (val === true || val === 'true') return "Con anticipo";
+        if (val === false || val === 'false') return "Sin anticipo";
+        if (typeof val === 'string') {
+            const lower = val.toLowerCase();
+            if (lower.includes('compra')) return "Compra con Tarjeta";
+            if (lower.includes('con anticipo')) return "Con anticipo";
+            if (lower.includes('sin anticipo')) return "Sin anticipo";
+            return val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
+        }
+        return "N/A";
+    };
+
+    const renderAnticipoBadge = (val: any) => {
+        const str = formatAnticipo(val);
+        if (str === "N/A" || str === "Sin anticipo") {
+            return <span className="text-xs font-bold text-gray-500">{str}</span>;
+        }
+        
+        let bgColor = "bg-amber-100 text-amber-700 border-amber-200";
+        if (str === "Compra con Tarjeta") {
+            bgColor = "bg-purple-100 text-purple-700 border-purple-200";
+        }
+        
+        return (
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border ${bgColor}`}>
+                {str}
+            </span>
+        );
     };
 
     const formatCurrency = (value: any) => {
@@ -846,14 +981,52 @@ export default function InvoicesPage() {
         { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
         { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
         { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
-        { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Pendiente"}</div> },
-        { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Por Procesar"}</div> },
+        { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || ""}</div> },
         { headerName: 'Fecha Creación', field: 'Creado', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{(p.value || p.data?.Created) ? new Date(p.value || p.data?.Created).toLocaleString() : "Sin fecha"}</div> },
         { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{formatCostCenter(p.value, p.data?.tablaCostos)}</div> },
         { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
         { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || "Sin observaciones"}</div> },
-        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{(p.data?.documentInfo || p.data?.Attachments) ? <a href={`/api/sharepoint/attachment-redirect?itemId=${p.data?.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
+        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{(p.data?.documentInfo || p.data?.Attachments) ? <a href={`/api/sharepoint/attachment-redirect?itemId=${p.data?.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> },
+        { headerName: 'Anticipo / Tarjeta', field: 'tiene_anticipo', width: 150, cellRenderer: (p: any) => <div className="h-full flex items-center">{renderAnticipoBadge(p.value)}</div> }
     ], [syncingId]);
+
+    const handleExportExcel = () => {
+        if (!gridRef.current || !gridRef.current.api) {
+            alert("El grid no está listo para exportar.");
+            return;
+        }
+
+        const dataToExport: any[] = [];
+        gridRef.current.api.forEachNodeAfterFilterAndSort((node) => {
+            if (node.data) {
+                const inv = node.data;
+                dataToExport.push({
+                    "NIT": inv.Nit || "N/A",
+                    "Proveedor": inv.Proveedor || "N/A",
+                    "Factura": inv.Nro_Factura || "S/N",
+                    "Valor Total": typeof inv.Monto === 'number' ? inv.Monto : parseFloat(String(inv.Monto).replace(/[^\d.,-]/g, "").replace(",", ".")) || 0,
+                    "Anticipo / Tarjeta": formatAnticipo(inv.tiene_anticipo),
+                    "Responsable": inv.Responsable_de_Autorizar || "Sin asignar",
+                    "Estado": inv.Aprobacion_Doliente || "Pendiente",
+                    "Gestión Contabilidad": inv.Gestion_Contabilidad || "Pendiente",
+                    "Consecutivo": inv.Consecutivo || "N/A",
+                    "Fecha Creación": (inv.Creado || inv.Created) ? new Date(inv.Creado || inv.Created).toLocaleString() : "Sin fecha",
+                    "Observaciones": inv.Observaciones || "Sin observaciones",
+                });
+            }
+        });
+
+        if (dataToExport.length === 0) {
+            alert("No hay datos para exportar con los filtros actuales.");
+            return;
+        }
+
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Facturas");
+        XLSX.writeFile(wb, `Facturas_Exportadas_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
 
     return (
         <div className="h-screen bg-[#f8fafc] flex overflow-hidden">
@@ -931,6 +1104,22 @@ export default function InvoicesPage() {
                                 <span className="hidden lg:inline">Aprobación Automática</span>
                             </button>
                             <Button
+                                onClick={() => {
+                                    const url = `${window.location.origin}/externo/crear-factura`;
+                                    navigator.clipboard.writeText(url).then(() => {
+                                        alert("Enlace público copiado al portapapeles");
+                                    }).catch(err => {
+                                        console.error("Error al copiar:", err);
+                                        alert("No se pudo copiar el enlace");
+                                    });
+                                }}
+                                className="bg-emerald-600 text-white rounded-xl h-11 px-4 font-black hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-900/10 flex items-center gap-2"
+                                title="Copiar link público para crear facturas"
+                            >
+                                <Copy className="h-4 w-4" />
+                                <span className="hidden lg:inline">Link Público</span>
+                            </Button>
+                            <Button
                                 onClick={() => setIsCreateModalOpen(true)}
                                 className="bg-[#254153] text-white rounded-xl h-11 px-6 font-black hover:bg-[#1a2f3d] transition-all shadow-lg shadow-blue-900/10 flex items-center gap-2"
                             >
@@ -938,14 +1127,12 @@ export default function InvoicesPage() {
                                 Crear Factura
                             </Button>
                             <Button
-                                variant="outline"
-
-                                onClick={handleRefreshInvoices}
-                                disabled={loading || isSyncingSharePoint}
-                                className="bg-white border-gray-100 rounded-xl h-11 px-4 text-gray-600 font-bold hover:bg-gray-50 transition-all shadow-sm"
+                                onClick={handleExportExcel}
+                                className="bg-[#254153]/10 text-[#254153] rounded-xl h-11 px-4 font-black hover:bg-[#254153]/20 transition-all flex items-center gap-2"
+                                title="Descargar lista actual en Excel"
                             >
-                                {loading || isSyncingSharePoint ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                                {isSyncingSharePoint ? "Actualizando..." : "Actualizar"}
+                                <Download className="h-4 w-4" />
+                                <span className="hidden lg:inline">Descargar Excel</span>
                             </Button>
                         </div>
                     </div>
@@ -1045,6 +1232,7 @@ export default function InvoicesPage() {
                     <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 overflow-hidden flex-1 flex flex-col min-h-[500px]">
                         <div className="w-full flex-1 min-h-0">
                             <AgGridReact
+                                ref={gridRef}
                                 theme={themeQuartz}
                                 localeText={AG_GRID_LOCALE_ES}
                                 rowData={sortedInvoices}
@@ -1264,6 +1452,18 @@ export default function InvoicesPage() {
                                             className="w-full h-11 pl-10 pr-4 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153]/30 transition-all font-medium"
                                         />
                                     </div>
+                                    <div className="flex items-center mt-3">
+                                        <button
+                                            onClick={() => setShowOnlyActive(!showOnlyActive)}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                                                showOnlyActive 
+                                                ? 'bg-green-100 text-green-700 border border-green-200' 
+                                                : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200 shadow-xs'
+                                            }`}
+                                        >
+                                            <Check className="h-3 w-3" /> Proveedores Activos
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
@@ -1274,8 +1474,9 @@ export default function InvoicesPage() {
                                     ) : (
                                         providers
                                             .filter(p => 
-                                                p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) || 
-                                                p.numero_identificacion?.includes(providersSearch)
+                                                (!showOnlyActive || p.aprobacion_automatica) &&
+                                                (p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) || 
+                                                p.numero_identificacion?.includes(providersSearch))
                                             )
                                             .map((p) => (
                                                 <div 
@@ -1307,35 +1508,13 @@ export default function InvoicesPage() {
                                                     </div>
 
                                                     {p.aprobacion_automatica && (
-                                                        <motion.div 
-                                                            initial={{ opacity: 0, height: 0 }}
-                                                            animate={{ opacity: 1, height: 'auto' }}
-                                                            className="mt-4 pt-4 border-t border-green-100/50 flex gap-3"
-                                                        >
-                                                            <div className="flex-1">
-                                                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Valor Ref. (COP)</label>
-                                                                <div className="relative">
-                                                                    <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-600" />
-                                                                    <input 
-                                                                        type="number"
-                                                                        defaultValue={p.valor_de_referencia || ''}
-                                                                        onBlur={(e) => updateProviderField(p.id, 'valor_de_referencia', e.target.value === '' ? null : Number(e.target.value))}
-                                                                        className="w-full h-8 pl-6 pr-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
-                                                                        placeholder="0.00"
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                            <div className="w-24">
-                                                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">% Desv.</label>
-                                                                <input 
-                                                                    type="number"
-                                                                    defaultValue={p.porcentaje_desviacion || ''}
-                                                                    onBlur={(e) => updateProviderField(p.id, 'porcentaje_desviacion', e.target.value === '' ? null : Number(e.target.value))}
-                                                                    className="w-full h-8 px-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
-                                                                    placeholder="%"
-                                                                />
-                                                            </div>
-                                                        </motion.div>
+                                                        <ProviderRuleManager 
+                                                            provider={p} 
+                                                            onAddRule={(r) => addProviderRule(p.id, r)} 
+                                                            onDeleteRule={(rId) => deleteProviderRule(p.id, rId)} 
+                                                            centrosCostosList={centrosCostosList}
+                                                            cuentasList={cuentasList}
+                                                        />
                                                     )}
                                                 </div>
                                             ))
@@ -1409,6 +1588,18 @@ export default function InvoicesPage() {
                                         className="w-full h-11 pl-10 pr-4 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153]/30 transition-all font-medium"
                                     />
                                 </div>
+                                <div className="flex items-center mt-3">
+                                    <button
+                                        onClick={() => setShowOnlyActive(!showOnlyActive)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                                            showOnlyActive 
+                                            ? 'bg-green-100 text-green-700 border border-green-200' 
+                                            : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200 shadow-xs'
+                                        }`}
+                                    >
+                                        <Check className="h-3 w-3" /> Proveedores Activos
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -1419,8 +1610,9 @@ export default function InvoicesPage() {
                                 ) : (
                                     providers
                                         .filter(p =>
-                                            p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) ||
-                                            p.numero_identificacion?.includes(providersSearch)
+                                            (!showOnlyActive || p.aprobacion_automatica) &&
+                                            (p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) ||
+                                            p.numero_identificacion?.includes(providersSearch))
                                         )
                                         .map((p) => (
                                             <div
@@ -1452,35 +1644,13 @@ export default function InvoicesPage() {
                                                 </div>
 
                                                 {p.aprobacion_automatica && (
-                                                    <motion.div
-                                                        initial={{ opacity: 0, height: 0 }}
-                                                        animate={{ opacity: 1, height: 'auto' }}
-                                                        className="mt-4 pt-4 border-t border-green-100/50 flex gap-3"
-                                                    >
-                                                        <div className="flex-1">
-                                                            <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Valor Ref. (COP)</label>
-                                                            <div className="relative">
-                                                                <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-600" />
-                                                                <input
-                                                                    type="number"
-                                                                    defaultValue={p.valor_de_referencia || ''}
-                                                                    onBlur={(e) => updateProviderField(p.id, 'valor_de_referencia', e.target.value === '' ? null : Number(e.target.value))}
-                                                                    className="w-full h-8 pl-6 pr-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
-                                                                    placeholder="0.00"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                        <div className="w-24">
-                                                            <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">% Desv.</label>
-                                                            <input
-                                                                type="number"
-                                                                defaultValue={p.porcentaje_desviacion || ''}
-                                                                onBlur={(e) => updateProviderField(p.id, 'porcentaje_desviacion', e.target.value === '' ? null : Number(e.target.value))}
-                                                                className="w-full h-8 px-2 bg-white/50 border border-green-200 rounded-lg text-xs font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all"
-                                                                placeholder="%"
-                                                            />
-                                                        </div>
-                                                    </motion.div>
+                                                    <ProviderRuleManager 
+                                                        provider={p} 
+                                                        onAddRule={(r) => addProviderRule(p.id, r)} 
+                                                        onDeleteRule={(rId) => deleteProviderRule(p.id, rId)}
+                                                        centrosCostosList={centrosCostosList}
+                                                        cuentasList={cuentasList}
+                                                    />
                                                 )}
                                             </div>
                                         ))
@@ -1551,9 +1721,15 @@ export default function InvoicesPage() {
                                                     <p className="text-[11px] font-bold text-gray-400 uppercase">Proveedor</p>
                                                     <p className="text-lg font-black text-[#254153]">{selectedInvoice.Proveedor || "N/A"}</p>
                                                 </div>
-                                                <div>
-                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">NIT</p>
-                                                    <p className="font-bold text-gray-600">{selectedInvoice.Nit || "N/A"}</p>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <p className="text-[11px] font-bold text-gray-400 uppercase">NIT</p>
+                                                        <p className="font-bold text-gray-600">{selectedInvoice.Nit || "N/A"}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[11px] font-bold text-gray-400 uppercase">Consecutivo</p>
+                                                        <p className="font-bold text-gray-600">{selectedInvoice.Consecutivo || ""}</p>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1575,6 +1751,12 @@ export default function InvoicesPage() {
                                                         {selectedInvoice.FechaAprobacion ? new Date(selectedInvoice.FechaAprobacion).toLocaleString() : "Pendiente"}
                                                     </p>
                                                 </div>
+                                                <div>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Anticipo / Tarjeta</p>
+                                                    <div className="mt-1">
+                                                        {renderAnticipoBadge(selectedInvoice.tiene_anticipo)}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -1582,6 +1764,28 @@ export default function InvoicesPage() {
                                             <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Centro de Costos y Cuenta</h4>
                                             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                                                 {renderCostCenterForModal(selectedInvoice.centro_costos, selectedInvoice.tablaCostos)}
+                                            </div>
+                                        </div>
+
+                                        {/* Observaciones */}
+                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Observaciones</h4>
+                                                {selectedInvoice.Observaciones && (
+                                                    <button
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(selectedInvoice.Observaciones);
+                                                            alert("Observaciones copiadas al portapapeles");
+                                                        }}
+                                                        className="h-7 px-3 flex items-center gap-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors font-bold text-[10px] uppercase"
+                                                        title="Copiar observaciones"
+                                                    >
+                                                        <Copy className="h-3 w-3" /> Copiar
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm text-sm font-medium text-gray-600 whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
+                                                {selectedInvoice.Observaciones || <span className="text-gray-400 italic font-bold">Sin observaciones</span>}
                                             </div>
                                         </div>
 
@@ -1771,7 +1975,7 @@ export default function InvoicesPage() {
                                                     <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Gestión Contabilidad</p>
                                                     <select
                                                         value={selectedInvoice.Gestion_Contabilidad || "Por Procesar"}
-                                                        onChange={(e) => handleAction(e.target.value)}
+                                                        onChange={(e) => handleAction(e.target.value, 'Gestion_Contabilidad')}
                                                         disabled={!!actionLoading}
                                                         className="w-full h-10 px-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254153]/20 transition-all cursor-pointer hover:border-[#254153]/30"
                                                     >
