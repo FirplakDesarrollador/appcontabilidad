@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/Switch";
 import { useSidebar } from "@/context/SidebarContext";
 import { Menu } from "lucide-react";
 import { CreateSupportDocumentModal } from "@/components/modals/CreateSupportDocumentModal";
+import { ProviderRuleManager } from '@/components/ProviderRuleManager';
 import { AgGridReact } from 'ag-grid-react';
 import { useRef } from 'react';
 import * as XLSX from 'xlsx';
@@ -140,6 +141,9 @@ export default function SupportDocumentsPage() {
     const [providers, setProviders] = useState<any[]>([]);
     const [providersSearch, setProvidersSearch] = useState("");
     const [loadingProviders, setLoadingProviders] = useState(false);
+    const [centrosCostosList, setCentrosCostosList] = useState<any[]>([]);
+    const [cuentasList, setCuentasList] = useState<any[]>([]);
+    const [showOnlyActive, setShowOnlyActive] = useState(false);
 
     const [columnFilters, setColumnFilters] = useState({
         invoice: "",
@@ -439,11 +443,14 @@ export default function SupportDocumentsPage() {
         try {
             let query = supabase
                 .from('proveedores')
-                .select('id, razon_social, numero_identificacion, aprobacion_automatica, valor_de_referencia, porcentaje_desviacion')
+                .select('id, razon_social, numero_identificacion, aprobacion_automatica, proveedor_aprobacion_reglas(id, valor, porcentaje_desviacion, centro_costos, cuenta)')
                 .order('razon_social', { ascending: true });
 
             if (search) {
                 query = query.or(`razon_social.ilike.%${search}%,numero_identificacion.ilike.%${search}%`);
+            }
+            if (showOnlyActive) {
+                query = query.eq('aprobacion_automatica', true);
             }
             
             // Limitamos a 500 para que sea rápido, si busca algo específico lo encontrará
@@ -453,7 +460,12 @@ export default function SupportDocumentsPage() {
 
             if (search) {
                 // Si es búsqueda, reemplazamos los resultados
-                setProviders(data || []);
+                const sortedData = (data || []).sort((a, b) => {
+                    if (a.aprobacion_automatica && !b.aprobacion_automatica) return -1;
+                    if (!a.aprobacion_automatica && b.aprobacion_automatica) return 1;
+                    return (a.razon_social || '').localeCompare(b.razon_social || '');
+                });
+                setProviders(sortedData);
             } else {
                 // Si es carga inicial, combinamos con los que ya tienen aprobación automática activos
                 setProviders(prev => {
@@ -466,7 +478,11 @@ export default function SupportDocumentsPage() {
                             combined.push(p);
                         }
                     });
-                    return combined;
+                    return combined.sort((a, b) => {
+                        if (a.aprobacion_automatica && !b.aprobacion_automatica) return -1;
+                        if (!a.aprobacion_automatica && b.aprobacion_automatica) return 1;
+                        return (a.razon_social || '').localeCompare(b.razon_social || '');
+                    });
                 });
             }
         } catch (error) {
@@ -489,7 +505,99 @@ export default function SupportDocumentsPage() {
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [providersSearch, isProvidersSidebarOpen]);
+    }, [providersSearch, showOnlyActive, isProvidersSidebarOpen]);
+
+    const fetchCatalogos = async () => {
+        if (centrosCostosList.length > 0) return; // Ya están cargados
+        try {
+            const res = await fetch('/api/externo/catalogos');
+            const data = await res.json();
+            if (!data.error) {
+                setCentrosCostosList(data.centrosCostos || []);
+                setCuentasList(data.cuentas || []);
+            }
+        } catch (err) {
+            console.error('Error fetching catalogos:', err);
+        }
+    };
+
+    useEffect(() => {
+        if (isProvidersSidebarOpen) {
+            fetchCatalogos();
+        }
+    }, [isProvidersSidebarOpen]);
+
+    const checkOverlap = (rules: any[], newValue: number, newDev: number) => {
+        const newMin = newValue - (newValue * newDev / 100);
+        const newMax = newValue + (newValue * newDev / 100);
+        
+        for (const rule of rules) {
+            const rMin = rule.valor - (rule.valor * rule.porcentaje_desviacion / 100);
+            const rMax = rule.valor + (rule.valor * rule.porcentaje_desviacion / 100);
+            
+            if (Math.max(newMin, rMin) <= Math.min(newMax, rMax)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const addProviderRule = async (providerId: string, rule: any) => {
+        const provider = providers.find(p => p.id === providerId);
+        if (!provider) return false;
+        
+        const rules = provider.proveedor_aprobacion_reglas || [];
+        if (checkOverlap(rules, rule.valor, rule.porcentaje_desviacion)) {
+            alert('El valor y desviación ingresados se solapan con un valor existente para este proveedor.');
+            return false;
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('proveedor_aprobacion_reglas')
+                .insert({
+                    proveedor_id: providerId,
+                    valor: rule.valor,
+                    porcentaje_desviacion: rule.porcentaje_desviacion,
+                    centro_costos: rule.centro_costos,
+                    cuenta: rule.cuenta
+                })
+                .select();
+
+            if (error) throw error;
+
+            setProviders(prev => prev.map(p => 
+                p.id === providerId 
+                ? { ...p, proveedor_aprobacion_reglas: [...(p.proveedor_aprobacion_reglas || []), data[0]] } 
+                : p
+            ));
+            return true;
+        } catch (error) {
+            console.error('Error adding rule:', error);
+            alert('Error al guardar el valor.');
+            return false;
+        }
+    };
+
+    const deleteProviderRule = async (providerId: string, ruleId: string) => {
+        try {
+            const { error } = await supabase
+                .from('proveedor_aprobacion_reglas')
+                .delete()
+                .eq('id', ruleId);
+                
+            if (error) throw error;
+
+            setProviders(prev => prev.map(p => 
+                p.id === providerId 
+                ? { ...p, proveedor_aprobacion_reglas: (p.proveedor_aprobacion_reglas || []).filter((r: any) => r.id !== ruleId) } 
+                : p
+            ));
+        } catch (error) {
+            console.error('Error deleting rule:', error);
+            alert('Error al eliminar el valor.');
+        }
+    };
 
     const toggleProviderAutoApproval = async (id: string, currentValue: boolean) => {
         const newValue = !currentValue;
@@ -890,20 +998,67 @@ export default function SupportDocumentsPage() {
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                     <input type="text" placeholder="Buscar proveedor..." value={providersSearch} onChange={(e) => setProvidersSearch(e.target.value)} className="w-full h-11 pl-10 pr-4 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 font-medium" />
                                 </div>
+                                <div className="flex items-center mt-3">
+                                    <button
+                                        onClick={() => setShowOnlyActive(!showOnlyActive)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                                            showOnlyActive 
+                                            ? 'bg-green-100 text-green-700 border border-green-200' 
+                                            : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200 shadow-xs'
+                                        }`}
+                                    >
+                                        <Check className="h-3 w-3" /> Proveedores Activos
+                                    </button>
+                                </div>
                             </div>
                             <div className="flex-1 overflow-y-auto p-4 space-y-3">
                                 {loadingProviders ? <div className="animate-pulse space-y-3">{Array.from({length:5}).map((_,i) => <div key={i} className="h-16 bg-gray-50 rounded-xl"/>)}</div> : (
-                                    providers.filter(p => p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) || p.numero_identificacion?.includes(providersSearch)).map((p) => (
-                                        <div key={p.id} className={`p-4 rounded-2xl border transition-all ${p.aprobacion_automatica ? 'bg-green-50/30 border-green-100' : 'bg-white border-gray-100'}`}>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex-1 min-w-0 pr-4">
-                                                    <p className={`text-sm font-bold truncate ${p.aprobacion_automatica ? 'text-green-800' : 'text-[#254153]'}`}>{p.razon_social || 'S/N'}</p>
-                                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Nit: {p.numero_identificacion}</p>
+                                    providers
+                                        .filter(p =>
+                                            (!showOnlyActive || p.aprobacion_automatica) &&
+                                            (p.razon_social?.toLowerCase().includes(providersSearch.toLowerCase()) ||
+                                            p.numero_identificacion?.includes(providersSearch))
+                                        )
+                                        .map((p) => (
+                                            <div
+                                                key={p.id}
+                                                className={`p-4 rounded-2xl border transition-all duration-300 flex flex-col ${
+                                                    p.aprobacion_automatica
+                                                    ? 'bg-green-50/30 border-green-100 shadow-xs'
+                                                    : 'bg-white border-gray-100 hover:border-gray-200 shadow-xs'
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between w-full">
+                                                    <div className="flex-1 min-w-0 pr-4">
+                                                        <p className={`text-sm font-bold truncate ${p.aprobacion_automatica ? 'text-green-800' : 'text-[#254153]'}`}>
+                                                            {p.razon_social || 'S/N'}
+                                                        </p>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Nit: {p.numero_identificacion || 'N/A'}</span>
+                                                            {p.aprobacion_automatica && (
+                                                                <span className="flex items-center gap-1 text-[9px] font-black text-green-600 bg-green-100 px-1.5 py-0.5 rounded-sm uppercase tracking-tighter">
+                                                                    <Check className="h-2 w-2" /> Activo
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <Switch
+                                                        checked={!!p.aprobacion_automatica}
+                                                        onChange={() => toggleProviderAutoApproval(p.id, !!p.aprobacion_automatica)}
+                                                    />
                                                 </div>
-                                                <Switch checked={!!p.aprobacion_automatica} onChange={() => toggleProviderAutoApproval(p.id, !!p.aprobacion_automatica)} />
+
+                                                {p.aprobacion_automatica && (
+                                                    <ProviderRuleManager 
+                                                        provider={p} 
+                                                        onAddRule={(r) => addProviderRule(p.id, r)} 
+                                                        onDeleteRule={(rId) => deleteProviderRule(p.id, rId)}
+                                                        centrosCostosList={centrosCostosList}
+                                                        cuentasList={cuentasList}
+                                                    />
+                                                )}
                                             </div>
-                                        </div>
-                                    ))
+                                        ))
                                 )}
                             </div>
                         </motion.div>
