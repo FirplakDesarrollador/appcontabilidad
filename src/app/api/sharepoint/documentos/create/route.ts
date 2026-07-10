@@ -115,7 +115,13 @@ export async function POST(req: NextRequest) {
                                 
                                 let parsedLines = [];
                                 try {
-                                    parsedLines = JSON.parse(rule.centro_costos);
+                                    parsedLines = typeof rule.centro_costos === 'string' 
+                                        ? JSON.parse(rule.centro_costos) 
+                                        : rule.centro_costos;
+                                        
+                                    if (!Array.isArray(parsedLines)) {
+                                        parsedLines = [{ centro_costos: rule.centro_costos, cuenta: rule.cuenta }];
+                                    }
                                 } catch (e) {
                                     // legacy fallback if it was a plain string
                                     parsedLines = [{ centro_costos: rule.centro_costos, cuenta: rule.cuenta }];
