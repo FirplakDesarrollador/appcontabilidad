@@ -100,7 +100,8 @@ export async function POST(req: NextRequest) {
                 const { data: providerData } = await supabaseAdmin
                     .from('proveedores')
                     .select('id, aprobacion_automatica, proveedor_aprobacion_reglas(valor, porcentaje_desviacion, centro_costos, cuenta)')
-                    .eq('numero_identificacion', baseNit)
+                    .like('numero_identificacion', `${baseNit}%`)
+                    .limit(1)
                     .single();
 
                 if (providerData && providerData.aprobacion_automatica && providerData.proveedor_aprobacion_reglas) {
