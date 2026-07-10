@@ -88,13 +88,54 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // --- Auto-approval detection ---
+        let finalAprobacionDoliente = 'Por Aprobar';
+        let finalCentroCostos = null;
+        let finalObservaciones = null;
+        let isAutoApproved = false;
+
+        if (valorTotal) {
+            try {
+                const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
+                const { data: providerData } = await supabaseAdmin
+                    .from('proveedores')
+                    .select('id, aprobacion_automatica, proveedor_aprobacion_reglas(valor, porcentaje_desviacion, centro_costos, cuenta)')
+                    .eq('numero_identificacion', baseNit)
+                    .single();
+
+                if (providerData && providerData.aprobacion_automatica && providerData.proveedor_aprobacion_reglas) {
+                    const val = parseFloat(valorTotal.replace(/[^0-9.-]+/g, ""));
+                    if (!isNaN(val)) {
+                        for (const rule of providerData.proveedor_aprobacion_reglas) {
+                            const rMin = rule.valor - (rule.valor * rule.porcentaje_desviacion / 100);
+                            const rMax = rule.valor + (rule.valor * rule.porcentaje_desviacion / 100);
+                            if (val >= rMin && val <= rMax) {
+                                finalAprobacionDoliente = 'Aprobado';
+                                finalCentroCostos = JSON.stringify([{
+                                    centroCosto: rule.centro_costos,
+                                    cuenta: rule.cuenta,
+                                    porcentaje: 100
+                                }]);
+                                finalObservaciones = 'Aprobado automáticamente por regla de proveedor';
+                                isAutoApproved = true;
+                                console.log(`[Auto-Approve] Documento Soporte auto-approved! Rule matches val: ${val}`);
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('[Auto-Approve] Error checking rules for Doc Soporte:', err);
+            }
+        }
+
         const docData: any = {
             id: Number(newItemId),
             sharepoint_id: String(newItemId),
             nit: nit,
             proveedor: proveedor,
             valor_total: valorTotal || null,
-            aprobacion_doliente: 'Por Aprobar',
+            aprobacion_doliente: finalAprobacionDoliente,
             gestion_contabilidad: 'Por Procesar',
             attachments: true,
             fecha_creacion: new Date().toISOString(),
@@ -106,6 +147,9 @@ export async function POST(req: NextRequest) {
             pdf_url: publicUrl,
             adjunto: anexosUrls.length > 0 ? JSON.stringify(anexosUrls) : publicUrl
         };
+
+        if (finalCentroCostos) docData.centro_costos = finalCentroCostos;
+        if (finalObservaciones) docData.observaciones = finalObservaciones;
 
         console.log('[Supabase] Inserting Documento_Soporte into DB:', docData);
         const { error: supabaseError } = await supabaseAdmin
@@ -143,29 +187,53 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // 5. Notificación webhook Power Automate
-        try {
-            if (responsableEmail) {
-                const webhookUrl = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/aeb6cb48c08d4b2284e6195f1af861a5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=HeQc9SianqYpHVdBvGopK5kUtWrdUHkCuQhvWupbAZs";
-                
-                const docUrl = `https://appcontabilidad.vercel.app/externo/documento/${newItemId}`;
-                const payload = {
-                    titulo: `Nuevo Documento Soporte - ${proveedor}`,
-                    contenido: `Se ha creado un nuevo documento soporte para el proveedor ${proveedor} (NIT: ${nit}). Por favor, revisa el documento y procede con su aprobación.`,
-                    responsable: responsableEmail,
-                    link: `<a href="${docUrl}">${docUrl}</a>`
-                };
-
-                console.log('[Webhook] Sending notification to Power Automate:', payload);
-
-                fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                }).catch(e => console.error('[Webhook] Error fetching background:', e));
+        // 5. Integración post-guardado (Notificación o SAP)
+        if (isAutoApproved) {
+            // Auto-Approve -> Create SAP draft directly
+            try {
+                const { createSapDraft } = await import('@/lib/sap');
+                await createSapDraft({
+                    nit: nit || "",
+                    total: valorTotal || "0",
+                    distribuciones: finalCentroCostos ? JSON.parse(finalCentroCostos) : [],
+                    anticipo: 'f',
+                    observations: finalObservaciones || 'Aprobado automáticamente',
+                    nroFactura: 'S/N', 
+                    docTypeDesc: 'DOCUMENTO SOPORTE',
+                    itemId: String(newItemId),
+                    consecutivo: 'S/N',
+                    proveedorName: proveedor || "Proveedor Desconocido"
+                });
+                console.log(`[Auto-Approve] Draft in SAP created for Documento_Soporte ${newItemId}`);
+            } catch (sapErr: any) {
+                console.error('[Auto-Approve] Error en SAP para Doc Soporte:', sapErr);
+                // Opcional: Registrar el error de SAP en Supabase
             }
-        } catch (webhookError) {
-            console.error('[Webhook] Error configuring notification:', webhookError);
+        } else {
+            // Notificar por Power Automate si NO fue auto aprobado
+            try {
+                if (responsableEmail) {
+                    const webhookUrl = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/aeb6cb48c08d4b2284e6195f1af861a5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=HeQc9SianqYpHVdBvGopK5kUtWrdUHkCuQhvWupbAZs";
+                    
+                    const docUrl = `https://appcontabilidad.vercel.app/externo/documento/${newItemId}`;
+                    const payload = {
+                        titulo: `Nuevo Documento Soporte - ${proveedor}`,
+                        contenido: `Se ha creado un nuevo documento soporte para el proveedor ${proveedor} (NIT: ${nit}). Por favor, revisa el documento y procede con su aprobación.`,
+                        responsable: responsableEmail,
+                        link: `<a href="${docUrl}">${docUrl}</a>`
+                    };
+
+                    console.log('[Webhook] Sending notification to Power Automate:', payload);
+
+                    fetch(webhookUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }).catch(e => console.error('[Webhook] Error fetching background:', e));
+                }
+            } catch (webhookError) {
+                console.error('[Webhook] Error configuring notification:', webhookError);
+            }
         }
 
         return NextResponse.json({ success: true, id: newItemId, publicUrl });
