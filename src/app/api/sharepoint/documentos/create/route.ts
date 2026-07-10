@@ -112,11 +112,21 @@ export async function POST(req: NextRequest) {
                             const rMax = rule.valor + (rule.valor * rule.porcentaje_desviacion / 100);
                             if (val >= rMin && val <= rMax) {
                                 finalAprobacionDoliente = 'Aprobado';
-                                finalCentroCostos = JSON.stringify([{
-                                    centroCosto: rule.centro_costos,
-                                    cuenta: rule.cuenta,
+                                
+                                let parsedLines = [];
+                                try {
+                                    parsedLines = JSON.parse(rule.centro_costos);
+                                } catch (e) {
+                                    // legacy fallback if it was a plain string
+                                    parsedLines = [{ centro_costos: rule.centro_costos, cuenta: rule.cuenta }];
+                                }
+                                
+                                finalCentroCostos = JSON.stringify(parsedLines.map((line: any) => ({
+                                    centroCosto: line.centro_costos || '',
+                                    cuenta: line.cuenta || '',
                                     porcentaje: 100
-                                }]);
+                                })));
+                                
                                 finalObservaciones = 'Aprobado automáticamente por regla de proveedor';
                                 isAutoApproved = true;
                                 console.log(`[Auto-Approve] Documento Soporte auto-approved! Rule matches val: ${val}`);
