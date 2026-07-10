@@ -658,7 +658,7 @@ export default function PublicApprovalPage() {
                                                 invoice?.aprobacionDoliente === 'Rechazado' ? 'bg-red-500' :
                                                     'bg-[#254153] animate-pulse'
                                                 }`} />
-                                            {invoice?.aprobacionDoliente === 'Aprobado' ? 'APROBADA ANTERIORMENTE' :
+                                            {invoice?.aprobacionDoliente === 'Aprobado' ? (invoice?.observaciones?.toLowerCase().includes('automática') ? 'APROBADA AUTOMÁTICAMENTE POR REGLA' : 'APROBADA ANTERIORMENTE') :
                                                 invoice?.aprobacionDoliente === 'Rechazado' ? 'RECHAZADA ANTERIORMENTE' :
                                                     'PENDIENTE DE TU ACCIÓN'}
                                         </div>

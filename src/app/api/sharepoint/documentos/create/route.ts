@@ -226,31 +226,35 @@ export async function POST(req: NextRequest) {
                 console.error('[Auto-Approve] Error en SAP para Doc Soporte:', sapErr);
                 // Opcional: Registrar el error de SAP en Supabase
             }
-        } else {
-            // Notificar por Power Automate si NO fue auto aprobado
-            try {
-                if (responsableEmail) {
-                    const webhookUrl = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/aeb6cb48c08d4b2284e6195f1af861a5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=HeQc9SianqYpHVdBvGopK5kUtWrdUHkCuQhvWupbAZs";
-                    
-                    const docUrl = `https://appcontabilidad.vercel.app/externo/documento/${newItemId}`;
-                    const payload = {
-                        titulo: `Nuevo Documento Soporte - ${proveedor}`,
-                        contenido: `Se ha creado un nuevo documento soporte para el proveedor ${proveedor} (NIT: ${nit}). Por favor, revisa el documento y procede con su aprobación.`,
-                        responsable: responsableEmail,
-                        link: `<a href="${docUrl}">${docUrl}</a>`
-                    };
+        }
+        
+        // Notificar por Power Automate siempre (si fue auto aprobado, se notifica que ya se aprobó)
+        try {
+            if (responsableEmail) {
+                const webhookUrl = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/aeb6cb48c08d4b2284e6195f1af861a5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=HeQc9SianqYpHVdBvGopK5kUtWrdUHkCuQhvWupbAZs";
+                
+                const docUrl = `https://appcontabilidad.vercel.app/externo/documento/${newItemId}`;
+                const payload = {
+                    titulo: isAutoApproved 
+                        ? `Documento Soporte Auto-Aprobado - ${proveedor}`
+                        : `Nuevo Documento Soporte - ${proveedor}`,
+                    contenido: isAutoApproved
+                        ? `Se ha creado y aprobado AUTOMÁTICAMENTE el documento soporte para el proveedor ${proveedor} (NIT: ${nit}) gracias a las reglas configuradas. Puedes ingresar al enlace para revisar el soporte.`
+                        : `Se ha creado un nuevo documento soporte para el proveedor ${proveedor} (NIT: ${nit}). Por favor, revisa el documento y procede con su aprobación.`,
+                    responsable: responsableEmail,
+                    link: `<a href="${docUrl}">${docUrl}</a>`
+                };
 
-                    console.log('[Webhook] Sending notification to Power Automate:', payload);
+                console.log('[Webhook] Sending notification to Power Automate:', payload);
 
-                    fetch(webhookUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    }).catch(e => console.error('[Webhook] Error fetching background:', e));
-                }
-            } catch (webhookError) {
-                console.error('[Webhook] Error configuring notification:', webhookError);
+                fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).catch(e => console.error('[Webhook] Error fetching background:', e));
             }
+        } catch (webhookError) {
+            console.error('[Webhook] Error configuring notification:', webhookError);
         }
 
         return NextResponse.json({ success: true, id: newItemId, publicUrl });

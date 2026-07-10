@@ -422,7 +422,7 @@ export default function PublicDocumentApprovalPage() {
                                                 document?.aprobacionDoliente === 'Rechazado' ? 'bg-red-500' :
                                                     'bg-[#254153] animate-pulse'
                                                 }`} />
-                                            {document?.aprobacionDoliente === 'Aprobado' ? 'APROBADO ANTERIORMENTE' :
+                                            {document?.aprobacionDoliente === 'Aprobado' ? (document?.observaciones?.toLowerCase().includes('automática') ? 'APROBADO AUTOMÁTICAMENTE POR REGLA' : 'APROBADO ANTERIORMENTE') :
                                                 document?.aprobacionDoliente === 'Rechazado' ? 'RECHAZADO ANTERIORMENTE' :
                                                     'PENDIENTE DE TU ACCIÓN'}
                                         </div>
