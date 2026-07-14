@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-);
+import { supabase } from '@/lib/supabaseClient';
 
 export async function POST(req: NextRequest) {
     try {
@@ -32,7 +27,7 @@ export async function POST(req: NextRequest) {
 
         // Subir a Supabase Storage
         const fileBuffer = await file.arrayBuffer();
-        const { data: uploadData, error: uploadError } = await supabaseAdmin
+        const { data: uploadData, error: uploadError } = await supabase
             .storage
             .from('adjuntos_facturas')
             .upload(filePath, fileBuffer, {
@@ -45,12 +40,12 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Error al subir archivo adjunto' }, { status: 500 });
         }
 
-        const { data: publicUrlData } = supabaseAdmin
+        const { data, error } = await supabase
             .storage
             .from('adjuntos_facturas')
             .getPublicUrl(filePath);
             
-        const fileUrl = publicUrlData.publicUrl;
+        const fileUrl = data.publicUrl;
 
         // Crear registro en la tabla EXCLUSIVA de Viventta (Facturas_Viventta)
         const invoiceData = {
@@ -72,7 +67,7 @@ export async function POST(req: NextRequest) {
             adjuntos_url: [],
         };
 
-        const { data: insertData, error: insertError } = await supabaseAdmin
+        const { data: insertData, error: insertError } = await supabase
             .from('Facturas_Viventta')
             .insert([invoiceData])
             .select();
@@ -82,9 +77,39 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Error al crear la factura en base de datos: ' + insertError.message, details: insertError }, { status: 500 });
         }
 
+        const newItem = insertData && insertData.length > 0 ? insertData[0] : null;
+
+        if (newItem && responsableEmail) {
+            try {
+                const webhookUrl = "https://defaultfa1de04f47804d83a94293c7ae8dee.9d.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/19/workflows/7861b03883ce4125aae9f210f51bca09/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=S8r1U8eAJqBk53XzSJL2sAXOVTjxtuuQ7U82AZuxwno";
+                const docUrl = `https://appcontabilidad.vercel.app/externo/factura-viventta/${newItem.id}`;
+                
+                const payload = {
+                    responsable: responsableEmail,
+                    titulo: `Nueva Factura Viventta - ${proveedor}`,
+                    contenido: `<p>Se ha creado una nueva factura de Viventta para el proveedor <strong>${proveedor}</strong> (NIT: ${nit}).</p><p>Por favor, revisa el documento y procede con su aprobacion.</p><p><a href="${docUrl}">&#128073; Ver y aprobar factura</a></p>`,
+                    link: `<a href="${docUrl}">Ver y aprobar factura</a>`
+                };
+
+                console.log('[Webhook Viventta] Sending notification to Power Automate:', payload);
+
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const responseText = await response.text();
+                console.log(`[Webhook Viventta] Power Automate Response Status: ${response.status}`);
+                console.log(`[Webhook Viventta] Power Automate Response Body:`, responseText);
+            } catch (webhookErr) {
+                console.error('[Webhook Viventta] Error building Power Automate request:', webhookErr);
+            }
+        }
+
         return NextResponse.json({ 
             success: true, 
-            item: insertData && insertData.length > 0 ? insertData[0] : null
+            item: newItem
         });
 
     } catch (error: any) {
