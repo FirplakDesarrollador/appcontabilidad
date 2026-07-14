@@ -52,9 +52,7 @@ export async function POST(req: NextRequest) {
         if (observaciones) {
             updateData.Observaciones = observaciones;
         }
-        if (anticipo) {
-            updateData.tiene_anticipo = anticipo;
-        }
+        // Note: tiene_anticipo not applicable for Facturas_Viventta
         if (jsonDist) {
             updateData.centro_costos = jsonDist;
         }
