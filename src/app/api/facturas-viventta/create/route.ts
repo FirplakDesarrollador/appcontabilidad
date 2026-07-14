@@ -77,9 +77,39 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Error al crear la factura en base de datos: ' + insertError.message, details: insertError }, { status: 500 });
         }
 
+        const newItem = insertData && insertData.length > 0 ? insertData[0] : null;
+
+        if (newItem && responsableEmail) {
+            try {
+                const webhookUrl = "https://defaultfa1de04f47804d83a94293c7ae8dee.9d.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/19/workflows/7861b03883ce4125aae9f210f51bca09/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=S8r1U8eAJqBk53XzSJL2sAXOVTjxtuuQ7U82AZuxwno";
+                const docUrl = `https://appcontabilidad.vercel.app/externo/factura-viventta/${newItem.id}`;
+                
+                const payload = {
+                    responsable: responsableEmail,
+                    titulo: `Nueva Factura Viventta - ${proveedor}`,
+                    contenido: `Se ha creado una nueva factura de Viventta para el proveedor ${proveedor} (NIT: ${nit}). Por favor, revisa el documento y procede con su aprobacion.`,
+                    link: docUrl
+                };
+
+                console.log('[Webhook Viventta] Sending notification to Power Automate:', payload);
+
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const responseText = await response.text();
+                console.log(`[Webhook Viventta] Power Automate Response Status: ${response.status}`);
+                console.log(`[Webhook Viventta] Power Automate Response Body:`, responseText);
+            } catch (webhookErr) {
+                console.error('[Webhook Viventta] Error building Power Automate request:', webhookErr);
+            }
+        }
+
         return NextResponse.json({ 
             success: true, 
-            item: insertData && insertData.length > 0 ? insertData[0] : null
+            item: newItem
         });
 
     } catch (error: any) {

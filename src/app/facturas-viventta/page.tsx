@@ -93,11 +93,11 @@ function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode
 
 // Simulated mock database of users
 const MOCK_USERS = [
-    { id: "1", name: "Mateo Benavides", email: "mateo.benavides@viventta.com" },
-    { id: "2", name: "Carlos Mario Restrepo", email: "carlos.restrepo@viventta.com" },
-    { id: "3", name: "Juan Esteban Pérez", email: "juan.perez@viventta.com" },
-    { id: "4", name: "Andrea Gómez", email: "andrea.gomez@viventta.com" },
-    { id: "5", name: "Diana Carolina Montoya", email: "diana.montoya@viventta.com" }
+    { id: "1", name: "Mateo Benavides", email: "mateo.benavides@firplak.com" },
+    { id: "2", name: "Carlos Mario Restrepo", email: "carlos.restrepo@firplak.com" },
+    { id: "3", name: "Juan Esteban Pérez", email: "juan.perez@firplak.com" },
+    { id: "4", name: "Andrea Gómez", email: "andrea.gomez@firplak.com" },
+    { id: "5", name: "Diana Carolina Montoya", email: "diana.montoya@firplak.com" }
 ];
 
 
@@ -548,9 +548,9 @@ export default function ViventtaInvoicesPage() {
 
 
     const handleCopyLink = (inv: SharePointInvoice) => {
-        const url = `${window.location.origin}/externo/factura/${inv.id}`;
+        const url = `${window.location.origin}/externo/factura-viventta/${inv.id}`;
         navigator.clipboard.writeText(url).then(() => {
-            alert("✅ Enlace copiado al portapapeles (Simulado)");
+            alert("✅ Enlace copiado al portapapeles");
         }).catch(err => {
             alert("No se pudo copiar el enlace");
         });

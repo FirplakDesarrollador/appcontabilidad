@@ -31,7 +31,6 @@ export function Sidebar() {
     const menuItems = [
         { name: "Dashboard", icon: PieChart, path: "/" },
         { name: "Aprobación de facturas", icon: FileCheck, path: "/aprobacion-facturas" },
-        { name: "Aprobación Viventta", icon: FileCheck, path: "/aprobacion-facturas-viventta" },
         { name: "Facturas Viventta", icon: FileCheck, path: "/facturas-viventta" },
         { name: "Aprobación de documento soporte", icon: FileText, path: "/aprobacion-documentos" },
         { name: "Cargue de TRM en SAP", icon: RefreshCw, path: "/cargue-trm" },
