@@ -14,6 +14,18 @@ const AG_GRID_LOCALE_ES = {
     noRowsToShow: 'No hay radicados para mostrar',
 };
 
+const getStatusStyles = (status: string) => {
+    switch (status?.toLowerCase()) {
+        case "aprobado": return "bg-emerald-50 text-emerald-600 border-emerald-200 shadow-sm";
+        case "rechazado": return "bg-red-50 text-red-600 border-red-200 shadow-sm";
+        case "por procesar": return "bg-blue-50 text-blue-600 border-blue-200 shadow-sm";
+        case "procesado": return "bg-purple-50 text-purple-600 border-purple-200 shadow-sm";
+        case "por aprobar":
+        case "pendiente": return "bg-amber-50 text-amber-600 border-amber-200 shadow-sm";
+        default: return "bg-gray-50 text-gray-600 border-gray-200 shadow-sm";
+    }
+};
+
 const MOCK_DATA = [
     {
         id: "IMP-001",
@@ -22,8 +34,13 @@ const MOCK_DATA = [
         Nro_Factura: "INV-2026-001",
         Monto: 45000000,
         Responsable_de_Autorizar: "Carlos Mario Restrepo",
-        estado: "Por Aprobar",
-        Created: "2026-07-10T08:00:00Z"
+        Aprobacion_Doliente: "Por Aprobar",
+        Gestion_Contabilidad: "Pendiente",
+        Consecutivo: "CON-7001",
+        Created: "2026-07-10T08:00:00Z",
+        centro_costos: "[]",
+        Observaciones: "Servicios logísticos",
+        Attachments: true
     },
     {
         id: "IMP-002",
@@ -32,8 +49,14 @@ const MOCK_DATA = [
         Nro_Factura: "INV-2026-089",
         Monto: 12500000,
         Responsable_de_Autorizar: "Andrea Gómez",
-        estado: "Aprobado",
-        Created: "2026-07-12T10:30:00Z"
+        Aprobacion_Doliente: "Aprobado",
+        Gestion_Contabilidad: "Por Procesar",
+        Consecutivo: "CON-7002",
+        Created: "2026-07-12T10:30:00Z",
+        FechaAprobacion: "2026-07-13T09:00:00Z",
+        centro_costos: "[]",
+        Observaciones: "Compra de equipos",
+        Attachments: false
     }
 ];
 
@@ -51,23 +74,34 @@ export default function RadicadosImportacionPage() {
     };
 
     const columnDefs: any = [
+        {
+            headerName: 'Acciones',
+            field: 'id',
+            width: 160,
+            pinned: 'left',
+            filter: false,
+            sortable: false,
+            cellRenderer: (params: any) => (
+                <div className="flex items-center justify-start gap-2 h-full">
+                    <button className="h-8 w-8 p-0 text-gray-400 border border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center">
+                        <Search className="h-3.5 w-3.5" />
+                    </button>
+                </div>
+            )
+        },
         { headerName: 'NIT', field: 'Nit', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || "N/A"}</div> },
         { headerName: 'Proveedor', field: 'Proveedor', width: 250, cellRenderer: (p: any) => <div className="text-sm font-bold text-gray-800 h-full flex items-center">{p.value || "N/A"}</div> },
         { headerName: 'Factura', field: 'Nro_Factura', width: 160, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="font-bold text-[#254153] leading-none">{p.value || "S/N"}</div><div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {p.data?.id}</div></div> },
         { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
         { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
-        { 
-            headerName: 'Estado', 
-            field: 'estado', 
-            width: 150,
-            cellRenderer: (p: any) => (
-                <div className="h-full flex items-center">
-                    <span className={`px-2 py-1 rounded-md text-xs font-medium ${p.value === 'Aprobado' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
-                        {p.value}
-                    </span>
-                </div>
-            )
-        }
+        { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
+        { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Pendiente"}</div> },
+        { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'Fecha Creación', field: 'Created', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
+        { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{p.value}</div> },
+        { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
+        { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || "Sin observaciones"}</div> },
+        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{(p.data?.Attachments) ? <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50 cursor-pointer"><Search className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></span> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
     ];
 
     return (
