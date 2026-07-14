@@ -887,7 +887,7 @@ export default function ViventtaInvoicesPage() {
                             <h2 className="text-3xl font-extrabold text-[#254153]">Gestión de Facturas Viventta</h2>
                             <p className="text-gray-500 mt-1 font-medium flex items-center gap-2">
                                 <span className={`h-2 w-2 rounded-full animate-pulse ${dataSource === 'cache' ? 'bg-emerald-500' : dataSource === 'sharepoint' ? 'bg-blue-500' : 'bg-gray-400'}`} />
-                                Modo Visual - Base de datos Viventta (Simulado)
+                                Modo Visual - Base de datos Viventta
                             </p>
                         </motion.div>
 
