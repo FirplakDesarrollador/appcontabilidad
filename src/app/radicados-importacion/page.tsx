@@ -17,19 +17,23 @@ const AG_GRID_LOCALE_ES = {
 const MOCK_DATA = [
     {
         id: "IMP-001",
-        proveedor: "Global Logistics Ltd",
-        fecha: "2026-07-10",
-        estado: "En Tránsito",
-        valor: "$45,000 USD",
-        bl: "HLCU1234567"
+        Nit: "901234567-8",
+        Proveedor: "Global Logistics Ltd",
+        Nro_Factura: "INV-2026-001",
+        Monto: 45000000,
+        Responsable_de_Autorizar: "Carlos Mario Restrepo",
+        estado: "Por Aprobar",
+        Created: "2026-07-10T08:00:00Z"
     },
     {
         id: "IMP-002",
-        proveedor: "Tech Imports Co.",
-        fecha: "2026-07-12",
-        estado: "Aduana",
-        valor: "$12,500 USD",
-        bl: "MSC98765432"
+        Nit: "890112233-4",
+        Proveedor: "Tech Imports Co.",
+        Nro_Factura: "INV-2026-089",
+        Monto: 12500000,
+        Responsable_de_Autorizar: "Andrea Gómez",
+        estado: "Aprobado",
+        Created: "2026-07-12T10:30:00Z"
     }
 ];
 
@@ -37,19 +41,28 @@ export default function RadicadosImportacionPage() {
     const { toggleSidebar } = useSidebar();
     const [searchTerm, setSearchTerm] = useState("");
 
+    const formatCurrency = (value: any) => {
+        if (!value) return "$0";
+        return new Intl.NumberFormat('es-CO', {
+            style: 'currency',
+            currency: 'COP',
+            minimumFractionDigits: 0
+        }).format(Number(value));
+    };
+
     const columnDefs: any = [
-        { headerName: 'ID Radicado', field: 'id', width: 130 },
-        { headerName: 'Proveedor', field: 'proveedor', flex: 1 },
-        { headerName: 'B/L (Bill of Lading)', field: 'bl', width: 180 },
-        { headerName: 'Fecha', field: 'fecha', width: 130 },
-        { headerName: 'Valor', field: 'valor', width: 130 },
+        { headerName: 'NIT', field: 'Nit', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'Proveedor', field: 'Proveedor', width: 250, cellRenderer: (p: any) => <div className="text-sm font-bold text-gray-800 h-full flex items-center">{p.value || "N/A"}</div> },
+        { headerName: 'Factura', field: 'Nro_Factura', width: 160, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="font-bold text-[#254153] leading-none">{p.value || "S/N"}</div><div className="text-[10px] text-gray-400 mt-1 font-medium tracking-tight">REF: {p.data?.id}</div></div> },
+        { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
+        { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
         { 
             headerName: 'Estado', 
             field: 'estado', 
             width: 150,
             cellRenderer: (p: any) => (
                 <div className="h-full flex items-center">
-                    <span className="px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                    <span className={`px-2 py-1 rounded-md text-xs font-medium ${p.value === 'Aprobado' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
                         {p.value}
                     </span>
                 </div>
