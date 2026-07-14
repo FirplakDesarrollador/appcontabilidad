@@ -87,8 +87,8 @@ export async function POST(req: NextRequest) {
                 const payload = {
                     responsable: responsableEmail,
                     titulo: `Nueva Factura Viventta - ${proveedor}`,
-                    contenido: `Se ha creado una nueva factura de Viventta para el proveedor ${proveedor} (NIT: ${nit}). Por favor, revisa el documento y procede con su aprobacion.`,
-                    link: docUrl
+                    contenido: `<p>Se ha creado una nueva factura de Viventta para el proveedor <strong>${proveedor}</strong> (NIT: ${nit}).</p><p>Por favor, revisa el documento y procede con su aprobacion.</p><p><a href="${docUrl}">&#128073; Ver y aprobar factura</a></p>`,
+                    link: `<a href="${docUrl}">Ver y aprobar factura</a>`
                 };
 
                 console.log('[Webhook Viventta] Sending notification to Power Automate:', payload);
