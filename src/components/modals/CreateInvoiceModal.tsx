@@ -208,9 +208,10 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
     };
 
     return (
-        <AnimatePresence>
-            {isOpen && (
-                <div key="invoice-modal-container" className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <>
+            <AnimatePresence>
+                {isOpen && (
+                    <div key="invoice-modal-container" className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -627,6 +628,7 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                     )}
                 </motion.div>
             </div>
+            </AnimatePresence>
             
             <style jsx global>{`
                 .custom-scrollbar::-webkit-scrollbar {
@@ -643,6 +645,6 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                     background: #cbd5e1;
                 }
             `}</style>
-        </AnimatePresence>
+        </>
     );
 }

@@ -173,9 +173,10 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
     };
 
     return (
-        <AnimatePresence>
-            {isOpen && (
-                <div key="support-modal-container" className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <>
+            <AnimatePresence>
+                {isOpen && (
+                    <div key="support-modal-container" className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -574,6 +575,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                     )}
                 </motion.div>
             </div>
+            </AnimatePresence>
             
             <style jsx global>{`
                 .custom-scrollbar::-webkit-scrollbar {
@@ -590,6 +592,6 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                     background: #cbd5e1;
                 }
             `}</style>
-        </AnimatePresence>
+        </>
     );
 }
