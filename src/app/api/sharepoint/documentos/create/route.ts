@@ -17,12 +17,14 @@ export async function POST(req: NextRequest) {
         const responsableEmail = formData.get('responsableEmail') as string | null;
         let responsableNombreRecibido = formData.get('responsableNombre') as string | null;
         const valorTotal = formData.get('valorTotal') as string | null;
-        const file = formData.get('file') as File;
-        const attachments = formData.getAll('attachments') as File[];
+        const files = formData.getAll('files') as File[];
 
-        if (!file || !nit || !proveedor || !valorTotal) {
+        if (!files || files.length === 0 || !nit || !proveedor || !valorTotal) {
             return NextResponse.json({ success: false, error: 'Faltan campos obligatorios' }, { status: 400 });
         }
+
+        const file = files[0];
+        const attachments = files.slice(1);
 
         const fileBuffer = Buffer.from(await file.arrayBuffer());
 

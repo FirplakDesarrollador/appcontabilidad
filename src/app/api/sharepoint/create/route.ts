@@ -17,11 +17,11 @@ export async function POST(req: NextRequest) {
         const nit = formData.get('nit') as string;
         const proveedor = formData.get('proveedor') as string;
         const responsableEmail = formData.get('responsableEmail') as string;
-        const file = formData.get('file') as File;
+        const files = formData.getAll('files') as File[];
         const valorTotal = formData.get('valorTotal') as string;
 
-        if (!nroFactura || !nit || !file) {
-            return NextResponse.json({ error: 'Faltan campos obligatorios (Número, NIT o Archivo)' }, { status: 400 });
+        if (!nroFactura || !nit || !files || files.length === 0) {
+            return NextResponse.json({ error: 'Faltan campos obligatorios (Número, NIT o Archivos)' }, { status: 400 });
         }
 
         const client = await getGraphClient();
@@ -59,10 +59,17 @@ export async function POST(req: NextRequest) {
         const folder = await createSharePointFolder(siteIdIT, 'Reenvio facture', folderName);
         const folderId = folder.id;
 
-        // 4. Subir PDF a la carpeta
-        const fileBuffer = Buffer.from(await file.arrayBuffer());
-        const uploadedFile = await uploadFileToSharePoint(siteIdIT, folderId, file.name, fileBuffer);
-        const fileUrl = uploadedFile.webUrl || `https://firplaksa.sharepoint.com/sites/ITPowerApps/Reenvio%20facture/${encodeURIComponent(folderName)}/${encodeURIComponent(file.name)}`;
+        // 4. Subir Archivos a la carpeta
+        let firstFileUrl = "";
+        for (let i = 0; i < files.length; i++) {
+            const fileItem = files[i];
+            const fileBuffer = Buffer.from(await fileItem.arrayBuffer());
+            const uploadedFile = await uploadFileToSharePoint(siteIdIT, folderId, fileItem.name, fileBuffer);
+            const fileUrl = uploadedFile.webUrl || `https://firplaksa.sharepoint.com/sites/ITPowerApps/Reenvio%20facture/${encodeURIComponent(folderName)}/${encodeURIComponent(fileItem.name)}`;
+            if (i === 0) {
+                firstFileUrl = fileUrl;
+            }
+        }
 
         // 5. Resolver Responsable (Lookup ID) asegurando que exista en SharePoint
         let responsableLookupId = null;
@@ -91,7 +98,7 @@ export async function POST(req: NextRequest) {
             Proveedor: proveedor,
             Aprobacion_Doliente: 'Por Aprobar',
             Gestion_Contabilidad: 'Por Procesar',
-            fp: fileUrl
+            fp: firstFileUrl
         };
 
         if (valorTotal) {
@@ -110,14 +117,7 @@ export async function POST(req: NextRequest) {
             const restToken = await getSharePointRESTToken();
             if (restToken) {
                 const spBaseUrl = 'https://firplaksa.sharepoint.com/sites/FPKContabilidad';
-                // El nombre del archivo debe estar escapado para OData (comillas simples dobles)
-                const escapedFileName = file.name.replace(/'/g, "''");
-                // Pero el resto del nombre puede tener espacios, así que usamos encodeURIComponent para la URL completa del endpoint si es necesario, 
-                // aunque SharePoint suele preferir el nombre tal cual dentro de las comillas de la función add.
-                const attachUrl = `${spBaseUrl}/_api/web/lists/getbytitle('Registro_de_Facturas')/items(${newItemId})/AttachmentFiles/add(FileName='${escapedFileName}')`;
                 
-                console.log(`[SharePoint] Attaching file to item ${newItemId} via REST...`);
-
                 // A veces SharePoint requiere X-RequestDigest incluso con Bearer Token para adjuntos
                 let digest = "";
                 try {
@@ -135,24 +135,48 @@ export async function POST(req: NextRequest) {
                 } catch (e) {
                     console.warn('[SharePoint] Could not fetch digest, proceeding without it...');
                 }
-                
-                const attachRes = await fetch(attachUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${restToken}`,
-                        'Accept': 'application/json;odata=verbose',
-                        'Content-Type': file.type || 'application/pdf',
-                        ...(digest ? { 'X-RequestDigest': digest } : {})
-                    },
-                    body: fileBuffer
-                });
 
-                if (!attachRes.ok) {
-                    const errorText = await attachRes.text();
-                    console.error('[SharePoint REST Error] Status:', attachRes.status, 'Body:', errorText);
-                    // Si falla por falta de digest, intentar obtenerlo (aunque con OAuth no suele ser necesario)
-                } else {
-                    console.log('[SharePoint] File attached successfully to item', newItemId);
+                let adjuntosData = [];
+
+                for (const fileItem of files) {
+                    const fileItemBuffer = Buffer.from(await fileItem.arrayBuffer());
+                    const escapedFileName = fileItem.name.replace(/'/g, "''");
+                    const attachUrl = `${spBaseUrl}/_api/web/lists/getbytitle('Registro_de_Facturas')/items(${newItemId})/AttachmentFiles/add(FileName='${escapedFileName}')`;
+                    
+                    console.log(`[SharePoint] Attaching file to item ${newItemId} via REST...`);
+                    
+                    const attachRes = await fetch(attachUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${restToken}`,
+                            'Accept': 'application/json;odata=verbose',
+                            'Content-Type': fileItem.type || 'application/octet-stream',
+                            ...(digest ? { 'X-RequestDigest': digest } : {})
+                        },
+                        body: fileItemBuffer
+                    });
+
+                    if (!attachRes.ok) {
+                        const errorText = await attachRes.text();
+                        console.error('[SharePoint REST Error] Status:', attachRes.status, 'Body:', errorText);
+                    } else {
+                        console.log('[SharePoint] File attached successfully to item', newItemId);
+                        
+                        // Agregar a adjuntosData para Supabase
+                        const attachResData = await attachRes.json();
+                        if (attachResData && attachResData.d && attachResData.d.ServerRelativeUrl) {
+                            adjuntosData.push({
+                                name: attachResData.d.FileName,
+                                url: `https://firplaksa.sharepoint.com${attachResData.d.ServerRelativeUrl}`,
+                                path: attachResData.d.ServerRelativeUrl
+                            });
+                        }
+                    }
+                }
+                
+                // Si pudimos obtener las URLs, guardémoslas para Supabase
+                if (adjuntosData.length > 0) {
+                    fields['adjuntos_url'] = JSON.stringify(adjuntosData);
                 }
             }
         } catch (attachError) {
@@ -170,9 +194,10 @@ export async function POST(req: NextRequest) {
                 Aprobacion_Doliente: 'Por Aprobar',
                 Gestion_Contabilidad: 'Por Procesar',
                 Valor_total: valorTotal || '0',
-                fp: fileUrl,
-                documentos: fileUrl,
+                fp: firstFileUrl,
+                documentos: firstFileUrl,
                 "Datos adjuntos": 1,
+                adjuntos_url: fields['adjuntos_url'] || null,
                 Creado: new Date().toISOString(),
             };
 
