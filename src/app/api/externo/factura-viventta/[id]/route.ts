@@ -49,7 +49,7 @@ export async function GET(
             adjuntosUrl: invoice.adjuntos_url || [],
             distribuciones: invoice.centro_costos || null,
             observaciones: invoice.Observaciones || "",
-            anticipo: invoice.tiene_anticipo || ""
+            anticipo: ""
         });
 
     } catch (error: any) {
