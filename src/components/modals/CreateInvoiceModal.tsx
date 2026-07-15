@@ -534,7 +534,7 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                     {files.length === 0 && (
                                         <input
                                             type="file"
-                                            accept=".pdf,.zip,.rar,.7z,image/*"
+                                            accept=".pdf,.zip,.rar,.7z,image/*,video/*"
                                             multiple
                                             onChange={(e) => {
                                                 if (e.target.files) {
@@ -575,7 +575,7 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                                     Agregar más archivos
                                                     <input
                                                         type="file"
-                                                        accept=".pdf,.zip,.rar,.7z,image/*"
+                                                        accept=".pdf,.zip,.rar,.7z,image/*,video/*"
                                                         multiple
                                                         onChange={(e) => {
                                                             if (e.target.files) {
@@ -595,7 +595,7 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                             </div>
                                             <div>
                                                 <p className="text-xs font-bold text-[#254153]">Arrastra los archivos aquí</p>
-                                                <p className="text-[9px] text-gray-400">PDF, ZIP, RAR, Imágenes (Máx. 10MB)</p>
+                                                <p className="text-[9px] text-gray-400">PDF, ZIP, RAR, Imágenes, Videos</p>
                                             </div>
                                         </>
                                     )}
