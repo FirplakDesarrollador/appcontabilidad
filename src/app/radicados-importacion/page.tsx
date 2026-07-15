@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { motion } from "framer-motion";
-import { Menu, Search, Ship, Download, Filter, Plus } from "lucide-react";
+import { Menu, Search, Ship, Download, Filter, Plus, Loader2 } from "lucide-react";
 import { useSidebar } from "@/context/SidebarContext";
 import { AgGridReact } from 'ag-grid-react';
 import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
+import { supabase } from "@/lib/supabaseClient";
+import { NuevoRadicadoModal } from "@/components/modals/NuevoRadicadoModal";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -63,6 +65,45 @@ const MOCK_DATA = [
 export default function RadicadosImportacionPage() {
     const { toggleSidebar } = useSidebar();
     const [searchTerm, setSearchTerm] = useState("");
+    const [data, setData] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            const { data: radicados, error } = await supabase
+                .from('Radicados_de_importacion')
+                .select('*')
+                .order('Created', { ascending: false });
+
+            if (error) {
+                console.error("Error fetching data:", error);
+                return;
+            }
+            setData(radicados || []);
+        } catch (err) {
+            console.error("Error:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const filteredData = data.filter((item) => {
+        if (!searchTerm) return true;
+        const term = searchTerm.toLowerCase();
+        return (
+            item.id?.toLowerCase().includes(term) ||
+            item.Proveedor?.toLowerCase().includes(term) ||
+            item.Nro_Factura?.toLowerCase().includes(term) ||
+            item.Nit?.toLowerCase().includes(term) ||
+            item.Consecutivo?.toLowerCase().includes(term)
+        );
+    });
 
     const formatCurrency = (value: any) => {
         if (!value) return "$0";
@@ -120,7 +161,10 @@ export default function RadicadosImportacionPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <button className="h-10 px-4 bg-[#254153] hover:bg-[#1a2e3b] text-white rounded-xl font-medium transition-all flex items-center gap-2 text-sm shadow-sm">
+                        <button 
+                            onClick={() => setIsModalOpen(true)}
+                            className="h-10 px-4 bg-[#254153] hover:bg-[#1a2e3b] text-white rounded-xl font-medium transition-all flex items-center gap-2 text-sm shadow-sm"
+                        >
                             <Plus className="h-4 w-4" />
                             <span className="hidden sm:inline">Nuevo Radicado</span>
                         </button>
@@ -180,7 +224,7 @@ export default function RadicadosImportacionPage() {
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[500px]">
                             <div className="flex-1 w-full relative">
                                 <AgGridReact
-                                    rowData={MOCK_DATA}
+                                    rowData={filteredData}
                                     columnDefs={columnDefs}
                                     theme={themeQuartz}
                                     localeText={AG_GRID_LOCALE_ES}
@@ -194,12 +238,25 @@ export default function RadicadosImportacionPage() {
                                         suppressMovable: true,
                                     }}
                                 />
+                                {loading && (
+                                    <div className="absolute inset-0 bg-white/50 backdrop-blur-sm flex items-center justify-center z-10">
+                                        <Loader2 className="h-8 w-8 text-[#254153] animate-spin" />
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                     </div>
                 </main>
             </div>
+            
+            <NuevoRadicadoModal 
+                isOpen={isModalOpen} 
+                onClose={() => setIsModalOpen(false)} 
+                onSuccess={() => {
+                    fetchData();
+                }} 
+            />
         </div>
     );
 }
