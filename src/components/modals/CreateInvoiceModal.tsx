@@ -628,6 +628,7 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                     )}
                 </motion.div>
             </div>
+            )}
             </AnimatePresence>
             
             <style jsx global>{`

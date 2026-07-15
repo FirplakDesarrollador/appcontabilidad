@@ -575,6 +575,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                     )}
                 </motion.div>
             </div>
+            )}
             </AnimatePresence>
             
             <style jsx global>{`
