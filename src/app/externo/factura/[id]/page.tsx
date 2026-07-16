@@ -173,6 +173,13 @@ export default function PublicApprovalPage() {
     }, [userSearchQuery]);
 
     const fetchPdfBlob = async () => {
+        const directUrl = invoice?.documentos || invoice?.fp;
+        if (directUrl && (directUrl.startsWith('http://') || directUrl.startsWith('https://'))) {
+            const res = await fetch(directUrl);
+            if (!res.ok) throw new Error("No se pudo descargar el archivo directo");
+            return await res.blob();
+        }
+
         const fileName = invoice?.documentInfo?.fileName || 'Factura';
         const res = await fetch(`/api/externo/factura/${itemId}/download?file=${encodeURIComponent(fileName)}`);
         
@@ -180,7 +187,6 @@ export default function PublicApprovalPage() {
             const data = await res.json();
             throw new Error(data.error || "No se ha encontrado factura en PDF");
         }
-
         return await res.blob();
     };
 
@@ -216,6 +222,13 @@ export default function PublicApprovalPage() {
         try {
             setPreviewError(null);
             setPreviewLoading(true);
+
+            const directUrl = invoice?.documentos || invoice?.fp;
+            if (directUrl && (directUrl.startsWith('http://') || directUrl.startsWith('https://'))) {
+                setPreviewUrl(directUrl);
+                return;
+            }
+
             const fileName = invoice?.documentInfo?.fileName || 'Factura';
             const apiUrl = `/api/externo/factura/${itemId}/download?file=${encodeURIComponent(fileName)}`;
             
