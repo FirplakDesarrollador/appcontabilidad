@@ -154,7 +154,9 @@ export default function PublicCreateInvoicePage() {
             if (formData.valorTotal) {
                 data.append("valorTotal", formData.valorTotal);
             }
-            data.append("file", file);
+            if (file) {
+                data.append("files", file);
+            }
 
             const res = await fetch("/api/sharepoint/create", {
                 method: "POST",
@@ -502,6 +504,7 @@ export default function PublicCreateInvoicePage() {
                         {/* Subida de Archivo */}
                         <div className="space-y-2 mt-2">
                             <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Archivo PDF de Factura</label>
+                            <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Archivo de Factura</label>
                             <div 
                                 className={`relative border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center text-center space-y-3 transition-all
                                     ${file ? "border-blue-400 bg-blue-50/50" : "border-gray-200 bg-gray-50/50 hover:bg-gray-100/50 hover:border-gray-300"}`}
@@ -509,7 +512,7 @@ export default function PublicCreateInvoicePage() {
                                 <input
                                     required
                                     type="file"
-                                    accept=".pdf"
+                                    accept=".pdf,.zip,.rar,.7z,application/zip,application/x-zip-compressed,application/octet-stream,application/x-rar-compressed"
                                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                 />

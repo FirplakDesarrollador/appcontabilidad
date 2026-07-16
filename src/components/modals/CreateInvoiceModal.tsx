@@ -534,13 +534,15 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                     {files.length === 0 && (
                                         <input
                                             type="file"
-                                            accept=".pdf,.zip,.rar,.7z,image/*,video/*"
+                                            accept=".pdf,.zip,.rar,.7z,image/*,video/*,application/zip,application/x-zip-compressed,application/octet-stream"
                                             multiple
                                             onChange={(e) => {
-                                                if (e.target.files) {
-                                                    setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                                                if (e.target.files && e.target.files.length > 0) {
+                                                    const selected = Array.from(e.target.files);
+                                                    setFiles(prev => [...prev, ...selected]);
+                                                    // Usamos setTimeout para no limpiar el input antes de que React procese los archivos
+                                                    setTimeout(() => { e.target.value = ''; }, 0);
                                                 }
-                                                e.target.value = '';
                                             }}
                                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                         />
@@ -575,13 +577,14 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                                     Agregar más archivos
                                                     <input
                                                         type="file"
-                                                        accept=".pdf,.zip,.rar,.7z,image/*,video/*"
+                                                        accept=".pdf,.zip,.rar,.7z,image/*,video/*,application/zip,application/x-zip-compressed,application/octet-stream"
                                                         multiple
                                                         onChange={(e) => {
-                                                            if (e.target.files) {
-                                                                setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                                                            if (e.target.files && e.target.files.length > 0) {
+                                                                const selected = Array.from(e.target.files);
+                                                                setFiles(prev => [...prev, ...selected]);
+                                                                setTimeout(() => { e.target.value = ''; }, 0);
                                                             }
-                                                            e.target.value = '';
                                                         }}
                                                         className="hidden"
                                                     />

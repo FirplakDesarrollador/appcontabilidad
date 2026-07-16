@@ -52,20 +52,45 @@ export async function POST(req: NextRequest) {
         // Normalizar NIT para la carpeta y búsqueda (quitar puntos, guiones y DV si es necesario)
         const cleanNit = nit.split('-')[0].replace(/[^0-9]/g, '');
 
-        // 3. Crear carpeta en ITPowerApps/Reenvio facture
-        // Formato: FACTURA-UBL(NIT;NRO;FECHA)
-        // Usamos el NIT normalizado para consistencia con el proxy
-        const folderName = `FACTURA-UBL(${cleanNit};${nroFactura};${new Date().toISOString().split('T')[0]})`;
-        const folder = await createSharePointFolder(siteIdIT, 'Reenvio facture', folderName);
-        const folderId = folder.id;
-
-        // 4. Subir Archivos a la carpeta
+        // 3. (REMOVED) Carpeta en ITPowerApps y carga a SharePoint para evitar limite de 4MB
+        // Se suben los archivos a Supabase Storage directamente
         let firstFileUrl = "";
+        let adjuntosData = [];
+        
         for (let i = 0; i < files.length; i++) {
             const fileItem = files[i];
-            const fileBuffer = Buffer.from(await fileItem.arrayBuffer());
-            const uploadedFile = await uploadFileToSharePoint(siteIdIT, folderId, fileItem.name, fileBuffer);
-            const fileUrl = uploadedFile.webUrl || `https://firplaksa.sharepoint.com/sites/ITPowerApps/Reenvio%20facture/${encodeURIComponent(folderName)}/${encodeURIComponent(fileItem.name)}`;
+            const fileBuffer = await fileItem.arrayBuffer();
+            
+            const fileExtension = fileItem.name.split('.').pop() || '';
+            const safeName = fileItem.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+            const uniqueFileName = `${cleanNit}_${nroFactura}_${Date.now()}_${i}_${safeName}`;
+            
+            const { error: uploadError } = await supabaseAdmin
+                .storage
+                .from('adjuntos_facturas')
+                .upload(uniqueFileName, fileBuffer, {
+                    contentType: fileItem.type || 'application/octet-stream',
+                    upsert: false
+                });
+
+            if (uploadError) {
+                console.error('[Supabase Storage] Error uploading file:', uploadError);
+                throw new Error(`Error al subir el archivo ${fileItem.name}: ${uploadError.message}`);
+            }
+
+            const { data: publicUrlData } = supabaseAdmin
+                .storage
+                .from('adjuntos_facturas')
+                .getPublicUrl(uniqueFileName);
+                
+            const fileUrl = publicUrlData.publicUrl;
+            
+            adjuntosData.push({
+                name: fileItem.name,
+                url: fileUrl,
+                path: uniqueFileName
+            });
+
             if (i === 0) {
                 firstFileUrl = fileUrl;
             }
@@ -112,75 +137,9 @@ export async function POST(req: NextRequest) {
         const newItem = await createSharePointListItem(siteIdFPK, 'Registro_de_Facturas', fields);
         const newItemId = newItem.id;
 
-        // 7. Adjuntar el archivo al ítem de la lista usando la API de REST (más confiable para adjuntos)
-        try {
-            const restToken = await getSharePointRESTToken();
-            if (restToken) {
-                const spBaseUrl = 'https://firplaksa.sharepoint.com/sites/FPKContabilidad';
-                
-                // A veces SharePoint requiere X-RequestDigest incluso con Bearer Token para adjuntos
-                let digest = "";
-                try {
-                    const digestRes = await fetch(`${spBaseUrl}/_api/contextinfo`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${restToken}`,
-                            'Accept': 'application/json;odata=verbose',
-                        }
-                    });
-                    if (digestRes.ok) {
-                        const digestData = await digestRes.json();
-                        digest = digestData.d.GetContextWebInformation.FormDigestValue;
-                    }
-                } catch (e) {
-                    console.warn('[SharePoint] Could not fetch digest, proceeding without it...');
-                }
-
-                let adjuntosData = [];
-
-                for (const fileItem of files) {
-                    const fileItemBuffer = Buffer.from(await fileItem.arrayBuffer());
-                    const escapedFileName = fileItem.name.replace(/'/g, "''");
-                    const attachUrl = `${spBaseUrl}/_api/web/lists/getbytitle('Registro_de_Facturas')/items(${newItemId})/AttachmentFiles/add(FileName='${escapedFileName}')`;
-                    
-                    console.log(`[SharePoint] Attaching file to item ${newItemId} via REST...`);
-                    
-                    const attachRes = await fetch(attachUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${restToken}`,
-                            'Accept': 'application/json;odata=verbose',
-                            'Content-Type': fileItem.type || 'application/octet-stream',
-                            ...(digest ? { 'X-RequestDigest': digest } : {})
-                        },
-                        body: fileItemBuffer
-                    });
-
-                    if (!attachRes.ok) {
-                        const errorText = await attachRes.text();
-                        console.error('[SharePoint REST Error] Status:', attachRes.status, 'Body:', errorText);
-                    } else {
-                        console.log('[SharePoint] File attached successfully to item', newItemId);
-                        
-                        // Agregar a adjuntosData para Supabase
-                        const attachResData = await attachRes.json();
-                        if (attachResData && attachResData.d && attachResData.d.ServerRelativeUrl) {
-                            adjuntosData.push({
-                                name: attachResData.d.FileName,
-                                url: `https://firplaksa.sharepoint.com${attachResData.d.ServerRelativeUrl}`,
-                                path: attachResData.d.ServerRelativeUrl
-                            });
-                        }
-                    }
-                }
-                
-                // Si pudimos obtener las URLs, guardémoslas para Supabase
-                if (adjuntosData.length > 0) {
-                    fields['adjuntos_url'] = JSON.stringify(adjuntosData);
-                }
-            }
-        } catch (attachError) {
-            console.error('Error al adjuntar archivo al ítem de SharePoint:', attachError);
+        // 7. (REMOVED) Adjuntar a SharePoint REST API (reemplazado por Supabase Storage)
+        if (adjuntosData.length > 0) {
+            fields['adjuntos_url'] = JSON.stringify(adjuntosData);
         }
 
         // 8. Upsert en Supabase para visibilidad inmediata
@@ -196,7 +155,7 @@ export async function POST(req: NextRequest) {
                 Valor_total: valorTotal || '0',
                 fp: firstFileUrl,
                 documentos: firstFileUrl,
-                "Datos adjuntos": 1,
+                "Datos adjuntos": files.length,
                 adjuntos_url: fields['adjuntos_url'] || null,
                 Creado: new Date().toISOString(),
             };
@@ -296,8 +255,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ 
             success: true, 
-            item: newItem,
-            folder: folderName
+            item: newItem
         });
 
     } catch (error: any) {
