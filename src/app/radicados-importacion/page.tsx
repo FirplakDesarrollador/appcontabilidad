@@ -1,14 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { motion } from "framer-motion";
-import { Menu, Search, Ship, Download, Filter, Plus } from "lucide-react";
+import { Menu, Search, Ship, Download, Filter, Plus, Loader2, Link } from "lucide-react";
 import { useSidebar } from "@/context/SidebarContext";
 import { AgGridReact } from 'ag-grid-react';
-import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
+import { ModuleRegistry, AllCommunityModule, themeQuartz, ClientSideRowModelModule, CsvExportModule } from 'ag-grid-community';
+import { supabase } from "@/lib/supabaseClient";
+import { NuevoRadicadoModal } from "@/components/modals/NuevoRadicadoModal";
+import { DetalleRadicadoModal } from "@/components/modals/DetalleRadicadoModal";
 
-ModuleRegistry.registerModules([AllCommunityModule]);
+ModuleRegistry.registerModules([AllCommunityModule, ClientSideRowModelModule, CsvExportModule]);
 
 const AG_GRID_LOCALE_ES = {
     noRowsToShow: 'No hay radicados para mostrar',
@@ -63,14 +66,75 @@ const MOCK_DATA = [
 export default function RadicadosImportacionPage() {
     const { toggleSidebar } = useSidebar();
     const [searchTerm, setSearchTerm] = useState("");
+    const [data, setData] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isDetalleModalOpen, setIsDetalleModalOpen] = useState(false);
+    const [selectedRadicado, setSelectedRadicado] = useState<any>(null);
+    const [showFilters, setShowFilters] = useState(false);
+    const [activeTab, setActiveTab] = useState("Por Procesar");
+    const gridRef = useRef<any>(null);
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            const { data: radicados, error } = await supabase
+                .from('Radicados_de_importacion')
+                .select('*')
+                .order('Created', { ascending: false });
+
+            if (error) {
+                console.error("Error fetching data:", error);
+                return;
+            }
+            setData(radicados || []);
+        } catch (err) {
+            console.error("Error:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const filteredData = data.filter(item => {
+        let matchTab = true;
+        if (activeTab === "Por Procesar") {
+            matchTab = !item.Gestion_Contabilidad || item.Gestion_Contabilidad === "Pendiente" || item.Gestion_Contabilidad === "Por Procesar";
+        }
+        
+        if (!matchTab) return false;
+
+        if (!searchTerm) return true;
+        const term = searchTerm.toLowerCase();
+        return (
+            item.id?.toString().toLowerCase().includes(term) ||
+            item.Proveedor?.toLowerCase().includes(term) ||
+            item.Nro_Factura?.toLowerCase().includes(term) ||
+            item.Nit?.toLowerCase().includes(term) ||
+            item.Consecutivo?.toLowerCase().includes(term)
+        );
+    });
 
     const formatCurrency = (value: any) => {
-        if (!value) return "$0";
-        return new Intl.NumberFormat('es-CO', {
+        if (!value) return "USD $0";
+        return new Intl.NumberFormat('en-US', {
             style: 'currency',
-            currency: 'COP',
-            minimumFractionDigits: 0
+            currency: 'USD',
+            minimumFractionDigits: 2
         }).format(Number(value));
+    };
+
+    const handleExport = () => {
+        if (gridRef.current && gridRef.current.api) {
+            gridRef.current.api.exportDataAsCsv({
+                fileName: `Radicados_Importacion_${new Date().toISOString().split('T')[0]}.csv`,
+                columnSeparator: ';',
+                columnKeys: ['Nit', 'Proveedor', 'Nro_Factura', 'Monto', 'Responsable_de_Autorizar', 'Aprobacion_Doliente', 'Gestion_Contabilidad', 'Consecutivo', 'Created', 'centro_costos', 'Observaciones']
+            });
+        }
     };
 
     const columnDefs: any = [
@@ -83,7 +147,13 @@ export default function RadicadosImportacionPage() {
             sortable: false,
             cellRenderer: (params: any) => (
                 <div className="flex items-center justify-start gap-2 h-full">
-                    <button className="h-8 w-8 p-0 text-gray-400 border border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center">
+                    <button 
+                        onClick={() => {
+                            setSelectedRadicado(params.data);
+                            setIsDetalleModalOpen(true);
+                        }}
+                        className="h-8 w-8 p-0 text-gray-400 border border-gray-100 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
+                    >
                         <Search className="h-3.5 w-3.5" />
                     </button>
                 </div>
@@ -95,14 +165,12 @@ export default function RadicadosImportacionPage() {
         { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
         { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
         { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
-        { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Pendiente"}</div> },
+        { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{(!p.value || p.value === "Pendiente") ? "Por Procesar" : p.value}</div> },
         { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || "N/A"}</div> },
         { headerName: 'Fecha Creación', field: 'Created', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
         { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{p.value}</div> },
-        { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
-        { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || "Sin observaciones"}</div> },
-        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{(p.data?.Attachments) ? <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50 cursor-pointer"><Search className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></span> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
-    ];
+        { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || "Sin observaciones"}</div> }
+    ].map(col => ({ ...col, floatingFilter: showFilters }));
 
     return (
         <div className="flex h-screen bg-[#f8fafc] overflow-hidden font-sans">
@@ -120,7 +188,23 @@ export default function RadicadosImportacionPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <button className="h-10 px-4 bg-[#254153] hover:bg-[#1a2e3b] text-white rounded-xl font-medium transition-all flex items-center gap-2 text-sm shadow-sm">
+                        <button 
+                            onClick={() => {
+                                const url = `${window.location.origin}/externo/radicados-importacion`;
+                                navigator.clipboard.writeText(url).then(() => {
+                                    alert("✅ Enlace público copiado al portapapeles.");
+                                });
+                            }}
+                            className="h-10 px-4 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl font-bold transition-all flex items-center gap-2 text-sm shadow-sm border border-blue-100/50"
+                            title="Copiar link para radicados externos"
+                        >
+                            <Link className="h-4 w-4" />
+                            <span className="hidden sm:inline">Copiar Link Público</span>
+                        </button>
+                        <button 
+                            onClick={() => setIsModalOpen(true)}
+                            className="h-10 px-4 bg-[#254153] hover:bg-[#1a2e3b] text-white rounded-xl font-medium transition-all flex items-center gap-2 text-sm shadow-sm"
+                        >
                             <Plus className="h-4 w-4" />
                             <span className="hidden sm:inline">Nuevo Radicado</span>
                         </button>
@@ -164,12 +248,35 @@ export default function RadicadosImportacionPage() {
                                 />
                             </div>
                             
+                            <div className="flex bg-gray-100 p-1 rounded-xl w-full sm:w-auto overflow-x-auto custom-scrollbar">
+                                <button
+                                    onClick={() => setActiveTab("Por Procesar")}
+                                    className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === "Por Procesar" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700 hover:bg-gray-200/50"}`}
+                                >
+                                    Por Procesar
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab("Historico")}
+                                    className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === "Historico" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700 hover:bg-gray-200/50"}`}
+                                >
+                                    Histórico de Todas
+                                </button>
+                            </div>
+
                             <div className="flex items-center gap-2 w-full sm:w-auto">
-                                <button className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium transition-colors">
+                                <button 
+                                    onClick={() => setShowFilters(!showFilters)}
+                                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 border text-sm font-medium transition-colors rounded-xl ${
+                                        showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-gray-50 hover:bg-gray-100 border-gray-200 text-gray-700'
+                                    }`}
+                                >
                                     <Filter className="h-4 w-4" />
                                     Filtros
                                 </button>
-                                <button className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium transition-colors">
+                                <button 
+                                    onClick={handleExport}
+                                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-emerald-600 hover:text-emerald-700 rounded-xl text-sm font-medium transition-colors"
+                                >
                                     <Download className="h-4 w-4" />
                                     Exportar
                                 </button>
@@ -180,7 +287,8 @@ export default function RadicadosImportacionPage() {
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[500px]">
                             <div className="flex-1 w-full relative">
                                 <AgGridReact
-                                    rowData={MOCK_DATA}
+                                    ref={gridRef}
+                                    rowData={filteredData}
                                     columnDefs={columnDefs}
                                     theme={themeQuartz}
                                     localeText={AG_GRID_LOCALE_ES}
@@ -194,12 +302,32 @@ export default function RadicadosImportacionPage() {
                                         suppressMovable: true,
                                     }}
                                 />
+                                {loading && (
+                                    <div className="absolute inset-0 bg-white/50 backdrop-blur-sm flex items-center justify-center z-10">
+                                        <Loader2 className="h-8 w-8 text-[#254153] animate-spin" />
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                     </div>
                 </main>
             </div>
+            
+            <NuevoRadicadoModal 
+                isOpen={isModalOpen} 
+                onClose={() => setIsModalOpen(false)} 
+                onSuccess={() => {
+                    fetchData();
+                }} 
+            />
+            
+            <DetalleRadicadoModal
+                isOpen={isDetalleModalOpen}
+                onClose={() => setIsDetalleModalOpen(false)}
+                data={selectedRadicado}
+                onSuccess={() => fetchData()}
+            />
         </div>
     );
 }
