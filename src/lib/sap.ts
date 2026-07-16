@@ -240,6 +240,9 @@ export async function createSapDraft(payload: SapDraftPayload) {
 
                 if (costCenter === "N / A" || costCenter === "N/A" || !costCenter || costCenter.toLowerCase().includes("no aplica")) {
                     costCenter = "";
+                } else {
+                    // Limpiar espacios accidentales en el código del centro de costo (ej. "IP- IRTML" -> "IP-IRTML")
+                    costCenter = costCenter.replace(/\s+/g, '');
                 }
 
                 // Find mapped article from bulk result
