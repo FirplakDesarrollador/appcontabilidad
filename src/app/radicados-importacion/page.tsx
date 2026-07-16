@@ -255,7 +255,7 @@ export default function RadicadosImportacionPage() {
                 </header>
 
                 <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-                    <div className="max-w-7xl mx-auto space-y-6">
+                    <div className="w-full max-w-[1800px] mx-auto space-y-6">
                         
                         {/* Title & Stats */}
                         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -271,10 +271,6 @@ export default function RadicadosImportacionPage() {
                                     <span className="text-sm font-bold tracking-wider uppercase">Módulo de Importaciones</span>
                                 </div>
                                 <h2 className="text-3xl font-extrabold text-[#254153]">Radicados de Importación</h2>
-                                <p className="text-gray-500 mt-1 font-medium flex items-center gap-2">
-                                    <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                                    Modo Visual - En desarrollo
-                                </p>
                             </motion.div>
                         </div>
 
