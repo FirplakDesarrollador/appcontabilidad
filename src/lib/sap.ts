@@ -161,8 +161,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         const nitFilter = `(FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}' or CardCode eq 'AC${baseNit}' or CardCode eq 'PN${baseNit}' or CardCode eq 'AC${baseNit}-01' or CardCode eq 'PN${baseNit}-01')`;
-        const vendorCodeFilter = `(startswith(CardCode,'AC') or startswith(CardCode,'PN'))`;
-        const bpUrl = `${baseUrl}/BusinessPartners?$filter=${nitFilter} and ${vendorCodeFilter}&$select=CardCode,CardName,FederalTaxID,CardType`;
+        // Removed vendorCodeFilter from API call to fetch all matches and see their CardCode in case of error
+        const bpUrl = `${baseUrl}/BusinessPartners?$filter=${nitFilter}&$select=CardCode,CardName,FederalTaxID,CardType`;
         const bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
 
         if (bpRes.status !== 200) {
@@ -173,18 +173,18 @@ export async function createSapDraft(payload: SapDraftPayload) {
             throw new Error(`Supplier with NIT ${nit} not found in SAP. Verifique que el proveedor exista y el NIT sea correcto.`);
         }
 
-        // Solo aceptar proveedores con prefijo SAP permitido: AC o PN.
+        // Aceptar proveedores con prefijo SAP permitido: AC o cualquier prefijo que empiece con P (P, PN, PE, etc.)
         const allBPs = bpRes.data.value as SapBusinessPartner[];
         const vendorMatch = allBPs.find((v) => {
             const candidateCardCode = String(v.CardCode || '').toUpperCase();
-            const isAllowedPrefix = candidateCardCode.startsWith('AC') || candidateCardCode.startsWith('PN');
+            const isAllowedPrefix = candidateCardCode.startsWith('AC') || candidateCardCode.startsWith('P');
             const isSupplier = v.CardType === 'sSupplier' || v.CardType === 'cSupplier' || v.CardType === 'S';
             return isAllowedPrefix && isSupplier;
         });
 
         if (!vendorMatch) {
             const candidates = allBPs.map((v) => `${v.CardCode || 'N/A'} (${v.CardType || 'sin tipo'})`).join(', ');
-            throw new Error(`Supplier with NIT ${nit} not found in SAP with allowed prefix AC/PN. Candidates ignored: ${candidates || 'none'}`);
+            throw new Error(`Supplier with NIT ${nit} not found in SAP with allowed prefix AC/P. Candidates ignored: ${candidates || 'none'}`);
         }
 
         const match = vendorMatch;
