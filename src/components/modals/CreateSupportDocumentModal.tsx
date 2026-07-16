@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Upload, Loader2, CheckCircle2, AlertCircle, FileText, User, Search, ChevronDown } from "lucide-react";
+import { X, Upload, Loader2, CheckCircle2, AlertCircle, FileText, User, Search, ChevronDown, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 interface CreateSupportDocumentModalProps {
@@ -19,10 +19,11 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
     const [formData, setFormData] = useState({
         nit: "",
         proveedor: "",
-        responsableEmail: ""
+        responsableEmail: "",
+        valor: ""
     });
     
-    const [file, setFile] = useState<File | null>(null);
+    const [files, setFiles] = useState<File[]>([]);
     
     // Estados para búsqueda de Responsable
     const [userSearch, setUserSearch] = useState("");
@@ -109,8 +110,8 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!file) {
-            setError("Debes adjuntar el archivo PDF del documento soporte.");
+        if (files.length === 0) {
+            setError("Debes adjuntar al menos un archivo (PDF, ZIP, RAR, etc.) del documento soporte.");
             return;
         }
 
@@ -122,7 +123,15 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
             data.append("nit", formData.nit);
             data.append("proveedor", formData.proveedor);
             data.append("responsableEmail", formData.responsableEmail);
-            data.append("file", file);
+            if (userSearch) {
+                data.append("responsableNombre", userSearch);
+            }
+            if (formData.valor) {
+                data.append("valorTotal", formData.valor);
+            }
+            files.forEach((f) => {
+                data.append("files", f);
+            });
 
             const res = await fetch("/api/sharepoint/documentos/create", {
                 method: "POST",
@@ -151,9 +160,10 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
         setFormData({
             nit: "",
             proveedor: "",
-            responsableEmail: ""
+            responsableEmail: "",
+            valor: ""
         });
-        setFile(null);
+        setFiles([]);
         setSuccess(false);
         setError(null);
         setUserSearch("");
@@ -162,11 +172,11 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
         onClose();
     };
 
-    if (!isOpen) return null;
-
     return (
-        <AnimatePresence>
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <>
+            <AnimatePresence>
+                {isOpen && (
+                    <div key="support-modal-container" className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -442,29 +452,87 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                         )}
                                     </AnimatePresence>
                                 </div>
+
+                                {/* Valor Total */}
+                                <div className="md:col-span-2 space-y-1.5 relative">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Valor Total</label>
+                                    <div className="relative group">
+                                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                                        <input
+                                            required
+                                            type="number"
+                                            min="0"
+                                            value={formData.valor}
+                                            onChange={(e) => setFormData({ ...formData, valor: e.target.value })}
+                                            className="w-full pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-[#254153]"
+                                            placeholder="Ej: 150000"
+                                        />
+                                    </div>
+                                </div>
                             </div>
 
-                            {/* Subida de Archivo */}
+                            {/* Subida de Archivos */}
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Archivo PDF</label>
+                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Archivos Adjuntos</label>
                                 <div 
                                     className={`relative border-2 border-dashed rounded-2xl p-4 flex flex-col items-center text-center space-y-2 transition-all
-                                        ${file ? "border-blue-400 bg-blue-50/30" : "border-gray-100 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-200"}`}
+                                        ${files.length > 0 ? "border-blue-400 bg-blue-50/30" : "border-gray-100 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-200"}`}
                                 >
-                                    <input
-                                        type="file"
-                                        accept=".pdf"
-                                        onChange={(e) => setFile(e.target.files?.[0] || null)}
-                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                    />
-                                    {file ? (
-                                        <div className="flex items-center gap-3 w-full px-4">
-                                            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-                                                <FileText className="h-4 w-4 text-blue-600" />
-                                            </div>
-                                            <div className="text-left overflow-hidden">
-                                                <p className="text-xs font-bold text-blue-600 truncate">{file.name}</p>
-                                                <p className="text-[10px] text-blue-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                    {files.length === 0 && (
+                                        <input
+                                            type="file"
+                                            accept=".pdf,.zip,.rar,.7z,image/*,video/*"
+                                            multiple
+                                            onChange={(e) => {
+                                                if (e.target.files) {
+                                                    setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                                                }
+                                                e.target.value = '';
+                                            }}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        />
+                                    )}
+                                    {files.length > 0 ? (
+                                        <div className="flex flex-col gap-2 w-full px-2 max-h-40 overflow-y-auto custom-scrollbar">
+                                            {files.map((f, idx) => (
+                                                <div key={idx} className="flex items-center gap-3 w-full p-2 bg-white rounded-xl border border-blue-100 shadow-sm relative group">
+                                                    <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+                                                        <FileText className="h-4 w-4 text-blue-600" />
+                                                    </div>
+                                                    <div className="text-left overflow-hidden flex-1">
+                                                        <p className="text-xs font-bold text-blue-600 truncate pr-6">{f.name}</p>
+                                                        <p className="text-[10px] text-blue-400">{(f.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                    </div>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            setFiles(prev => prev.filter((_, i) => i !== idx));
+                                                        }}
+                                                        className="absolute right-2 p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                                    >
+                                                        <X className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            <div className="pt-2 flex justify-center">
+                                                <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors border border-blue-100 shadow-sm">
+                                                    <Upload className="h-3.5 w-3.5" />
+                                                    Agregar más archivos
+                                                    <input
+                                                        type="file"
+                                                        accept=".pdf,.zip,.rar,.7z,image/*,video/*"
+                                                        multiple
+                                                        onChange={(e) => {
+                                                            if (e.target.files) {
+                                                                setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                                                            }
+                                                            e.target.value = '';
+                                                        }}
+                                                        className="hidden"
+                                                    />
+                                                </label>
                                             </div>
                                         </div>
                                     ) : (
@@ -473,8 +541,8 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                                 <Upload className="h-4 w-4 text-gray-400" />
                                             </div>
                                             <div>
-                                                <p className="text-xs font-bold text-[#254153]">Arrastra el PDF aquí</p>
-                                                <p className="text-[9px] text-gray-400">Tamaño máx. 10MB</p>
+                                                <p className="text-xs font-bold text-[#254153]">Arrastra los archivos aquí</p>
+                                                <p className="text-[9px] text-gray-400">PDF, ZIP, RAR, Imágenes, Videos</p>
                                             </div>
                                         </>
                                     )}
@@ -493,7 +561,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                 </Button>
                                 <Button
                                     type="submit"
-                                    disabled={isLoading || !file || !formData.proveedor || !formData.responsableEmail}
+                                    disabled={isLoading || files.length === 0 || !formData.proveedor || !formData.responsableEmail || !formData.valor}
                                     className="flex-[2] rounded-xl h-12 text-sm font-black bg-[#254153] hover:bg-[#1a2f3d] text-white shadow-lg"
                                 >
                                     {isLoading ? (
@@ -507,6 +575,8 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                     )}
                 </motion.div>
             </div>
+            )}
+            </AnimatePresence>
             
             <style jsx global>{`
                 .custom-scrollbar::-webkit-scrollbar {
@@ -523,6 +593,6 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                     background: #cbd5e1;
                 }
             `}</style>
-        </AnimatePresence>
+        </>
     );
 }

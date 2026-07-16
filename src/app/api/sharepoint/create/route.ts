@@ -17,10 +17,11 @@ export async function POST(req: NextRequest) {
         const nit = formData.get('nit') as string;
         const proveedor = formData.get('proveedor') as string;
         const responsableEmail = formData.get('responsableEmail') as string;
-        const file = formData.get('file') as File;
+        const files = formData.getAll('files') as File[];
+        const valorTotal = formData.get('valorTotal') as string;
 
-        if (!nroFactura || !nit || !file) {
-            return NextResponse.json({ error: 'Faltan campos obligatorios (Número, NIT o Archivo)' }, { status: 400 });
+        if (!nroFactura || !nit || !files || files.length === 0) {
+            return NextResponse.json({ error: 'Faltan campos obligatorios (Número, NIT o Archivos)' }, { status: 400 });
         }
 
         const client = await getGraphClient();
@@ -51,25 +52,59 @@ export async function POST(req: NextRequest) {
         // Normalizar NIT para la carpeta y búsqueda (quitar puntos, guiones y DV si es necesario)
         const cleanNit = nit.split('-')[0].replace(/[^0-9]/g, '');
 
-        // 3. Crear carpeta en ITPowerApps/Reenvio facture
-        // Formato: FACTURA-UBL(NIT;NRO;FECHA)
-        // Usamos el NIT normalizado para consistencia con el proxy
-        const folderName = `FACTURA-UBL(${cleanNit};${nroFactura};${new Date().toISOString().split('T')[0]})`;
-        const folder = await createSharePointFolder(siteIdIT, 'Reenvio facture', folderName);
-        const folderId = folder.id;
+        // 3. (REMOVED) Carpeta en ITPowerApps y carga a SharePoint para evitar limite de 4MB
+        // Se suben los archivos a Supabase Storage directamente
+        let firstFileUrl = "";
+        let adjuntosData = [];
+        
+        for (let i = 0; i < files.length; i++) {
+            const fileItem = files[i];
+            const fileBuffer = await fileItem.arrayBuffer();
+            
+            const fileExtension = fileItem.name.split('.').pop() || '';
+            const safeName = fileItem.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+            const uniqueFileName = `${cleanNit}_${nroFactura}_${Date.now()}_${i}_${safeName}`;
+            
+            const { error: uploadError } = await supabaseAdmin
+                .storage
+                .from('adjuntos_facturas')
+                .upload(uniqueFileName, fileBuffer, {
+                    contentType: fileItem.type || 'application/octet-stream',
+                    upsert: false
+                });
 
-        // 4. Subir PDF a la carpeta
-        const fileBuffer = Buffer.from(await file.arrayBuffer());
-        const uploadedFile = await uploadFileToSharePoint(siteIdIT, folderId, file.name, fileBuffer);
-        const fileUrl = uploadedFile.webUrl || `https://firplaksa.sharepoint.com/sites/ITPowerApps/Reenvio%20facture/${encodeURIComponent(folderName)}/${encodeURIComponent(file.name)}`;
+            if (uploadError) {
+                console.error('[Supabase Storage] Error uploading file:', uploadError);
+                throw new Error(`Error al subir el archivo ${fileItem.name}: ${uploadError.message}`);
+            }
+
+            const { data: publicUrlData } = supabaseAdmin
+                .storage
+                .from('adjuntos_facturas')
+                .getPublicUrl(uniqueFileName);
+                
+            const fileUrl = publicUrlData.publicUrl;
+            
+            adjuntosData.push({
+                name: fileItem.name,
+                url: fileUrl,
+                path: uniqueFileName
+            });
+
+            if (i === 0) {
+                firstFileUrl = fileUrl;
+            }
+        }
 
         // 5. Resolver Responsable (Lookup ID) asegurando que exista en SharePoint
         let responsableLookupId = null;
+        let responsableName = null;
         if (responsableEmail) {
             try {
                 const spUser = await ensureSharePointUserByEmail(responsableEmail);
                 if (spUser) {
                     responsableLookupId = spUser.id;
+                    responsableName = spUser.title;
                 } else {
                     console.warn('[SharePoint] No se pudo asegurar el responsable por email:', responsableEmail);
                     return NextResponse.json({ error: `El correo responsable (${responsableEmail}) no es válido o no existe en SharePoint.` }, { status: 400 });
@@ -87,9 +122,13 @@ export async function POST(req: NextRequest) {
             Nro_Factura: nroFactura,
             Proveedor: proveedor,
             Aprobacion_Doliente: 'Por Aprobar',
-            Gestion_Contabilidad: 'Pendiente',
-            fp: fileUrl
+            Gestion_Contabilidad: 'Por Procesar',
+            fp: firstFileUrl
         };
+
+        if (valorTotal) {
+            fields['Valortotal'] = valorTotal;
+        }
 
         if (responsableLookupId) {
             fields['ResponsabledeAutorizarLookupId'] = responsableLookupId;
@@ -98,58 +137,9 @@ export async function POST(req: NextRequest) {
         const newItem = await createSharePointListItem(siteIdFPK, 'Registro_de_Facturas', fields);
         const newItemId = newItem.id;
 
-        // 7. Adjuntar el archivo al ítem de la lista usando la API de REST (más confiable para adjuntos)
-        try {
-            const restToken = await getSharePointRESTToken();
-            if (restToken) {
-                const spBaseUrl = 'https://firplaksa.sharepoint.com/sites/FPKContabilidad';
-                // El nombre del archivo debe estar escapado para OData (comillas simples dobles)
-                const escapedFileName = file.name.replace(/'/g, "''");
-                // Pero el resto del nombre puede tener espacios, así que usamos encodeURIComponent para la URL completa del endpoint si es necesario, 
-                // aunque SharePoint suele preferir el nombre tal cual dentro de las comillas de la función add.
-                const attachUrl = `${spBaseUrl}/_api/web/lists/getbytitle('Registro_de_Facturas')/items(${newItemId})/AttachmentFiles/add(FileName='${escapedFileName}')`;
-                
-                console.log(`[SharePoint] Attaching file to item ${newItemId} via REST...`);
-
-                // A veces SharePoint requiere X-RequestDigest incluso con Bearer Token para adjuntos
-                let digest = "";
-                try {
-                    const digestRes = await fetch(`${spBaseUrl}/_api/contextinfo`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${restToken}`,
-                            'Accept': 'application/json;odata=verbose',
-                        }
-                    });
-                    if (digestRes.ok) {
-                        const digestData = await digestRes.json();
-                        digest = digestData.d.GetContextWebInformation.FormDigestValue;
-                    }
-                } catch (e) {
-                    console.warn('[SharePoint] Could not fetch digest, proceeding without it...');
-                }
-                
-                const attachRes = await fetch(attachUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${restToken}`,
-                        'Accept': 'application/json;odata=verbose',
-                        'Content-Type': file.type || 'application/pdf',
-                        ...(digest ? { 'X-RequestDigest': digest } : {})
-                    },
-                    body: fileBuffer
-                });
-
-                if (!attachRes.ok) {
-                    const errorText = await attachRes.text();
-                    console.error('[SharePoint REST Error] Status:', attachRes.status, 'Body:', errorText);
-                    // Si falla por falta de digest, intentar obtenerlo (aunque con OAuth no suele ser necesario)
-                } else {
-                    console.log('[SharePoint] File attached successfully to item', newItemId);
-                }
-            }
-        } catch (attachError) {
-            console.error('Error al adjuntar archivo al ítem de SharePoint:', attachError);
+        // 7. (REMOVED) Adjuntar a SharePoint REST API (reemplazado por Supabase Storage)
+        if (adjuntosData.length > 0) {
+            fields['adjuntos_url'] = JSON.stringify(adjuntosData);
         }
 
         // 8. Upsert en Supabase para visibilidad inmediata
@@ -161,10 +151,12 @@ export async function POST(req: NextRequest) {
                 Proveedor: proveedor,
                 Nro_Factura: nroFactura,
                 Aprobacion_Doliente: 'Por Aprobar',
-                Gestion_Contabilidad: 'Pendiente',
-                fp: fileUrl,
-                documentos: fileUrl,
-                "Datos adjuntos": 1,
+                Gestion_Contabilidad: 'Por Procesar',
+                Valor_total: valorTotal || '0',
+                fp: firstFileUrl,
+                documentos: firstFileUrl,
+                "Datos adjuntos": files.length,
+                adjuntos_url: fields['adjuntos_url'] || null,
                 Creado: new Date().toISOString(),
             };
 
@@ -174,6 +166,88 @@ export async function POST(req: NextRequest) {
 
             if (supabaseError) {
                 console.error('Error al sincronizar con Supabase inmediatamente:', supabaseError.message);
+            } else {
+                // --- Auto-approval detection ---
+                try {
+                    const { data: checkData } = await supabaseAdmin
+                        .from('Registro_Facturas')
+                        .select('Aprobacion_Doliente, centro_costos')
+                        .eq('ID', Number(newItemId))
+                        .single();
+                        
+                    if (checkData && checkData.Aprobacion_Doliente === 'Aprobado') {
+                        console.log(`[Auto-Approve] Invoice ${newItemId} auto-approved by DB trigger.`);
+                        
+                        try {
+                            const listsResponse = await client.api(`/sites/${siteIdFPK}/lists`).get();
+                            const listId = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas')?.id;
+                            
+                            if (listId) {
+                                await client.api(`/sites/${siteIdFPK}/lists/${listId}/items/${newItemId}/fields`).patch({
+                                    Aprobacion_Doliente: 'Aprobado',
+                                    Observaciones: 'Aprobado automáticamente',
+                                    centro_costos: checkData.centro_costos
+                                });
+                            }
+                        } catch(spErr: any) {
+                            console.error('[Auto-Approve] Error patching SharePoint:', spErr);
+                        }
+                        
+                        try {
+                            const { createSapDraft } = await import('@/lib/sap');
+                            await createSapDraft({
+                                nit: nit || "",
+                                total: valorTotal || "0",
+                                distribuciones: checkData.centro_costos ? JSON.parse(checkData.centro_costos) : [],
+                                anticipo: 'f',
+                                observations: 'Aprobado automáticamente por regla de proveedor',
+                                nroFactura: nroFactura || String(newItemId),
+                                docTypeDesc: 'FACTURA',
+                                itemId: String(newItemId),
+                                consecutivo: String(newItemId),
+                                proveedorName: proveedor || "Proveedor Desconocido"
+                            });
+                        } catch (sapErr: any) {
+                            console.error('[Auto-Approve] Error en SAP:', sapErr);
+                            await supabaseAdmin.from('log_errores_sap').insert({
+                                factura_id: Number(newItemId),
+                                nro_factura: nroFactura || String(newItemId),
+                                proveedor: proveedor,
+                                error_mensaje: sapErr.message,
+                                detalles: sapErr
+                            });
+                        }
+                    }
+                } catch(e: any) {
+                    console.error('[Auto-Approve] Error in post-create auto-approve logic:', e);
+                }
+                // -------------------------------
+            }
+
+            // Auto-registrar proveedor si no existe
+            if (responsableEmail && responsableName) {
+                try {
+                    const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
+                    const { data: existingProvider, error: lookupError } = await supabaseAdmin
+                        .from("Proveedores_con_Responsable")
+                        .select('"Nit"')
+                        .like("Nit", `${baseNit}%`)
+                        .limit(1);
+
+                    if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
+                        await supabaseAdmin.from("Proveedores_con_Responsable").insert({
+                            "Nit": nit,
+                            "Nombre de socio de negocios": proveedor,
+                            "Responsable": responsableName,
+                            "Autorizador": responsableName,
+                            "Correo": responsableEmail,
+                            "Creado": new Date().toISOString()
+                        });
+                        console.log(`[Supabase] Registrado nuevo proveedor con responsable: ${nit} - ${responsableName}`);
+                    }
+                } catch (providerErr) {
+                    console.error("[Supabase] Error registrando Proveedor_con_Responsable:", providerErr);
+                }
             }
         } catch (supabaseCatchError) {
             console.error('Error fatal al sincronizar con Supabase:', supabaseCatchError);
@@ -181,8 +255,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ 
             success: true, 
-            item: newItem,
-            folder: folderName
+            item: newItem
         });
 
     } catch (error: any) {

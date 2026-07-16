@@ -161,8 +161,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         const nitFilter = `(FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}' or CardCode eq 'AC${baseNit}' or CardCode eq 'PN${baseNit}' or CardCode eq 'AC${baseNit}-01' or CardCode eq 'PN${baseNit}-01')`;
-        const vendorCodeFilter = `(startswith(CardCode,'AC') or startswith(CardCode,'PN'))`;
-        const bpUrl = `${baseUrl}/BusinessPartners?$filter=${nitFilter} and ${vendorCodeFilter}&$select=CardCode,CardName,FederalTaxID,CardType`;
+        // Removed vendorCodeFilter from API call to fetch all matches and see their CardCode in case of error
+        const bpUrl = `${baseUrl}/BusinessPartners?$filter=${nitFilter}&$select=CardCode,CardName,FederalTaxID,CardType`;
         const bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
 
         if (bpRes.status !== 200) {
@@ -173,18 +173,18 @@ export async function createSapDraft(payload: SapDraftPayload) {
             throw new Error(`Supplier with NIT ${nit} not found in SAP. Verifique que el proveedor exista y el NIT sea correcto.`);
         }
 
-        // Solo aceptar proveedores con prefijo SAP permitido: AC o PN.
+        // Aceptar proveedores con prefijo SAP permitido: AC o cualquier prefijo que empiece con P (P, PN, PE, etc.)
         const allBPs = bpRes.data.value as SapBusinessPartner[];
         const vendorMatch = allBPs.find((v) => {
             const candidateCardCode = String(v.CardCode || '').toUpperCase();
-            const isAllowedPrefix = candidateCardCode.startsWith('AC') || candidateCardCode.startsWith('PN');
+            const isAllowedPrefix = candidateCardCode.startsWith('AC') || candidateCardCode.startsWith('P');
             const isSupplier = v.CardType === 'sSupplier' || v.CardType === 'cSupplier' || v.CardType === 'S';
             return isAllowedPrefix && isSupplier;
         });
 
         if (!vendorMatch) {
             const candidates = allBPs.map((v) => `${v.CardCode || 'N/A'} (${v.CardType || 'sin tipo'})`).join(', ');
-            throw new Error(`Supplier with NIT ${nit} not found in SAP with allowed prefix AC/PN. Candidates ignored: ${candidates || 'none'}`);
+            throw new Error(`Supplier with NIT ${nit} not found in SAP with allowed prefix AC/P. Candidates ignored: ${candidates || 'none'}`);
         }
 
         const match = vendorMatch;
@@ -240,6 +240,9 @@ export async function createSapDraft(payload: SapDraftPayload) {
 
                 if (costCenter === "N / A" || costCenter === "N/A" || !costCenter || costCenter.toLowerCase().includes("no aplica")) {
                     costCenter = "";
+                } else {
+                    // Limpiar espacios accidentales en el código del centro de costo (ej. "IP- IRTML" -> "IP-IRTML")
+                    costCenter = costCenter.replace(/\s+/g, '');
                 }
 
                 // Find mapped article from bulk result
@@ -249,7 +252,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
                 
                 const itemCode = mappedArticulo?.ItemCode || "";
                 const itemDescription = mappedArticulo?.Dscription || `${docTypeDesc} ${nroFactura}`;
-                const taxCode = mappedArticulo?.TaxCode || "IVADEX";
+                const taxCode = mappedArticulo?.TaxCode || "IVADC3";
                 const numericValor = Number(dist.valor) || 0;
 
                 documentLines.push({
@@ -262,7 +265,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
                     } : {}),
                     UnitPrice: numericValor,
                     LineTotal: numericValor,
-                    VatGroup: String(taxCode).substring(0, 8),
+                    TaxCode: String(taxCode).substring(0, 8),
                 });
             }
         }
@@ -277,20 +280,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         // 4. GET SERIES ID IF PROVIDED
-        let internalSeriesId = -1;
-        if (payload.seriesName) {
-            console.log(`SAP Draft [${nroFactura}]: Buscando ID para la serie '${payload.seriesName}'...`);
-            // Document 18 corresponds to oPurchaseInvoices (Factura de Proveedores) which applies to Drafts of this type
-            const seriesUrl = `${baseUrl}/Series?$filter=Name eq '${payload.seriesName}' and Document eq '18'`;
-            const seriesRes = await sapRequestWithRetry(seriesUrl, { headers: authHeaders });
-            if (seriesRes.status === 200 && seriesRes.data.value && seriesRes.data.value.length > 0) {
-                internalSeriesId = seriesRes.data.value[0].Series;
-                console.log(`SAP Draft [${nroFactura}]: Found Series ID ${internalSeriesId} for '${payload.seriesName}'`);
-            } else {
-                console.warn(`SAP Draft [${nroFactura}]: Series Name '${payload.seriesName}' not found for Document 18. Falling back to manual.`);
-            }
-        }
-
+        // A solicitud del usuario, NUNCA usar Series de SAP. Siempre usar manual con el Consecutivo.
+        
         // 5. CREATE DRAFT (oPurchaseInvoices)
         const displayProveedor = proveedorName || cardName || 'N/A';
         const finalComments = `Proveedor: ${displayProveedor} | Factura: ${nroFactura} | ID: ${itemId || 'N/A'} | Portal: ${docTypeDesc} | Obs: ${observations || ''}`;
@@ -302,19 +293,17 @@ export async function createSapDraft(payload: SapDraftPayload) {
             NumAtCard: String(nroFactura || '').substring(0, 100),
             DocDate: new Date().toISOString().split('T')[0],
             Comments: finalComments.substring(0, 250), // SAP limit is usually 250
-            DocumentLines: documentLines
+            DocumentLines: documentLines,
+            Series: -1, // Manual
+            HandWritten: "tYES"
         };
 
-        if (internalSeriesId !== -1) {
-            // Usa numeración automática con la serie especificada (por ejemplo DSE3)
-            draftBody.Series = internalSeriesId;
-            console.log(`SAP Draft [${nroFactura}]: Asignando Serie Automática [${payload.seriesName} -> ID ${internalSeriesId}]`);
-        } else if (itemId) {
-            // Si no hay serie válida, pero hay ID de SharePoint, usa numeración manual (como en Facturas)
-            draftBody.Series = -1; // Manual
-            draftBody.HandWritten = "tYES";
-            draftBody.DocNum = parseInt(itemId.toString(), 10);
+        const consecutivoValue = payload.consecutivo ? parseInt(payload.consecutivo.toString(), 10) : (itemId ? parseInt(itemId.toString(), 10) : null);
+        if (consecutivoValue && !isNaN(consecutivoValue)) {
+            draftBody.DocNum = consecutivoValue;
             console.log(`SAP Draft [${nroFactura}]: Consecutivo Manual [${draftBody.DocNum}] - ${cardName}`);
+        } else {
+            console.log(`SAP Draft [${nroFactura}]: Sin consecutivo manual válido, se dejará en blanco para asignación automática.`);
         }
 
         console.log(`SAP Draft [${nroFactura}]: Creating draft with ${documentLines.length} lines...`);

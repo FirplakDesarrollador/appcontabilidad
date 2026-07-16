@@ -213,7 +213,11 @@ export default function PublicDocumentApprovalPage() {
                         cuenta: d.cuenta || "",
                         valor: d.valor || "0"
                     }));
-                    setDistribuciones(normalized);
+                    if (normalized.length === 0 && data.valorTotal) {
+                        setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
+                    } else {
+                        setDistribuciones(normalized);
+                    }
                 } catch (e) {
                     console.error("Error parsing distributions:", e);
                     if (data.valorTotal) {
@@ -418,7 +422,7 @@ export default function PublicDocumentApprovalPage() {
                                                 document?.aprobacionDoliente === 'Rechazado' ? 'bg-red-500' :
                                                     'bg-[#254153] animate-pulse'
                                                 }`} />
-                                            {document?.aprobacionDoliente === 'Aprobado' ? 'APROBADO ANTERIORMENTE' :
+                                            {document?.aprobacionDoliente === 'Aprobado' ? (document?.observaciones?.toLowerCase().includes('automática') ? 'APROBADO AUTOMÁTICAMENTE POR REGLA' : 'APROBADO ANTERIORMENTE') :
                                                 document?.aprobacionDoliente === 'Rechazado' ? 'RECHAZADO ANTERIORMENTE' :
                                                     'PENDIENTE DE TU ACCIÓN'}
                                         </div>
@@ -712,6 +716,8 @@ export default function PublicDocumentApprovalPage() {
                                                                                             c.Título?.startsWith("0") || 
                                                                                             c.Título?.startsWith("22") ||
                                                                                             c.Título?.startsWith("1465") ||
+                                                                                            c.Título?.startsWith("740105") ||
+                                                                                            c.Título?.startsWith("530515") ||
                                                                                             c.Título?.startsWith("1105")
                                                                                         )
                                                                                         .map((c: any) => ({
@@ -722,8 +728,9 @@ export default function PublicDocumentApprovalPage() {
 
                                                                                 const selectedCC = centrosCostosList.find(c => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}` === distribucion.centroCostos);
                                                                                 const prefix = selectedCC?.cuentas_asociadas?.toString();
+                                                                                const isGV = distribucion.centroCostos?.toUpperCase().startsWith("GV");
                                                                                 const filtered = prefix 
-                                                                                    ? cuentasList.filter(c => c.Título?.startsWith(prefix))
+                                                                                    ? cuentasList.filter(c => c.Título?.startsWith(prefix) || (isGV && c.Título?.startsWith("26059510")))
                                                                                     : cuentasList;
                                                                                 
                                                                                 return filtered.map((c: any) => ({

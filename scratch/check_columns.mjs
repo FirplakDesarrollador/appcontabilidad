@@ -1,49 +1,37 @@
-import * as msal from "@azure/msal-node";
-import { Client } from "@microsoft/microsoft-graph-client";
-import fs from 'fs';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const env = fs.readFileSync('.env', 'utf8');
-const lines = env.split('\n');
-const process_env = {};
-lines.forEach(line => {
-    const parts = line.split('=');
-    if (parts.length === 2) {
-        process_env[parts[0].trim()] = parts[1].trim();
-    }
-});
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-const msalConfig = {
-    auth: {
-        clientId: process_env.AZURE_CLIENT_ID,
-        authority: `https://login.microsoftonline.com/${process_env.AZURE_TENANT_ID}`,
-        clientSecret: process_env.AZURE_CLIENT_SECRET,
-    }
-};
+try {
+    const envFile = readFileSync(join(__dirname, '../.env'), 'utf-8');
+    envFile.split('\n').forEach(line => {
+        const [key, ...vals] = line.split('=');
+        if (key && vals.length) process.env[key.trim()] = vals.join('=').trim().replace(/['"\r]/g, '');
+    });
+} catch (e) {
+    console.error('Error loading .env:', e.message);
+}
 
-const cca = new msal.ConfidentialClientApplication(msalConfig);
+const { createClient } = await import('@supabase/supabase-js');
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 async function run() {
-    try {
-        const response = await cca.acquireTokenByClientCredential({
-            scopes: ["https://graph.microsoft.com/.default"],
-        });
-        const client = Client.init({
-            authProvider: (done) => done(null, response.accessToken),
-        });
-
-        const site = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-        const lists = await client.api(`/sites/${site.id}/lists`).get();
-        const list = lists.value.find((l) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
-        
-        console.log("List ID:", list.id);
-        const columns = await client.api(`/sites/${site.id}/lists/${list.id}/columns`).get();
-        const targets = ['tablaCostos', 'centro_costos'];
-        targets.forEach(t => {
-            const col = columns.value.find(c => c.name === t);
-            console.log(`${t} Column Info:`, JSON.stringify(col, null, 2));
-        });
-    } catch (e) {
-        console.error(e);
+    const { data, error } = await supabase
+        .from('Registro_Facturas')
+        .select('*')
+        .limit(1);
+    
+    if (error) {
+        console.error("Supabase Error:", error);
+    } else {
+        console.log("Supabase Columns:");
+        console.log(Object.keys(data[0] || {}));
     }
 }
 

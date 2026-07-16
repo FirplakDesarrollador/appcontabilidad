@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSharePointItemById } from '@/lib/sharepoint';
 import { supabase } from '@/lib/supabaseClient';
 
 export const dynamic = 'force-dynamic';
@@ -14,20 +13,21 @@ export async function GET(
             return NextResponse.json({ error: 'Missing itemId' }, { status: 400 });
         }
 
-        const [doc, { data: dbDoc }] = await Promise.all([
-            getSharePointItemById(itemId, 'Documento_Soporte'),
-            supabase
-                .from('Documento_Soporte')
-                .select('pdf_url, adjunto')
-                .eq('id', Number(itemId))
-                .maybeSingle()
-        ]);
+        const { data: dbDoc, error } = await supabase
+            .from('Documento_Soporte')
+            .select('*')
+            .eq('id', Number(itemId))
+            .maybeSingle();
+
+        if (error || !dbDoc) {
+            return NextResponse.json({ error: 'Documento no encontrado' }, { status: 404 });
+        }
 
         // Normalize fields for Documento Soporte
-        const nitValue = doc.Title || "N/A";
-        const valorTotal = doc.Valortotal || 0;
+        const nitValue = dbDoc.nit || "N/A";
+        const valorTotal = dbDoc.valor_total || 0;
 
-        const pdfUrl = dbDoc?.pdf_url || dbDoc?.adjunto || null;
+        const pdfUrl = dbDoc.pdf_url || dbDoc.adjunto || null;
 
         let documentInfo = null;
         if (pdfUrl) {
@@ -37,36 +37,28 @@ export async function GET(
                 isNative: true,
                 pdfUrl: pdfUrl
             };
-        } else if (doc.rawAttachments && doc.rawAttachments.length > 0) {
-            const attachment = doc.rawAttachments[0];
-            documentInfo = {
-                fileName: attachment.name,
-                serverRelativeUrl: attachment.serverRelativeUrl,
-                isNative: true
-            };
         } else {
-            // Fallback link to SharePoint if no specific PDF field
             documentInfo = {
-                fileName: "Ver en SharePoint",
-                serverRelativeUrl: `/Sites/FPKContabilidad/Lists/Documento_Soporte/DispForm.aspx?ID=${itemId}`,
-                isNative: true,
-                isExternal: true
+                fileName: "Sin adjunto",
+                serverRelativeUrl: null,
+                isNative: false,
+                isExternal: false
             };
         }
 
         return NextResponse.json({
-            id: doc.id,
-            proveedor: doc.tsic || "N/A",
+            id: dbDoc.id,
+            proveedor: dbDoc.proveedor || "N/A",
             nit: nitValue,
             valorTotal: valorTotal.toString(),
-            nroFactura: doc.Consecutivo_Doc_Soporte ? String(doc.Consecutivo_Doc_Soporte) : "N/A",
-            fechaRegistro: doc.Created,
-            estadoFactura: doc.AprobacionDoliente || "Pendiente",
-            aprobacionDoliente: doc.AprobacionDoliente || "Pendiente",
-            gestionContabilidad: doc.Gestion_Contabilidad || "Pendiente",
-            responsableActual: doc.Responsable_de_Autorizar || "No asignado",
+            nroFactura: dbDoc.consecutivo ? String(dbDoc.consecutivo) : "N/A",
+            fechaRegistro: dbDoc.fecha_creacion || dbDoc.created_at,
+            estadoFactura: dbDoc.aprobacion_doliente || "Pendiente",
+            aprobacionDoliente: dbDoc.aprobacion_doliente || "Pendiente",
+            gestionContabilidad: dbDoc.gestion_contabilidad || "Pendiente",
+            responsableActual: dbDoc.responsable_nombre || "No asignado",
             documentInfo,
-            distribuciones: doc.centro_costos || null
+            distribuciones: dbDoc.centro_costos || null
         });
 
     } catch (error: any) {

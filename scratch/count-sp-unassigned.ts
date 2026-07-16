@@ -15,11 +15,12 @@ try {
     console.error('Error loading .env:', e.message);
 }
 
-import { fetchAllSharePointItems } from '../src/lib/sharepoint.ts';
+
 
 async function run() {
     try {
         console.log("Fetching invoices from SharePoint (Registro_de_Facturas)...");
+        const { fetchAllSharePointItems } = await import('../src/lib/sharepoint.ts');
         const items = await fetchAllSharePointItems('Registro_de_Facturas', 0); // 0 means fetch all
         console.log(`Total invoices fetched: ${items.length}`);
 
@@ -30,7 +31,23 @@ async function run() {
             !i.Responsable_de_Autorizar // Check the mapped field as well
         );
 
-        console.log(`\n=> FACTURAS SIN RESPONSABLE: ${unassigned.length}`);
+        const targetInvoices = items.filter(i => {
+            const aprobacion = i.fields?.Aprobacion_Doliente || i.Aprobacion_Doliente || '';
+            const gestion = i.fields?.Gestion_Contabilidad || i.Gestion_Contabilidad || '';
+            return aprobacion.toLowerCase() === 'aprobado' && gestion.toLowerCase() === 'por procesar';
+        });
+
+        console.log(`\n=> FACTURAS APROBADAS (Aprobacion_Doliente) Y POR PROCESAR (Gestion_Contabilidad): ${targetInvoices.length}`);
+        
+        if (targetInvoices.length > 0) {
+            console.log("\nPrimeras 20 facturas con esta condición en SharePoint:");
+            targetInvoices.slice(0, 20).forEach((inv, idx) => {
+                const facturaId = inv.fields?.Nro_Factura || inv.Nro_Factura || 'Sin Numero';
+                const proveedor = inv.fields?.Proveedor || inv.Proveedor || 'Desconocido';
+                const modificado = inv.fields?.Modified || inv.fields?.Modificado || inv.Modified || 'Desconocido';
+                console.log(`${idx + 1}. Factura: ${facturaId} | Proveedor: ${proveedor} | Modificado: ${modificado}`);
+            });
+        }
         
         if (unassigned.length > 0) {
             console.log("\nPrimeras 20 facturas sin responsable:");

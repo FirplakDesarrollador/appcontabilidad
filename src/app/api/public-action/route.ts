@@ -70,7 +70,8 @@ export async function POST(req: NextRequest) {
                         anticipo: invoice.tiene_anticipo ? 't' : 'f',
                         observations: invoice.Observaciones || 'Aprobado vía link rápido',
                         nroFactura: invoice.Nro_Factura!,
-                        itemId: consecutivoReal,
+                        itemId: String(id),
+                        consecutivo: consecutivoReal,
                         proveedorName: proveedorReal
                     });
                 } catch (sapErr: any) {
@@ -91,6 +92,24 @@ export async function POST(req: NextRequest) {
                     }
                 }
             }
+            
+            // 5. Enviar Notificación por Webhook de Power Automate
+            if (action === 'Aprobado' || action === 'Rechazado') {
+                try {
+                    const { sendApprovalNotification } = await import('@/lib/sendApprovalNotification');
+                    await sendApprovalNotification({
+                        factura: invoice.Nro_Factura || String(id),
+                        proveedor: proveedorReal,
+                        nit: invoice.Nit || "",
+                        responsable_aprobacion: spItem.Responsable_de_Autorizar || "Responsable Desconocido",
+                        estado_aprobacion: action === 'Aprobado' ? "Aprobada" : "Rechazada",
+                        observaciones: invoice.Observaciones || (action === 'Aprobado' ? 'Aprobado vía link' : 'Rechazado vía link')
+                    });
+                } catch (notifyErr) {
+                    console.error('Failed to send approval notification:', notifyErr);
+                }
+            }
+            
         } catch (spError: any) {
             console.error('Action processing failed:', spError.message);
             // We don't return 500 here if Supabase already updated successfully,

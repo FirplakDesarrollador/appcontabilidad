@@ -14,7 +14,8 @@ import {
     ArrowRight,
     Search,
     ChevronDown,
-    User
+    User,
+    DollarSign
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
@@ -26,7 +27,8 @@ export default function DocumentoSoporteExternoPage() {
     const [formData, setFormData] = useState({
         nit: "",
         proveedor: "",
-        responsableEmail: ""
+        responsableEmail: "",
+        valor: ""
     });
 
     const [file, setFile] = useState<File | null>(null);
@@ -146,8 +148,8 @@ export default function DocumentoSoporteExternoPage() {
             return;
         }
 
-        if (!formData.nit || !formData.proveedor) {
-            setError("El NIT y la Razón Social son obligatorios.");
+        if (!formData.nit || !formData.proveedor || !formData.valor) {
+            setError("El NIT, la Razón Social y el Valor Total son obligatorios.");
             return;
         }
 
@@ -163,6 +165,9 @@ export default function DocumentoSoporteExternoPage() {
             }
             if ((formData as any).responsableNombre) {
                 data.append("responsableNombre", (formData as any).responsableNombre);
+            }
+            if (formData.valor) {
+                data.append("valorTotal", formData.valor);
             }
             data.append("file", file);
             attachments.forEach(att => {
@@ -213,7 +218,7 @@ export default function DocumentoSoporteExternoPage() {
                     <Button
                         onClick={() => {
                             setSuccess(false);
-                            setFormData({ nit: "", proveedor: "", responsableEmail: "" });
+                            setFormData({ nit: "", proveedor: "", responsableEmail: "", valor: "" });
                             setFile(null);
                             setAttachments([]);
                             setAutoFilled(false);
@@ -356,6 +361,23 @@ export default function DocumentoSoporteExternoPage() {
                                 </div>
                             </div>
 
+                            {/* Valor Total */}
+                            <div className="space-y-1.5 pt-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Valor Total</label>
+                                <div className="relative group">
+                                    <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-[#254153] transition-colors" />
+                                    <input
+                                        required
+                                        type="number"
+                                        min="0"
+                                        value={formData.valor}
+                                        onChange={(e) => setFormData({ ...formData, valor: e.target.value })}
+                                        className="w-full h-14 pl-12 pr-4 bg-white border border-gray-200 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153] transition-all font-bold text-[#254153]"
+                                        placeholder="Ej: 150000"
+                                    />
+                                </div>
+                            </div>
+
                             {/* Archivo PDF */}
                             <div className="space-y-1.5 pt-2">
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Documento PDF</label>
@@ -454,7 +476,7 @@ export default function DocumentoSoporteExternoPage() {
 
                         <Button
                             type="submit"
-                            disabled={isLoading || !file || !formData.nit || !formData.proveedor}
+                            disabled={isLoading || !file || !formData.nit || !formData.proveedor || !formData.valor}
                             className="w-full h-14 rounded-2xl bg-[#254153] hover:bg-[#1a2f3d] text-white font-black text-lg shadow-xl shadow-[#254153]/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                         >
                             {isLoading ? (

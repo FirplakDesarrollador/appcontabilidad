@@ -13,21 +13,32 @@ export async function GET(request: Request) {
     try {
         console.log('--- CRON: STARTING TRM UPDATE ---');
 
-        // 1. Fetch USD TRM from datos.gov.co
-        const usdResponse = await fetch("https://www.datos.gov.co/resource/32sa-8pi3.json?$limit=1&$order=vigenciadesde DESC");
-        if (!usdResponse.ok) throw new Error("Failed to fetch USD TRM");
-        const usdData = await usdResponse.json();
-        if (!usdData || usdData.length === 0) throw new Error("No USD TRM data found");
-
-        const usdRate = parseFloat(usdData[0].valor);
-
-        // Use current date (today) instead of the API date to ensure SAP has a rate for the current day
-        // This covers weekends and holidays where the API date might be from a previous day.
+        // Define current date for SAP and API query
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const day = String(now.getDate()).padStart(2, '0');
         const rateDate = `${year}${month}${day}`;
+        
+        // Format date for datos.gov.co API (YYYY-MM-DDT00:00:00.000)
+        const apiDate = `${year}-${month}-${day}T00:00:00.000`;
+
+        // 1. Fetch USD TRM from datos.gov.co valid specifically for TODAY
+        const usdUrl = `https://www.datos.gov.co/resource/32sa-8pi3.json?$where=vigenciadesde<='${apiDate}' AND vigenciahasta>='${apiDate}'`;
+        const usdResponse = await fetch(usdUrl);
+        if (!usdResponse.ok) throw new Error("Failed to fetch USD TRM");
+        const usdData = await usdResponse.json();
+        
+        let usdRate: number;
+        if (!usdData || usdData.length === 0) {
+            console.warn(`No TRM data found exactly for ${apiDate}. Falling back to latest available.`);
+            const fallbackResponse = await fetch("https://www.datos.gov.co/resource/32sa-8pi3.json?$limit=1&$order=vigenciadesde DESC");
+            const fallbackData = await fallbackResponse.json();
+            if (!fallbackData || fallbackData.length === 0) throw new Error("No USD TRM data found");
+            usdRate = parseFloat(fallbackData[0].valor);
+        } else {
+            usdRate = parseFloat(usdData[0].valor);
+        }
 
         // 2. Fetch USD/EUR Cross Rate
         const crossResponse = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
@@ -73,6 +84,7 @@ export async function GET(request: Request) {
 
         for (const db of databases) {
             console.log(`Updating TRM for Database: ${db}`);
+            let sessionId: string | null = null;
             try {
                 // Determine credentials for this DB
                 const isViventta = db === process.env.SAP_COMPANY_DB_VIVENTTA;
@@ -97,7 +109,7 @@ export async function GET(request: Request) {
 
                 if (!loginResponse || !loginResponse.ok) throw new Error(`SAP Login failed for ${db}`);
                 const loginData = await loginResponse.json();
-                const sessionId = loginData.SessionId;
+                sessionId = loginData.SessionId;
 
                 // Service URLs
                 const getRateUrl = process.env.SAP_CURRENCY_RATE_URL || "https://200.7.96.194:50000/b1s/v1/SBOBobService_GetCurrencyRate";
@@ -160,6 +172,20 @@ export async function GET(request: Request) {
                     success: false,
                     error: dbError.message
                 });
+            } finally {
+                // SAP LOGOUT — always release the session if we logged in!
+                if (sessionId) {
+                    try {
+                        const logoutUrl = (process.env.SAP_API_URL || "https://200.7.96.194:50000/b1s/v1/Login").replace(/\/Login\/?$/i, '/Logout');
+                        await fetch(logoutUrl, {
+                            method: 'POST',
+                            headers: { 'Cookie': `B1SESSION=${sessionId}` }
+                        });
+                        console.log(`[${db}] Logout exitoso.`);
+                    } catch (e) {
+                        console.warn(`[${db}] Error en Logout:`, e);
+                    }
+                }
             }
         }
 
