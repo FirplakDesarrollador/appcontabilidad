@@ -139,9 +139,27 @@ export default function ExternoRadicadoImportacionPage() {
                     FechaAprobacion: new Date().toISOString(),
                     centro_costos: "N/A - 14650505 IMPORTACIONES GRAVADAS",
                     Gestion_Contabilidad: "Por Procesar"
-                }]);
+                }])
+                .select();
 
             if (error) throw error;
+            
+            // Trigger automatic SAP Sync
+            if (insertedData && insertedData[0]) {
+                try {
+                    console.log("Triggering auto SAP sync for Radicado:", insertedData[0].id);
+                    await fetch("/api/sap/manual-draft", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ 
+                            invoiceId: insertedData[0].id,
+                            source: "Radicados_de_importacion"
+                        }),
+                    });
+                } catch (sapErr) {
+                    console.error("Auto SAP sync error:", sapErr);
+                }
+            }
             
             alert("Radicado creado exitosamente.");
             window.location.reload();

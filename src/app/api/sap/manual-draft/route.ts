@@ -44,6 +44,34 @@ export async function POST(req: NextRequest) {
                     Consecutivo: supaDoc.consecutivo || supaDoc.Consecutivo || String(invoiceId)
                 };
                 console.log(`[Manual SAP Draft] Supabase Documento Soporte ${invoiceId} loaded successfully.`);
+            } else if (source === 'Radicados_de_importacion') {
+                console.log(`[Manual SAP Draft] Fetching from Supabase Radicados_de_importacion...`);
+                const { data: supaDoc, error: supaErr } = await supabase
+                    .from('Radicados_de_importacion')
+                    .select('*')
+                    .eq('id', Number(invoiceId))
+                    .single();
+                
+                if (supaErr || !supaDoc) {
+                    throw new Error(`Radicado de Importación ${invoiceId} not found in Supabase`);
+                }
+
+                let nitValue = supaDoc.Nit || "N/A";
+                nitValue = String(nitValue).replace(/[.\s]/g, '').trim();
+
+                invoice = {
+                    id: supaDoc.id,
+                    Nro_Factura: supaDoc.Nro_Factura || "S/N",
+                    Proveedor: supaDoc.Proveedor || "Proveedor Supabase",
+                    Nit: String(nitValue),
+                    Responsable_de_Autorizar: supaDoc.Responsable_de_Autorizar,
+                    Observaciones: supaDoc.Observaciones || 'Sincronización manual desde portal de aprobación',
+                    centro_costos: supaDoc.centro_costos || "[]",
+                    "Valor total": String(supaDoc.Monto || 0),
+                    tiene_anticipo: false,
+                    Consecutivo: supaDoc.Consecutivo || String(invoiceId)
+                };
+                console.log(`[Manual SAP Draft] Supabase Radicado de Importación ${invoiceId} loaded successfully.`);
             } else {
                 console.log(`[Manual SAP Draft] Fetching from SharePoint...`);
                 const spItem = await getSharePointItemById(String(invoiceId), source);
@@ -85,44 +113,54 @@ export async function POST(req: NextRequest) {
 
         // 3. Prepare distribution lines
         let distribuciones: any[] = [];
-        try {
-            let raw = invoice.centro_costos;
-            
-            // Parse if it's a string
-            if (typeof raw === 'string') {
-                raw = JSON.parse(raw);
+        
+        if (source === 'Radicados_de_importacion') {
+            distribuciones = [{
+                cuenta: '14650505',
+                centroCostos: '',
+                valor: Number(invoice["Valor total"]) || 0
+            }];
+            console.log(`[Manual SAP Draft] Hardcoded distribution for Radicados_de_importacion.`);
+        } else {
+            try {
+                let raw = invoice.centro_costos;
+                
+                // Parse if it's a string
+                if (typeof raw === 'string') {
+                    raw = JSON.parse(raw);
+                }
+                
+                // If still a string after first parse (double-encoded), parse again
+                if (typeof raw === 'string') {
+                    raw = JSON.parse(raw);
+                }
+                
+                // Ensure it's an array
+                if (!Array.isArray(raw)) {
+                    raw = raw ? [raw] : [];
+                }
+                
+                console.log("[Manual SAP Draft] Raw distribution array:", JSON.stringify(raw, null, 2));
+                
+                // Normalize to what createSapDraft expects (centroCostos)
+                distribuciones = raw.map((d: any) => ({
+                    centroCostos: d.centroCostos || d.centroCosto || d.centro_costos || d.CentroCostos || d.TableCostos || '',
+                    cuenta: d.cuenta || d.Cuenta || '',
+                    valor: d.valor || d.Valor || d.monto || 0
+                }));
+                
+                console.log(`[Manual SAP Draft] Normalized ${distribuciones.length} distribution lines from SharePoint.`);
+            } catch (e) {
+                console.error("[Manual SAP Draft] Error parsing centro_costos from SharePoint:", e);
             }
-            
-            // If still a string after first parse (double-encoded), parse again
-            if (typeof raw === 'string') {
-                raw = JSON.parse(raw);
-            }
-            
-            // Ensure it's an array
-            if (!Array.isArray(raw)) {
-                raw = raw ? [raw] : [];
-            }
-            
-            console.log("[Manual SAP Draft] Raw distribution array:", JSON.stringify(raw, null, 2));
-            
-            // Normalize to what createSapDraft expects (centroCostos)
-            distribuciones = raw.map((d: any) => ({
-                centroCostos: d.centroCostos || d.centroCosto || d.centro_costos || d.CentroCostos || d.TableCostos || '',
-                cuenta: d.cuenta || d.Cuenta || '',
-                valor: d.valor || d.Valor || d.monto || 0
-            }));
-            
-            console.log(`[Manual SAP Draft] Normalized ${distribuciones.length} distribution lines from SharePoint.`);
-        } catch (e) {
-            console.error("[Manual SAP Draft] Error parsing centro_costos from SharePoint:", e);
         }
 
         // Fallback: try reading from Supabase if SharePoint didn't have distribuciones
         if (distribuciones.length === 0) {
             try {
                 console.log(`[Manual SAP Draft] Trying Supabase fallback for invoice ${invoiceId}...`);
-                const queryCol = source === 'Documento_Soporte' ? 'id' : 'sharepoint_id';
-                const table = source === 'Documento_Soporte' ? 'Documento_Soporte' : 'Registro_Facturas';
+                const queryCol = (source === 'Documento_Soporte' || source === 'Radicados_de_importacion') ? 'id' : 'sharepoint_id';
+                const table = source === 'Documento_Soporte' ? 'Documento_Soporte' : (source === 'Radicados_de_importacion' ? 'Radicados_de_importacion' : 'Registro_Facturas');
                 const { data: supaRecord } = await supabase
                     .from(table)
                     .select('distribuciones, centro_costos')
