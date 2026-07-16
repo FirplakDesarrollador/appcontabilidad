@@ -123,14 +123,25 @@ export async function createSapDraft(payload: SapDraftPayload) {
     
     // 1. LOGIN
     console.log(`SAP Draft [${nroFactura}]: Logging in to SAP...`);
+    let password = (process.env.SAP_PASSWORD || "2023Fir#.*").trim();
+    if (password === "2023Fir" || password === '"2023Fir') {
+        // Workaround para Next.js dotenv parser que corta el texto después del #
+        password = "2023Fir#.*";
+    }
+
+    const reqBody = JSON.stringify({
+        CompanyDB: (process.env.SAP_COMPANY_DB || "Firplak_SA").trim(),
+        Password: password,
+        UserName: (process.env.SAP_USERNAME || "manager").trim(),
+        Language: 23
+    });
+    console.log("SAP LOGIN ATTEMPT URL:", loginUrl);
+    console.log("SAP LOGIN ATTEMPT BODY:", reqBody);
+    
     const loginRes = await sapRequestWithRetry(loginUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            CompanyDB: process.env.SAP_COMPANY_DB || "Firplak_SA",
-            Password: process.env.SAP_PASSWORD || "2023Fir#.*",
-            UserName: process.env.SAP_USERNAME || "manager",
-        }),
+        body: reqBody,
     });
 
     if (loginRes.status !== 200) {
@@ -160,7 +171,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
             nitWithDash = `${cleanNit.substring(0, 8)}-${cleanNit.substring(8)}`;
         }
 
-        const nitFilter = `(FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}' or CardCode eq 'AC${baseNit}' or CardCode eq 'PN${baseNit}' or CardCode eq 'AC${baseNit}-01' or CardCode eq 'PN${baseNit}-01')`;
+        const nitFilter = `(FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}' or CardCode eq 'AC${baseNit}' or CardCode eq 'PN${baseNit}' or CardCode eq 'PE${baseNit}' or CardCode eq 'AC${baseNit}-01' or CardCode eq 'PN${baseNit}-01' or CardCode eq 'PE${baseNit}-01')`;
         // Removed vendorCodeFilter from API call to fetch all matches and see their CardCode in case of error
         const bpUrl = `${baseUrl}/BusinessPartners?$filter=${nitFilter}&$select=CardCode,CardName,FederalTaxID,CardType`;
         const bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });

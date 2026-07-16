@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { motion } from "framer-motion";
-import { Menu, Search, Ship, Download, Filter, Plus, Loader2, Link } from "lucide-react";
+import { Menu, Search, Ship, Download, Filter, Plus, Loader2, Link, UploadCloud } from "lucide-react";
 import { useSidebar } from "@/context/SidebarContext";
 import { AgGridReact } from 'ag-grid-react';
 import { ModuleRegistry, AllCommunityModule, themeQuartz, ClientSideRowModelModule, CsvExportModule } from 'ag-grid-community';
@@ -71,6 +71,7 @@ export default function RadicadosImportacionPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDetalleModalOpen, setIsDetalleModalOpen] = useState(false);
     const [selectedRadicado, setSelectedRadicado] = useState<any>(null);
+    const [syncingId, setSyncingId] = useState<number | null>(null);
     const [showFilters, setShowFilters] = useState(false);
     const [activeTab, setActiveTab] = useState("Por Procesar");
     const gridRef = useRef<any>(null);
@@ -137,6 +138,35 @@ export default function RadicadosImportacionPage() {
         }
     };
 
+    const handleManualSapSync = async (radicado: any) => {
+        if (!confirm(`¿Estás seguro de crear un documento preliminar en SAP para la factura ${radicado.Nro_Factura}?`)) return;
+        
+        setSyncingId(radicado.id);
+        try {
+            const res = await fetch("/api/sap/manual-draft", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    invoiceId: radicado.id,
+                    source: "Radicados_de_importacion"
+                }),
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok) {
+                alert(`✅ Preliminar SAP creado exitosamente\nDocEntry: ${data.sap.draftId}`);
+            } else {
+                alert(`❌ Error al crear preliminar SAP: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Error manual SAP sync:", error);
+            alert("❌ Error de conexión al sincronizar con SAP. Revisa la consola.");
+        } finally {
+            setSyncingId(null);
+        }
+    };
+
     const columnDefs: any = [
         {
             headerName: 'Acciones',
@@ -153,8 +183,21 @@ export default function RadicadosImportacionPage() {
                             setIsDetalleModalOpen(true);
                         }}
                         className="h-8 w-8 p-0 text-gray-400 border border-gray-100 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center"
+                        title="Ver Detalles"
                     >
                         <Search className="h-3.5 w-3.5" />
+                    </button>
+                    <button 
+                        onClick={() => handleManualSapSync(params.data)}
+                        disabled={syncingId === params.data.id}
+                        className="h-8 w-8 p-0 text-gray-400 border border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50"
+                        title="Crear preliminar en SAP"
+                    >
+                        {syncingId === params.data.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" />
+                        ) : (
+                            <UploadCloud className="h-3.5 w-3.5" />
+                        )}
                     </button>
                 </div>
             )
