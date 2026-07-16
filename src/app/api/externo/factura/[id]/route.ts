@@ -22,7 +22,7 @@ export async function GET(
         const invoice = await getSharePointInvoiceById(itemId);
         const { data: supabaseInvoice } = await supabase
             .from('Registro_Facturas')
-            .select('adjuntos_url')
+            .select('adjuntos_url, fp, documentos')
             .or(`ID.eq.${itemId},sharepoint_id.eq.${itemId}`)
             .maybeSingle();
 
@@ -88,7 +88,8 @@ export async function GET(
             adjuntosUrl: supabaseInvoice?.adjuntos_url || [],
             distribuciones: invoice.centro_costos || null,
             observaciones: invoice.Observaciones || "",
-            anticipo: invoice.tiene_anticipo || ""
+            anticipo: invoice.tiene_anticipo || "",
+            documentos: supabaseInvoice?.documentos || supabaseInvoice?.fp || null
         });
 
     } catch (error: any) {
