@@ -138,12 +138,41 @@ export async function POST() {
                 const nit = detailsData.AccountingSupplierParty?.Party?.PartyTaxScheme?.CompanyID || "";
                 const date = detailsData.IssueDate || new Date().toISOString();
 
+                // Lookup responsable
+                let responsable = null;
+                if (nit) {
+                    const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
+                    
+                    let { data: resData } = await supabase
+                        .from("Proveedores_con_Responsable")
+                        .select('"Responsable", "Autorizador"')
+                        .eq("Nit", nit)
+                        .limit(1);
+
+                    if (!resData || resData.length === 0) {
+                        const { data: resData2 } = await supabase
+                            .from("Proveedores_con_Responsable")
+                            .select('"Responsable", "Autorizador"')
+                            .like("Nit", `${baseNit}%`)
+                            .limit(1);
+                        resData = resData2;
+                    }
+
+                    if (resData && resData.length > 0) {
+                        responsable = resData[0].Responsable || resData[0].Autorizador || null;
+                    }
+                }
+
+                const observaciones = responsable ? 'Creada automáticamente y asignada según proveedor' : 'Creada automáticamente';
+
                 const { error: insertError } = await supabase.from('Registro_Facturas').insert({
                     ID: Number(BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000)) % BigInt(9007199254740991)),
                     Nit: nit,
                     Proveedor: provider,
                     Nro_Factura: ldf,
                     Valor_total: amountValue.toString(),
+                    Responsable_de_Autorizar: responsable,
+                    Observaciones: observaciones,
                     Creado: new Date().toISOString(),
                     CUFE: detailsData.UUID || "",
                     Gestion_Contabilidad: 'Por Aprobar',
