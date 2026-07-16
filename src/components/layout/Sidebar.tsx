@@ -31,11 +31,11 @@ export function Sidebar() {
     const menuItems = [
         { name: "Dashboard", icon: PieChart, path: "/" },
         { name: "Aprobación de facturas", icon: FileCheck, path: "/aprobacion-facturas" },
-        { name: "Facturas Viventta", icon: FileCheck, path: "/facturas-viventta" },
         { name: "Aprobación de documento soporte", icon: FileText, path: "/aprobacion-documentos" },
+        { name: "Radicados de importación", icon: Ship, path: "/radicados-importacion" },
+        { name: "Facturas Viventta", icon: FileCheck, path: "/facturas-viventta" },
         { name: "Cargue de TRM en SAP", icon: RefreshCw, path: "/cargue-trm" },
         { name: "Revisión de factura DIAN", icon: FileCheck, path: "/revision-factura-dian" },
-        { name: "Radicados de importación", icon: Ship, path: "/radicados-importacion" },
         { name: "Informe junta", icon: BarChart3, path: "/informe-junta" },
     ];
 

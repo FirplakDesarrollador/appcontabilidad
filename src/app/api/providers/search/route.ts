@@ -7,17 +7,28 @@ export async function GET(req: NextRequest) {
         const query = searchParams.get('q');
         const limit = parseInt(searchParams.get('limit') || '20');
         const page = parseInt(searchParams.get('page') || '0');
-        const tableName = searchParams.get('table') === 'Proveedores_Viventta' ? 'Proveedores_Viventta' : 'proveedores';
+        let tableName = searchParams.get('table');
+        if (!['Proveedores_Viventta', 'Proveedores_con_Responsable'].includes(tableName as string)) {
+            tableName = 'proveedores';
+        }
 
-        let supabaseQuery = supabase.from(tableName);
+        let supabaseQuery = supabase.from(tableName as string);
 
         if (tableName === 'Proveedores_Viventta') {
             supabaseQuery = supabaseQuery
-                .select('"BP Name", "BP Code", "ID"')
+                .select('"BP Name", "BP Code", "ID", "Responsables"')
                 .order('BP Name', { ascending: true });
 
             if (query && query.length > 0) {
                 supabaseQuery = supabaseQuery.or(`"BP Name".ilike.%${query}%,"BP Code".ilike.%${query}%`);
+            }
+        } else if (tableName === 'Proveedores_con_Responsable') {
+            supabaseQuery = supabaseQuery
+                .select('"Nit", "Nombre de socio de negocios", "Responsable", "Autorizador"')
+                .order('Nombre de socio de negocios', { ascending: true });
+
+            if (query && query.length > 0) {
+                supabaseQuery = supabaseQuery.or(`"Nombre de socio de negocios".ilike.%${query}%,"Nit".ilike.%${query}%`);
             }
         } else {
             supabaseQuery = supabaseQuery
@@ -39,9 +50,10 @@ export async function GET(req: NextRequest) {
 
         // Normalize response
         const normalizedData = data.map((d: any) => ({
-            razon_social: d['BP Name'] || d.razon_social,
-            numero_identificacion: d['BP Code'] || d.numero_identificacion,
-            identific_: d['ID'] || undefined
+            razon_social: d['BP Name'] || d['Nombre de socio de negocios'] || d.razon_social,
+            numero_identificacion: d['BP Code'] || d['Nit'] || d.numero_identificacion,
+            identific_: d['ID'] || undefined,
+            responsable: d['Responsables'] || d['Responsable'] || d['Autorizador'] || d.aprobado_por || undefined
         }));
 
         return NextResponse.json({ 
