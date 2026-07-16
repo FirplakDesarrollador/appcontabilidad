@@ -144,7 +144,7 @@ export default function PublicApprovalPage() {
     }, [itemId]);
 
     useEffect(() => {
-        if (invoice && invoice.documentInfo && !previewUrl && !previewLoading && !previewError) {
+        if (invoice && (invoice.documentInfo || invoice.documentos || invoice.fp) && !previewUrl && !previewLoading && !previewError) {
             handlePreview();
         }
     }, [invoice]);
