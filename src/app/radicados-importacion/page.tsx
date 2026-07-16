@@ -343,6 +343,8 @@ export default function RadicadosImportacionPage() {
                                         filter: true,
                                         resizable: true,
                                         suppressMovable: true,
+                                        flex: 1,
+                                        minWidth: 100,
                                     }}
                                 />
                                 {loading && (
