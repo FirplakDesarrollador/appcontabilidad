@@ -249,7 +249,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
                 
                 const itemCode = mappedArticulo?.ItemCode || "";
                 const itemDescription = mappedArticulo?.Dscription || `${docTypeDesc} ${nroFactura}`;
-                const taxCode = mappedArticulo?.TaxCode || "IVADEX";
+                const taxCode = mappedArticulo?.TaxCode || "IVADC3";
                 const numericValor = Number(dist.valor) || 0;
 
                 documentLines.push({
@@ -262,7 +262,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
                     } : {}),
                     UnitPrice: numericValor,
                     LineTotal: numericValor,
-                    VatGroup: String(taxCode).substring(0, 8),
+                    TaxCode: String(taxCode).substring(0, 8),
                 });
             }
         }
