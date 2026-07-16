@@ -103,7 +103,9 @@ export default function RadicadosImportacionPage() {
     const filteredData = data.filter(item => {
         let matchTab = true;
         if (activeTab === "Por Procesar") {
-            matchTab = !item.Gestion_Contabilidad || item.Gestion_Contabilidad === "Pendiente" || item.Gestion_Contabilidad === "Por Procesar";
+            const isApproved = item.Aprobacion_Doliente === "Aprobado";
+            const isPendingManagement = !item.Gestion_Contabilidad || item.Gestion_Contabilidad === "Pendiente" || item.Gestion_Contabilidad === "Por Procesar";
+            matchTab = isApproved && isPendingManagement;
         }
         
         if (!matchTab) return false;
