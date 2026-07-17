@@ -56,13 +56,17 @@ function mapSpToSupabase(fields: any, spItemId: any, userMap?: Map<string, strin
 }
 
 // Supabase → SharePoint Mapper
+// IMPORTANTE: Los campos de estado (Aprobacion_Doliente, Gestion_Contabilidad, Procesado)
+// NO se incluyen aquí. Estos campos son gestionados exclusivamente en SharePoint
+// y solo fluyen SP→SB, nunca al revés, para evitar sobrescribir datos correctos
+// con datos desactualizados de Supabase.
 function mapSupabaseToSp(sbItem: any) {
     const payload: any = {};
     if (sbItem.Proveedor !== undefined)               payload.Proveedor = sbItem.Proveedor;
     if (sbItem.Nit !== undefined)                      payload.Title = sbItem.Nit;
     if (sbItem.Nro_Factura !== undefined)              payload.Nro_Factura = sbItem.Nro_Factura;
-    if (sbItem.Aprobacion_Doliente !== undefined)      payload.Aprobacion_Doliente = sbItem.Aprobacion_Doliente;
-    if (sbItem.Gestion_Contabilidad !== undefined)     payload.Gestion_Contabilidad = sbItem.Gestion_Contabilidad;
+    // Aprobacion_Doliente: EXCLUIDO — solo fluye SP→SB
+    // Gestion_Contabilidad: EXCLUIDO — solo fluye SP→SB
     if (sbItem.Observaciones !== undefined)            payload.Observaciones = sbItem.Observaciones;
     if (sbItem.Consecutivo !== undefined)              payload.Consecutivo = sbItem.Consecutivo;
     // En SharePoint, el responsable es un Lookup (Persona) y no se actualiza con un string directo.
@@ -73,7 +77,7 @@ function mapSupabaseToSp(sbItem: any) {
     if (sbItem.InformeRecepcion !== undefined)         payload.InformeRecepcion = sbItem.InformeRecepcion;
     if (sbItem.FechaAprobacion !== undefined)          payload.FechaAprobacion = sbItem.FechaAprobacion;
     if (sbItem.fp !== undefined)                       payload.fp = sbItem.fp;
-    if (sbItem.Procesado !== undefined)               payload.Procesado = sbItem.Procesado === 'true';
+    // Procesado: EXCLUIDO — solo fluye SP→SB
     if (sbItem.Valor_total !== undefined)              payload.Valortotal = sbItem.Valor_total;
     return payload;
 }
