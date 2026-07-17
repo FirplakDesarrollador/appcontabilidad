@@ -85,6 +85,7 @@ export async function GET(req: Request) {
         const limit = parseInt(searchParams.get('limit') || '0');
         const pending = searchParams.get('pending') === 'true';
         const processed = searchParams.get('processed') === 'true';
+        const history = searchParams.get('history') === 'true';
         const offset = parseInt(searchParams.get('offset') || '0');
 
         // ─────────────────────────────────────────────────────────────────────
@@ -106,7 +107,7 @@ export async function GET(req: Request) {
             }
 
             // Servir desde Supabase (siempre rápido)
-            const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo';
+            const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
             const fetchLimit = limit > 0 ? limit : 1000;
 
             let allData: any[] = [];
@@ -181,7 +182,7 @@ export async function GET(req: Request) {
 
             if (!refresh) {
                 console.log(`[API] Fetching PROCESSED from Supabase cache (offset=${offset}, limit=${limit})...`);
-                const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo';
+                const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
                 const fetchLimit = limit > 0 ? limit : 1000;
 
                 let allData: any[] = [];
