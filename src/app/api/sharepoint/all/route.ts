@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import { fetchAllSharePointItems } from '@/lib/sharepoint';
 import { createClient } from '@supabase/supabase-js';
 
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    (serviceKey && serviceKey !== 'REEMPLAZAR_CON_TU_SERVICE_ROLE_KEY') ? serviceKey : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
 // TTL del caché de pendientes: 3 minutos
@@ -143,12 +144,13 @@ export async function GET(req: Request) {
                 supabase
                     .from('Registro_Facturas')
                     .select('ID', { count: 'exact', head: true })
-                    .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado'),
+                    .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado,Procesado.eq.true'),
                 supabase
                     .from('Registro_Facturas')
                     .select('ID', { count: 'exact', head: true })
                     .eq('Aprobacion_Doliente', 'Aprobado')
                     .ilike('Gestion_Contabilidad', '%POR PROCESAR%')
+                    .or('Procesado.eq.false,Procesado.is.null')
             ]);
 
             return NextResponse.json({
@@ -167,11 +169,11 @@ export async function GET(req: Request) {
         // ─────────────────────────────────────────────────────────────────────
         // PROCESADOS / HISTÓRICO → caché de Supabase (rápido, paginado)
         // ─────────────────────────────────────────────────────────────────────
-        if (processed) {
+        if (processed || history) {
             const [pendingCountRes, processedCountRes, toProcessCountRes] = await Promise.all([
                 supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Por Aprobar'),
-                supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado'),
-                supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Aprobado').ilike('Gestion_Contabilidad', '%POR PROCESAR%')
+                supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado,Procesado.eq.true'),
+                supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Aprobado').ilike('Gestion_Contabilidad', '%POR PROCESAR%').or('Procesado.eq.false,Procesado.is.null')
             ]);
             const pendingCount = pendingCountRes.count || 0;
             const processedCount = processedCountRes.count || 0;
