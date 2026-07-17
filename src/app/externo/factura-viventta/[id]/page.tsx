@@ -225,7 +225,7 @@ export default function PublicApprovalPage() {
             setPreviewLoading(true);
 
             const directUrl = invoice?.documentos || invoice?.fp;
-            if (directUrl && (directUrl.startsWith('http://') || directUrl.startsWith('https://'))) {
+            if (directUrl && (directUrl.startsWith('http://') || directUrl.startsWith('https://')) && !directUrl.includes('sharepoint.com')) {
                 setPreviewUrl(directUrl);
                 return;
             }
