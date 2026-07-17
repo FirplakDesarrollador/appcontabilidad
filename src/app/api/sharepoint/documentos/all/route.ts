@@ -17,21 +17,47 @@ export async function GET(req: Request) {
         
         const columns = 'id, sharepoint_id, nit, proveedor, valor_total, consecutivo, aprobacion_doliente, gestion_contabilidad, observaciones, responsable_id, centro_costos, attachments, fecha_creacion, responsable_nombre, tiene_anticipo, pdf_url, adjunto, fecha_aprobacion';
 
-        let query = supabase.from('Documento_Soporte').select(columns);
-        
-        if (pending) {
-            query = query.or('aprobacion_doliente.eq.Por Aprobar,aprobacion_doliente.eq.Pendiente');
+        let allData: any[] = [];
+        let currentOffset = offset;
+        const fetchLimit = 1000;
+        const totalLimit = limit > 0 ? limit : 10000;
+
+        while (true) {
+            let query = supabase.from('Documento_Soporte').select(columns);
+            
+            if (pending) {
+                query = query.or('aprobacion_doliente.eq.Por Aprobar,aprobacion_doliente.eq.Pendiente');
+            }
+
+            const { data, error } = await query
+                .order('id', { ascending: false })
+                .range(currentOffset, currentOffset + fetchLimit - 1);
+            
+            if (error) {
+                throw error;
+            }
+
+            if (data && data.length > 0) {
+                allData = [...allData, ...data];
+            }
+
+            if (!data || data.length < fetchLimit) {
+                break;
+            }
+
+            currentOffset += fetchLimit;
+
+            if (limit > 0 && allData.length >= limit) {
+                allData = allData.slice(0, limit);
+                break;
+            }
+
+            if (allData.length >= totalLimit) {
+                break;
+            }
         }
 
-        const { data, error } = await query
-            .order('id', { ascending: false })
-            .range(offset, offset + (limit > 0 ? limit - 1 : 1000));
-        
-        if (error) {
-            throw error;
-        }
-
-        const mappedData = (data || []).map(item => ({
+        const mappedData = allData.map(item => ({
             ...item,
             // SharePoint fallbacks for the frontend
             FechaAprobacion: item.fecha_aprobacion,
