@@ -386,7 +386,7 @@ export default function InvoicesPage() {
             setLoading(true);
             const activeLimit = overrideLimit !== undefined ? overrideLimit : loadLimit;
             const actualLimit = activeLimit === 'all' ? 100000 : activeLimit;
-            const response = await fetch(`/api/sharepoint/all?processed=true&offset=0&limit=${actualLimit}`); 
+            const response = await fetch(`/api/sharepoint/all?history=true&offset=0&limit=${actualLimit}`); 
             const data = await response.json();
 
             if (data.success) {
