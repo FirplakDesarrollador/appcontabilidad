@@ -92,8 +92,8 @@ export async function GET(req: Request) {
 
         console.log('[CRON-SYNC] Initiating bidirectional delta sync...');
         
-        // 1. Determine last sync interval (5.5 minutes ago to ensure overlap, 7 days if manual)
-        const minutesBack = isManual ? 7 * 24 * 60 : 5.5;
+        // 1. Determine last sync interval (5.5 minutes ago to ensure overlap, 365 days if manual)
+        const minutesBack = isManual ? 365 * 24 * 60 : 5.5;
         const lastSyncTime = new Date(Date.now() - minutesBack * 60 * 1000);
         console.log(`[CRON-SYNC] Syncing changes since: ${lastSyncTime.toISOString()} (manual: ${isManual})`);
 
@@ -162,7 +162,7 @@ export async function GET(req: Request) {
             
             // Check collision
             const conflictEntry = sbChanges.find(sb => String(sb.sharepoint_id) === spItemId);
-            if (conflictEntry) {
+            if (conflictEntry && !isManual) {
                 const spDate = new Date(invoiceData.Modificado || 0);
                 const sbDate = new Date(conflictEntry.updated_at || 0);
                 if (sbDate > spDate) {
@@ -188,7 +188,7 @@ export async function GET(req: Request) {
         // ── B. Process Supabase Changes to SharePoint ─────────────────────────
         for (const sbItem of sbChanges) {
             const spItemId = sbItem.sharepoint_id;
-            if (!spItemId || processedSPIds.has(String(spItemId))) continue;
+            if (!spItemId || processedSPIds.has(String(spItemId)) || isManual) continue;
 
             const spUpdateFields = mapSupabaseToSp(sbItem);
             if (Object.keys(spUpdateFields).length === 0) continue;
