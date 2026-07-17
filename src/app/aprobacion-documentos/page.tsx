@@ -227,7 +227,7 @@ export default function SupportDocumentsPage() {
         
         try {
             setLoading(true);
-            const response = await fetch(`/api/sharepoint/documentos/all?limit=2000`); 
+            const response = await fetch(`/api/sharepoint/documentos/all`); 
             const data = await response.json();
 
             if (data.success) {
