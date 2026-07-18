@@ -123,7 +123,7 @@ export default function ExternoRadicadoImportacionPage() {
                 attachments = true;
             }
 
-            const { error } = await supabase
+            const { data: insertedData, error } = await supabase
                 .from("Radicados_de_importacion")
                 .insert([{
                     Nit: formData.Nit,
