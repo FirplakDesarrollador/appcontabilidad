@@ -176,9 +176,20 @@ export default function PublicApprovalPage() {
     const fetchPdfBlob = async () => {
         const directUrl = invoice?.documentos || invoice?.fp;
         if (directUrl && (directUrl.startsWith('http://') || directUrl.startsWith('https://'))) {
-            const res = await fetch(directUrl);
-            if (!res.ok) throw new Error("No se pudo descargar el archivo directo");
-            return await res.blob();
+            try {
+                const res = await fetch(directUrl);
+                if (res.ok) {
+                    return await res.blob();
+                }
+                throw new Error("No se pudo descargar el archivo directo");
+            } catch (err: any) {
+                if (err.message === "No se pudo descargar el archivo directo") {
+                    throw err;
+                }
+                console.warn('Error fetching direct url (likely CORS), opening in new tab:', err);
+                window.open(directUrl, '_blank');
+                throw new Error("OPENED_IN_NEW_TAB");
+            }
         }
 
         const fileName = invoice?.documentInfo?.fileName || 'Factura';
@@ -212,6 +223,7 @@ export default function PublicApprovalPage() {
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
         } catch (err: any) {
+            if (err.message === "OPENED_IN_NEW_TAB") return;
             console.error('Download error:', err);
             alert(err.message || "Error al intentar descargar la factura");
         } finally {
