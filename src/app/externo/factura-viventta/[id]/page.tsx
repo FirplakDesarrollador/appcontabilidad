@@ -183,12 +183,8 @@ export default function PublicApprovalPage() {
                 }
                 throw new Error("No se pudo descargar el archivo directo");
             } catch (err: any) {
-                if (err.message === "No se pudo descargar el archivo directo") {
-                    throw err;
-                }
-                console.warn('Error fetching direct url (likely CORS), opening in new tab:', err);
-                window.open(directUrl, '_blank');
-                throw new Error("OPENED_IN_NEW_TAB");
+                console.warn('Error fetching direct url (likely CORS), falling back to API proxy:', err);
+                // Fall through to API proxy
             }
         }
 
@@ -223,7 +219,6 @@ export default function PublicApprovalPage() {
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
         } catch (err: any) {
-            if (err.message === "OPENED_IN_NEW_TAB") return;
             console.error('Download error:', err);
             alert(err.message || "Error al intentar descargar la factura");
         } finally {
