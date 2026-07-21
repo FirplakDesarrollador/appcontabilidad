@@ -487,10 +487,15 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                         />
                                         {(isSearchingUsers || isLookingUpResponsable) && (
                                             <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                                                <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                                             </div>
                                         )}
                                     </div>
+                                    {formData.responsableEmail && (
+                                        <p className="text-[10px] text-emerald-600 font-medium ml-1 mt-1">
+                                            Se notificará a: <span className="font-bold">{formData.responsableEmail}</span>
+                                        </p>
+                                    )}
 
                                     <AnimatePresence>
                                         {userResults.length > 0 && (
