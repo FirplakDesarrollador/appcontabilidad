@@ -132,6 +132,22 @@ export default function PublicCreateInvoicePage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        
+        if (!formData.proveedor || !formData.nit) {
+            setError("Debes seleccionar un proveedor válido de la lista.");
+            return;
+        }
+
+        if (!formData.nroFactura) {
+            setError("Debes ingresar el número de factura.");
+            return;
+        }
+
+        if (!formData.responsableEmail) {
+            setError("Debes buscar y SELECCIONAR un responsable de autorizar de la lista desplegable.");
+            return;
+        }
+
         if (!file) {
             setError("Debes adjuntar el archivo PDF de la factura.");
             return;
@@ -466,6 +482,13 @@ export default function PublicCreateInvoicePage() {
                                         </div>
                                     )}
                                 </div>
+                                
+                                {!autoFilledResponsable && userSearch && !formData.responsableEmail && !isSearchingUsers && (
+                                    <p className="text-[10px] text-amber-600 font-bold ml-1 mt-1.5 flex items-start gap-1">
+                                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                                        Debes seleccionar una opción de la lista desplegable. Si no aparece, busca por otro nombre o correo.
+                                    </p>
+                                )}
 
                                 <AnimatePresence>
                                     {userResults.length > 0 && (
@@ -542,7 +565,7 @@ export default function PublicCreateInvoicePage() {
                         <div className="pt-6 border-t border-gray-100">
                             <Button
                                 type="submit"
-                                disabled={isLoading || !file || !formData.proveedor || !formData.responsableEmail || !formData.nroFactura || !formData.nit || isDuplicate}
+                                disabled={isLoading || isDuplicate}
                                 className="w-full rounded-2xl h-14 text-base font-black bg-[#254153] hover:bg-[#1a2f3d] text-white shadow-xl shadow-[#254153]/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isLoading ? (
