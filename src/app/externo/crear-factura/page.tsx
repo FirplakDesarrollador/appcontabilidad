@@ -478,10 +478,15 @@ export default function PublicCreateInvoicePage() {
                                     />
                                     {(isSearchingUsers || isLookingUpResponsable) && (
                                         <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                                            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                                            <Loader2 className="h-5 w-5 animate-spin text-[#254153]" />
                                         </div>
                                     )}
                                 </div>
+                                {formData.responsableEmail && (
+                                    <p className="text-[12px] text-emerald-600 font-medium ml-1 mt-1.5">
+                                        Se notificará a: <span className="font-bold">{formData.responsableEmail}</span>
+                                    </p>
+                                )}
                                 
                                 {!autoFilledResponsable && userSearch && !formData.responsableEmail && !isSearchingUsers && (
                                     <p className="text-[10px] text-amber-600 font-bold ml-1 mt-1.5 flex items-start gap-1">

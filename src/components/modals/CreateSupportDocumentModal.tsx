@@ -407,7 +407,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                             onChange={(e) => {
                                                 setUserSearch(e.target.value);
                                                 setAutoFilledResponsable(false);
-                                                if (e.target.value === "") setFormData({...formData, responsableEmail: ""});
+                                                setFormData({...formData, responsableEmail: ""});
                                             }}
                                             className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-[#254153] ${
                                                 autoFilledResponsable ? 'bg-emerald-50/50 border-emerald-200' : 'bg-gray-50 border-gray-100'
@@ -420,6 +420,11 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                             </div>
                                         )}
                                     </div>
+                                    {formData.responsableEmail && (
+                                        <p className="text-[10px] text-emerald-600 font-medium ml-1 mt-1">
+                                            Se notificará a: <span className="font-bold">{formData.responsableEmail}</span>
+                                        </p>
+                                    )}
 
                                     <AnimatePresence>
                                         {userResults.length > 0 && (
