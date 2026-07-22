@@ -1861,6 +1861,7 @@ export default function InvoicesPage() {
                                                             >
                                                                 Abrir
                                                             </a>
+                                                            {role !== 'viewer' && (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleDeleteManualAttachment(attachment)}
@@ -1868,6 +1869,7 @@ export default function InvoicesPage() {
                                                             >
                                                                 Quitar
                                                             </button>
+                                                            )}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -1875,6 +1877,7 @@ export default function InvoicesPage() {
                                                 <p className="text-xs font-bold text-gray-300 italic">No hay adjuntos manuales cargados.</p>
                                             )}
 
+                                            {role !== 'viewer' && (
                                             <div className="space-y-3">
                                                 <input
                                                     type="file"
@@ -1899,6 +1902,7 @@ export default function InvoicesPage() {
                                                     Cargar adjuntos
                                                 </Button>
                                             </div>
+                                            )}
                                         </div>
                                     </div>
 
@@ -1917,11 +1921,11 @@ export default function InvoicesPage() {
                                                     <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Responsable de Autorizar</p>
                                                     {!isEditingResponsible ? (
                                                         <div className="flex flex-col gap-1">
-                                                            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingResponsible(true)}>
-                                                                <p className={`font-extrabold ${pendingResponsibleUser ? 'text-blue-600 italic' : 'text-[#254153]'} hover:text-blue-600 transition-colors`}>
+                                                            <div className={`flex items-center gap-2 group ${role !== 'viewer' ? 'cursor-pointer' : ''}`} onClick={() => role !== 'viewer' && setIsEditingResponsible(true)}>
+                                                                <p className={`font-extrabold ${pendingResponsibleUser ? 'text-blue-600 italic' : 'text-[#254153]'} ${role !== 'viewer' ? 'hover:text-blue-600 transition-colors' : ''}`}>
                                                                     {pendingResponsibleUser ? pendingResponsibleUser.name : (selectedInvoice.Responsable_de_Autorizar || "No asignado")}
                                                                 </p>
-                                                                <Edit2 className="h-3 w-3 text-gray-300 group-hover:text-blue-500 transition-colors" />
+                                                                {role !== 'viewer' && <Edit2 className="h-3 w-3 text-gray-300 group-hover:text-blue-500 transition-colors" />}
                                                             </div>
                                                             {pendingResponsibleUser && (
                                                                 <p className="text-[9px] font-bold text-blue-400 uppercase tracking-tighter">âš ï¸ Cambio pendiente por guardar</p>
@@ -1993,8 +1997,8 @@ export default function InvoicesPage() {
                                                     <select
                                                         value={selectedInvoice.Gestion_Contabilidad || "Por Procesar"}
                                                         onChange={(e) => handleAction(e.target.value, 'Gestion_Contabilidad')}
-                                                        disabled={!!actionLoading}
-                                                        className="w-full h-10 px-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254153]/20 transition-all cursor-pointer hover:border-[#254153]/30"
+                                                        disabled={!!actionLoading || role === 'viewer'}
+                                                        className="w-full h-10 px-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254153]/20 transition-all cursor-pointer hover:border-[#254153]/30 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         <option value="Por Procesar">Por Procesar</option>
                                                         <option value="Procesado">Procesado</option>
@@ -2020,6 +2024,7 @@ export default function InvoicesPage() {
                                             ) : (
                                                 <div className="flex-1" />
                                             )}
+                                            {role !== 'viewer' && (
                                             <Button
                                                 variant="outline"
                                                 onClick={() => handleManualSapSync(selectedInvoice)}
@@ -2033,6 +2038,7 @@ export default function InvoicesPage() {
                                                 )}
                                                 Cargar a SAP
                                             </Button>
+                                            )}
                                             <Button 
                                                 variant="outline" 
                                                 className="h-14 rounded-2xl px-8 border-gray-100 font-bold text-gray-500 hover:bg-gray-50"
