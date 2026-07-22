@@ -1161,11 +1161,11 @@ export default function InvoicesPage() {
                     </div>
 
                     {/* Indicadores / Estadísticas */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                         {[
                             {
                                 label: "Total Facturas",
-                                value: pendingCount + processedCount,
+                                value: pendingCount + toProcessCount + processedCount,
                                 icon: Paperclip,
                                 color: "bg-blue-500",
                                 bg: "bg-blue-50"
@@ -1176,6 +1176,13 @@ export default function InvoicesPage() {
                                 icon: RefreshCw,
                                 color: "bg-amber-500",
                                 bg: "bg-amber-50"
+                            },
+                            {
+                                label: "Aprobadas y Por Procesar",
+                                value: toProcessCount,
+                                icon: Check,
+                                color: "bg-purple-500",
+                                bg: "bg-purple-50"
                             },
                             {
                                 label: "Histórico Procesadas",
