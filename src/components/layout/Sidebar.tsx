@@ -2,25 +2,22 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useSidebar } from "@/context/SidebarContext";
-import { PieChart, FileCheck, FileText, LogOut, RefreshCw, BarChart3, ChevronLeft, X, Ship } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { PieChart, FileCheck, FileText, LogOut, RefreshCw, BarChart3, ChevronLeft, X, Ship, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { User } from "@supabase/supabase-js";
 
 export function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
-    const [user, setUser] = useState<User | null>(null);
+    const { user, role, isLoading } = useAuth();
     const { isCollapsed, toggleSidebar } = useSidebar();
     const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
         setIsMounted(true);
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setUser(session?.user || null);
-        });
     }, []);
 
     const handleLogout = async () => {
@@ -39,7 +36,11 @@ export function Sidebar() {
         { name: "Informe junta", icon: BarChart3, path: "/informe-junta" },
     ];
 
-    if (!isMounted) return null;
+    if (role === "admin") {
+        menuItems.push({ name: "Control de Usuarios", icon: Users, path: "/usuarios" });
+    }
+
+    if (!isMounted || isLoading) return null;
 
     return (
         <>
@@ -99,7 +100,7 @@ export function Sidebar() {
                         </div>
                         <div className="overflow-hidden">
                             <p className="text-sm font-semibold truncate">{user?.email || "Usuario"}</p>
-                            <p className="text-xs text-gray-400">Administrador</p>
+                            <p className="text-xs text-gray-400 capitalize">{role === 'viewer' ? 'Solo vista' : role === 'editor' ? 'Editor' : 'Administrador'}</p>
                         </div>
                     </div>
                     <Button
