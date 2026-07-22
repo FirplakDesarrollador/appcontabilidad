@@ -6,9 +6,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { RegistroFactura, FacturaPendiente } from "@/types";
+import { FacturaPendiente, RegistroFactura } from "@/types";
 import { ExcelUploadModal } from "@/components/modals/ExcelUploadModal";
 import { Button } from "@/components/ui/Button";
+import { useAuth } from "@/context/AuthContext";
 
 export default function RevisionFacturaDianPage() {
     const [facturas, setFacturas] = useState<RegistroFactura[]>([]);
@@ -223,6 +224,7 @@ export default function RevisionFacturaDianPage() {
     };
 
     const router = useRouter();
+    const { role } = useAuth();
     const [user, setUser] = useState<any>(null);
 
     useEffect(() => {
@@ -449,6 +451,7 @@ export default function RevisionFacturaDianPage() {
                                 >
                                     {showSavedList ? 'Ocultar Guardados' : `Ver Guardados (${facturasPendientes.length})`}
                                 </button>
+                                {role !== 'viewer' && (
                                 <button
                                     onClick={handleSync}
                                     disabled={isSyncing}
@@ -464,6 +467,8 @@ export default function RevisionFacturaDianPage() {
                                     <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
                                     {isSyncing ? `Sincronizando ${syncProgress}%` : 'Sincronizar SharePoint'}
                                 </button>
+                                )}
+                                {role !== 'viewer' && (
                                 <button
                                     onClick={() => setIsUploadModalOpen(true)}
                                     className="p-2 bg-white rounded-lg shadow-sm hover:shadow-md transition-all text-[#254153]"
@@ -471,6 +476,7 @@ export default function RevisionFacturaDianPage() {
                                 >
                                     <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
                                 </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -531,6 +537,7 @@ export default function RevisionFacturaDianPage() {
                                                         ${Number(factura.Total).toLocaleString('es-CO')}
                                                     </td>
                                                     <td className="px-6 py-3 text-center">
+                                                        {role !== 'viewer' && (
                                                         <button
                                                             onClick={() => handleDeleteSaved(factura.ID)}
                                                             className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
@@ -538,6 +545,7 @@ export default function RevisionFacturaDianPage() {
                                                         >
                                                             <Trash2 className="h-4 w-4" />
                                                         </button>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             );
@@ -584,7 +592,7 @@ export default function RevisionFacturaDianPage() {
                         </div>
                         {comparisonResult && (
                             <div className="flex items-center gap-3">
-                                {selectedRows.size > 0 && (
+                                {selectedRows.size > 0 && role !== 'viewer' && (
                                     <Button
                                         onClick={handleSaveSelected}
                                         disabled={isSaving}
@@ -620,12 +628,14 @@ export default function RevisionFacturaDianPage() {
                                         Haz clic en el botón de actualización arriba para cargar un documento Excel y compararlo con el sistema.
                                     </p>
                                 </div>
+                                {role !== 'viewer' && (
                                 <button
                                     onClick={() => setIsUploadModalOpen(true)}
                                     className="bg-[#254153] text-white px-8 py-3 rounded-xl font-semibold hover:bg-[#1a2e3b] transition-all shadow-lg shadow-blue-900/10"
                                 >
                                     Cargar Excel ahora
                                 </button>
+                                )}
                             </div>
                         ) : (
                             <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
@@ -633,6 +643,7 @@ export default function RevisionFacturaDianPage() {
                                     <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-200 sticky top-0 z-10">
                                         <tr>
                                             <th className="px-6 py-4 w-10">
+                                                {role !== 'viewer' && (
                                                 <button
                                                     onClick={toggleAll}
                                                     className="p-1 hover:bg-gray-200 rounded transition-colors"
@@ -643,6 +654,7 @@ export default function RevisionFacturaDianPage() {
                                                         <Square className="h-4 w-4 text-gray-400" />
                                                     )}
                                                 </button>
+                                                )}
                                             </th>
                                             {comparisonResult.headers.map((header, i) => (
                                                 <th key={i} className="px-6 py-4">
@@ -683,6 +695,7 @@ export default function RevisionFacturaDianPage() {
                                         {filteredResults.map((row, rowIndex) => (
                                             <tr key={rowIndex} className={`hover:bg-gray-50/50 transition-colors ${selectedRows.has(rowIndex) ? 'bg-[#254153]/5' : ''}`}>
                                                 <td className="px-6 py-4">
+                                                    {role !== 'viewer' && (
                                                     <button
                                                         onClick={() => toggleRow(rowIndex)}
                                                         className="p-1 hover:bg-gray-200 rounded transition-colors"
@@ -693,6 +706,7 @@ export default function RevisionFacturaDianPage() {
                                                             <Square className="h-4 w-4 text-gray-400" />
                                                         )}
                                                     </button>
+                                                    )}
                                                 </td>
                                                 {comparisonResult.headers.map((header, colIndex) => {
                                                     const isStatusCol = header === "Estado en Sistema";
@@ -710,6 +724,7 @@ export default function RevisionFacturaDianPage() {
                                                     );
                                                 })}
                                                 <td className="px-6 py-4 text-center">
+                                                    {role !== 'viewer' && (
                                                     <button
                                                         onClick={() => handleDeleteComparisonRow(row)}
                                                         className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
@@ -717,6 +732,7 @@ export default function RevisionFacturaDianPage() {
                                                     >
                                                         <Trash2 className="h-4 w-4" />
                                                     </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}

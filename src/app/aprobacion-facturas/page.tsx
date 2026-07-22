@@ -974,9 +974,11 @@ export default function InvoicesPage() {
                         <Button variant="outline" onClick={() => handleCopyLink(inv)} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Copiar Link Público">
                             <Copy className="h-3.5 w-3.5" />
                         </Button>
+                        {role !== 'viewer' && (
                         <Button variant="outline" onClick={() => handleManualSapSync(inv)} disabled={syncingId === inv.id} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50" title="Sincronizar con SAP Manualmente">
                             {syncingId === inv.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="h-3.5 w-3.5" />}
                         </Button>
+                        )}
                         <Button variant="outline" onClick={() => { setSelectedInvoice(inv); setIsModalOpen(true); }} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Ver Detalle">
                             <Search className="h-3.5 w-3.5" />
                         </Button>
@@ -1105,6 +1107,7 @@ export default function InvoicesPage() {
                         </motion.div>
 
                         <div className="flex gap-2">
+                            {role !== 'viewer' && (
                             <button
                                 onClick={() => setIsProvidersSidebarOpen(true)}
                                 className="h-10 px-4 flex items-center gap-2 rounded-full bg-[#254153]/5 text-[#254153] hover:bg-[#254153]/10 transition-colors text-xs font-bold"
@@ -1112,6 +1115,7 @@ export default function InvoicesPage() {
                                 <ShieldCheck className="h-4 w-4" />
                                 <span className="hidden lg:inline">Aprobación Automática</span>
                             </button>
+                            )}
                             <Button
                                 onClick={() => {
                                     const url = `${window.location.origin}/externo/crear-factura`;
@@ -1128,6 +1132,7 @@ export default function InvoicesPage() {
                                 <Copy className="h-4 w-4" />
                                 <span className="hidden lg:inline">Link Público</span>
                             </Button>
+                            {role !== 'viewer' && (
                             <Button
                                 onClick={() => setIsCreateModalOpen(true)}
                                 className="bg-[#254153] text-white rounded-xl h-11 px-6 font-black hover:bg-[#1a2f3d] transition-all shadow-lg shadow-blue-900/10 flex items-center gap-2"
@@ -1135,6 +1140,7 @@ export default function InvoicesPage() {
                                 <CloudUpload className="h-4 w-4" />
                                 Crear Factura
                             </Button>
+                            )}
                             <Button
                                 onClick={handleExportExcel}
                                 className="bg-[#254153]/10 text-[#254153] rounded-xl h-11 px-4 font-black hover:bg-[#254153]/20 transition-all flex items-center gap-2"

@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/Switch";
 import { useSidebar } from "@/context/SidebarContext";
 import { Menu } from "lucide-react";
 import { CreateSupportDocumentModal } from "@/components/modals/CreateSupportDocumentModal";
+import { useAuth } from "@/context/AuthContext";
 import { ProviderRuleManager } from '@/components/ProviderRuleManager';
 import { AgGridReact } from 'ag-grid-react';
 import { useRef } from 'react';
@@ -78,6 +79,7 @@ const renderCostCenterForModal = (costCenterStr: any, tableCostStr: any) => {
 
 export default function SupportDocumentsPage() {
     const { toggleSidebar } = useSidebar();
+    const { role } = useAuth();
     const [documents, setDocuments] = useState<SharePointDocument[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
@@ -768,9 +770,11 @@ export default function SupportDocumentsPage() {
                         <Button variant="outline" onClick={() => { setSelectedDoc(doc); }} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Ver Detalle">
                             <Search className="h-3.5 w-3.5" />
                         </Button>
+                        {role !== 'viewer' && (
                         <Button variant="outline" onClick={() => handleManualSapSync(doc)} disabled={syncingId === doc.id.toString()} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Cargar a SAP">
                             {syncingId === doc.id.toString() ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="h-3.5 w-3.5" />}
                         </Button>
+                        )}
                     </div>
                 );
             }
@@ -853,6 +857,7 @@ export default function SupportDocumentsPage() {
                         </motion.div>
 
                         <div className="flex gap-2">
+                            {role !== 'viewer' && (
                             <button
                                 onClick={() => setIsProvidersSidebarOpen(true)}
                                 className="h-10 px-4 flex items-center gap-2 rounded-full bg-[#254153]/5 text-[#254153] hover:bg-[#254153]/10 transition-colors text-xs font-bold"
@@ -860,6 +865,7 @@ export default function SupportDocumentsPage() {
                                 <ShieldCheck className="h-4 w-4" />
                                 <span className="hidden lg:inline">Aprobación Automática</span>
                             </button>
+                            )}
                             <Button
                                 variant="outline"
                                 onClick={() => {
@@ -883,12 +889,14 @@ export default function SupportDocumentsPage() {
                                 <Download className="h-4 w-4" />
                                 <span className="hidden lg:inline">Descargar Excel</span>
                             </Button>
+                            {role !== 'viewer' && (
                             <Button
                                 onClick={() => setIsCreateModalOpen(true)}
                                 className="bg-[#254153] hover:bg-[#1a2f3d] text-white rounded-xl h-11 px-4 font-bold shadow-sm transition-all"
                             >
                                 Crear documento soporte
                             </Button>
+                            )}
                         </div>
                     </div>
 
@@ -1144,7 +1152,7 @@ export default function SupportDocumentsPage() {
                                         <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
                                             <div className="flex items-center justify-between">
                                                 <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Observaciones</h4>
-                                                {!isEditingObservaciones && (
+                                                {!isEditingObservaciones && role !== 'viewer' && (
                                                     <button onClick={() => { setIsEditingObservaciones(true); setTempObservaciones(selectedDoc.Observaciones || ""); }} className="text-blue-500 hover:text-blue-600 transition-colors p-1 flex items-center gap-1 text-[10px] font-bold uppercase">
                                                         <Edit2 className="h-3 w-3" />
                                                         Editar
@@ -1265,7 +1273,7 @@ export default function SupportDocumentsPage() {
                                                 <select
                                                     value={selectedDoc.Aprobacion_Doliente || "Pendiente"}
                                                     onChange={(e) => handleUpdateStatus('Aprobacion_Doliente', e.target.value)}
-                                                    disabled={isUpdatingStatus}
+                                                    disabled={isUpdatingStatus || role === 'viewer'}
                                                     className={`w-full appearance-none px-4 py-2 rounded-xl text-xs font-black border focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${getStatusStyles(selectedDoc.Aprobacion_Doliente)} cursor-pointer disabled:opacity-50`}
                                                 >
                                                     <option value="Pendiente">Pendiente</option>
@@ -1278,9 +1286,9 @@ export default function SupportDocumentsPage() {
                                             <div>
                                                 <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Responsable de Autorizar</p>
                                                 {!isEditingResponsible ? (
-                                                    <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingResponsible(true)}>
+                                                    <div className={`flex items-center gap-2 ${role !== 'viewer' ? 'group cursor-pointer' : ''}`} onClick={() => { if (role !== 'viewer') setIsEditingResponsible(true); }}>
                                                         <p className="font-extrabold text-[#254153]">{selectedDoc.Responsable_de_Autorizar}</p>
-                                                        <Edit2 className="h-3 w-3 text-gray-300 group-hover:text-blue-500" />
+                                                        {role !== 'viewer' && <Edit2 className="h-3 w-3 text-gray-300 group-hover:text-blue-500" />}
                                                     </div>
                                                 ) : (
                                                     <div className="relative">
@@ -1301,7 +1309,7 @@ export default function SupportDocumentsPage() {
                                                 <select
                                                     value={selectedDoc.Gestion_Contabilidad || "Pendiente"}
                                                     onChange={(e) => handleUpdateStatus('Gestion_Contabilidad', e.target.value)}
-                                                    disabled={isUpdatingStatus}
+                                                    disabled={isUpdatingStatus || role === 'viewer'}
                                                     className="w-full appearance-none px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-[#254153] focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer disabled:opacity-50"
                                                 >
                                                     <option value="Pendiente">Pendiente</option>
