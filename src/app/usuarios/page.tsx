@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Users, Loader2, ShieldCheck, Mail, Calendar, AlertCircle } from "lucide-react";
@@ -33,13 +34,11 @@ export default function UsuariosPage() {
     useEffect(() => {
         const fetchUsers = async () => {
             try {
-                const res = await fetch("/api/users");
-                if (!res.ok) {
-                    const errorData = await res.json();
-                    throw new Error(errorData.error || "Error al cargar usuarios");
+                const { data, error: rpcError } = await supabase.rpc('get_all_users');
+                if (rpcError) {
+                    throw new Error(rpcError.message || "Error al cargar usuarios");
                 }
-                const data = await res.json();
-                setUsers(data);
+                setUsers(data || []);
             } catch (err: any) {
                 setError(err.message);
             } finally {
@@ -55,15 +54,13 @@ export default function UsuariosPage() {
     const handleRoleChange = async (userId: string, newRole: string) => {
         setUpdatingId(userId);
         try {
-            const res = await fetch("/api/users", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userId, role: newRole }),
-            });
+            const { error: updateError } = await supabase
+                .from('user_roles')
+                .update({ role: newRole })
+                .eq('user_id', userId);
             
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || "Error al actualizar rol");
+            if (updateError) {
+                throw new Error(updateError.message || "Error al actualizar rol");
             }
             
             setUsers(users.map(u => u.id === userId ? { ...u, role: newRole as any } : u));
