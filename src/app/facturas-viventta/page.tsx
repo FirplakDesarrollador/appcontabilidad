@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useSidebar } from "@/context/SidebarContext";
+import { useAuth } from "@/context/AuthContext";
 import { Menu } from "lucide-react";
 import { AgGridReact } from 'ag-grid-react';
 import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
@@ -211,6 +212,7 @@ const INITIAL_MOCK_INVOICES: SharePointInvoice[] = [
 
 export default function ViventtaInvoicesPage() {
     const { toggleSidebar } = useSidebar();
+    const { role } = useAuth();
     
     // Core states — load from Supabase (Facturas_Viventta)
     const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
@@ -799,9 +801,11 @@ export default function ViventtaInvoicesPage() {
                         <Button variant="outline" onClick={() => handleCopyLink(inv)} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Copiar Link Público">
                             <Copy className="h-3.5 w-3.5" />
                         </Button>
+                        {role !== 'viewer' && (
                         <Button variant="outline" onClick={() => handleManualSapSync(inv)} disabled={syncingId === inv.id} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50" title="Sincronizar con SAP Manualmente">
                             {syncingId === inv.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="h-3.5 w-3.5" />}
                         </Button>
+                        )}
                         <Button variant="outline" onClick={() => { setSelectedInvoice(inv); setIsModalOpen(true); }} className="h-8 w-8 p-0 text-gray-400 border-gray-100 hover:bg-gray-50 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center" title="Ver Detalle">
                             <Search className="h-3.5 w-3.5" />
                         </Button>
@@ -892,7 +896,7 @@ export default function ViventtaInvoicesPage() {
                         </motion.div>
 
                         <div className="flex gap-2">
-
+                            {role !== 'viewer' && (
                             <Button
                                 onClick={() => setIsCreateModalOpen(true)}
                                 className="bg-[#254153] text-white rounded-xl h-11 px-6 font-black hover:bg-[#1a2f3d] transition-all shadow-lg shadow-blue-900/10 flex items-center gap-2"
@@ -900,7 +904,7 @@ export default function ViventtaInvoicesPage() {
                                 <CloudUpload className="h-4 w-4" />
                                 Crear Factura
                             </Button>
-
+                            )}
                         </div>
                     </div>
 
@@ -1099,6 +1103,7 @@ export default function ViventtaInvoicesPage() {
                                                             >
                                                                 <FileText className="h-4 w-4 text-blue-500 shrink-0" />
                                                                 <span className="truncate flex-1">{attachment.name}</span>
+                                                                {role !== 'viewer' && (
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleDeleteManualAttachment(attachment)}
@@ -1106,6 +1111,7 @@ export default function ViventtaInvoicesPage() {
                                                                 >
                                                                     Quitar
                                                                 </button>
+                                                                )}
                                                             </div>
                                                         ))}
                                                     </div>
@@ -1118,13 +1124,15 @@ export default function ViventtaInvoicesPage() {
                                                         type="file"
                                                         multiple
                                                         onChange={(event) => setManualAttachmentFiles(Array.from(event.target.files || []))}
-                                                        className="block w-full text-xs font-bold text-gray-500 file:mr-4 file:rounded-xl file:border-0 file:bg-[#254153]/10 file:px-4 file:py-2 file:text-xs file:font-black file:text-[#254153] hover:file:bg-[#254153]/15"
+                                                        disabled={role === 'viewer'}
+                                                        className="block w-full text-xs font-bold text-gray-500 file:mr-4 file:rounded-xl file:border-0 file:bg-[#254153]/10 file:px-4 file:py-2 file:text-xs file:font-black file:text-[#254153] hover:file:bg-[#254153]/15 disabled:opacity-50"
                                                     />
                                                     {manualAttachmentFiles.length > 0 && (
                                                         <div className="rounded-xl bg-gray-50 px-3 py-2 text-[11px] font-bold text-gray-500">
                                                             {manualAttachmentFiles.length} archivo(s) seleccionado(s)
                                                         </div>
                                                     )}
+                                                    {role !== 'viewer' && (
                                                     <Button
                                                         type="button"
                                                         onClick={handleUploadManualAttachments}
@@ -1135,6 +1143,7 @@ export default function ViventtaInvoicesPage() {
                                                         <CloudUpload className="h-4 w-4 mr-2" />
                                                         Cargar adjuntos
                                                     </Button>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -1150,7 +1159,7 @@ export default function ViventtaInvoicesPage() {
                                                             <span className={`inline-flex items-center px-4 py-1.5 rounded-full text-xs font-black border ${getStatusStyles(selectedInvoice.Aprobacion_Doliente)}`}>
                                                                 {selectedInvoice.Aprobacion_Doliente || "Pendiente"}
                                                             </span>
-                                                            {(selectedInvoice.Aprobacion_Doliente === 'Por Aprobar' || !selectedInvoice.Aprobacion_Doliente) && (
+                                                            {role !== 'viewer' && (selectedInvoice.Aprobacion_Doliente === 'Por Aprobar' || !selectedInvoice.Aprobacion_Doliente) && (
                                                                 <div className="flex gap-2">
                                                                     <button
                                                                         onClick={() => handleApprovalChange('Aprobado')}
@@ -1168,7 +1177,7 @@ export default function ViventtaInvoicesPage() {
                                                                     </button>
                                                                 </div>
                                                             )}
-                                                            {(selectedInvoice.Aprobacion_Doliente === 'Aprobado' || selectedInvoice.Aprobacion_Doliente === 'Rechazado') && (
+                                                            {role !== 'viewer' && (selectedInvoice.Aprobacion_Doliente === 'Aprobado' || selectedInvoice.Aprobacion_Doliente === 'Rechazado') && (
                                                                 <button
                                                                     onClick={() => handleApprovalChange(selectedInvoice.Aprobacion_Doliente === 'Aprobado' ? 'Rechazado' : 'Aprobado')}
                                                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black bg-gray-100 text-gray-500 hover:bg-gray-200 transition-all border border-gray-200"
@@ -1182,11 +1191,11 @@ export default function ViventtaInvoicesPage() {
                                                         <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Responsable de Autorizar</p>
                                                         {!isEditingResponsible ? (
                                                             <div className="flex flex-col gap-1">
-                                                                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingResponsible(true)}>
+                                                                <div className={`flex items-center gap-2 ${role !== 'viewer' ? 'group cursor-pointer' : ''}`} onClick={() => { if (role !== 'viewer') setIsEditingResponsible(true); }}>
                                                                     <p className={`font-extrabold ${pendingResponsibleUser ? 'text-blue-600 italic' : 'text-[#254153]'} hover:text-blue-600 transition-colors`}>
                                                                         {pendingResponsibleUser ? pendingResponsibleUser.name : (selectedInvoice.Responsable_de_Autorizar || "No asignado")}
                                                                     </p>
-                                                                    <Edit2 className="h-3 w-3 text-gray-300 group-hover:text-blue-500 transition-colors" />
+                                                                    {role !== 'viewer' && <Edit2 className="h-3 w-3 text-gray-300 group-hover:text-blue-500 transition-colors" />}
                                                                 </div>
                                                             </div>
                                                         ) : (
@@ -1252,7 +1261,8 @@ export default function ViventtaInvoicesPage() {
                                                         <select
                                                             value={selectedInvoice.Gestion_Contabilidad || "Por Procesar"}
                                                             onChange={(e) => handleAction(e.target.value)}
-                                                            className="w-full h-10 px-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254153]/20 transition-all cursor-pointer hover:border-[#254153]/30"
+                                                            disabled={role === 'viewer'}
+                                                            className="w-full h-10 px-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254153]/20 transition-all cursor-pointer hover:border-[#254153]/30 disabled:opacity-50"
                                                         >
                                                             <option value="Por Procesar">Por Procesar</option>
                                                             <option value="Procesado">Procesado</option>
@@ -1262,7 +1272,7 @@ export default function ViventtaInvoicesPage() {
                                             </div>
 
                                             <div className="flex gap-3 pt-2">
-                                                {pendingResponsibleUser ? (
+                                                {pendingResponsibleUser && role !== 'viewer' ? (
                                                     <Button
                                                         onClick={handleUpdateResponsible}
                                                         disabled={isUpdatingResponsible}
@@ -1274,6 +1284,7 @@ export default function ViventtaInvoicesPage() {
                                                 ) : (
                                                     <div className="flex-1" />
                                                 )}
+                                                {role !== 'viewer' && (
                                                 <Button
                                                     variant="outline"
                                                     onClick={() => handleManualSapSync(selectedInvoice)}
@@ -1283,6 +1294,7 @@ export default function ViventtaInvoicesPage() {
                                                     <CloudUpload className="h-5 w-5" />
                                                     Cargar a SAP
                                                 </Button>
+                                                )}
                                                 <Button 
                                                     variant="outline" 
                                                     className="h-14 rounded-2xl px-8 border-gray-100 font-bold text-gray-500 hover:bg-gray-50"
