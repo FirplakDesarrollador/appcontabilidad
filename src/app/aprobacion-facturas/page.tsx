@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { CreateInvoiceModal } from "@/components/modals/CreateInvoiceModal";
 import { useSidebar } from "@/context/SidebarContext";
+import { useAuth } from "@/context/AuthContext";
 import { Menu, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { AgGridReact } from 'ag-grid-react';
@@ -100,6 +101,7 @@ function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode
 export default function InvoicesPage() {
     const gridRef = useRef<AgGridReact>(null);
     const { toggleSidebar } = useSidebar();
+    const { role } = useAuth();
     const [colWidths, setColWidths] = useState<Record<string, number>>({ 'C. Costos / Cuenta': 100 });
 
     const handleResize = (e: React.MouseEvent, col: string) => {
@@ -1389,18 +1391,20 @@ export default function InvoicesPage() {
                                     ) : (
                                         <div className="flex flex-col sm:flex-row gap-4 w-full mb-6">
                                             <Button
-                                                className="flex-1 h-14 rounded-2xl bg-[#254153] hover:bg-[#1a2e3b] text-white font-bold text-lg shadow-lg shadow-[#254153]/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                                className="flex-1 h-14 rounded-2xl bg-[#254153] hover:bg-[#1a2e3b] text-white font-bold text-lg shadow-lg shadow-[#254153]/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
                                                 onClick={() => handleAction('Aprobado')}
-                                                disabled={!!actionLoading}
+                                                disabled={!!actionLoading || role === 'viewer'}
+                                                title={role === 'viewer' ? "No tienes permisos de edición" : undefined}
                                             >
                                                 {actionLoading === 'Aprobado' ? <RefreshCw className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
                                                 Aprobar
                                             </Button>
                                             <Button
                                                 variant="outline"
-                                                className="flex-1 h-14 rounded-2xl border-2 border-red-100 text-red-600 hover:bg-red-50 font-bold text-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                                className="flex-1 h-14 rounded-2xl border-2 border-red-100 text-red-600 hover:bg-red-50 font-bold text-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
                                                 onClick={() => handleAction('Rechazado')}
-                                                disabled={!!actionLoading}
+                                                disabled={!!actionLoading || role === 'viewer'}
+                                                title={role === 'viewer' ? "No tienes permisos de edición" : undefined}
                                             >
                                                 {actionLoading === 'Rechazado' ? <RefreshCw className="h-5 w-5 animate-spin" /> : <X className="h-5 w-5" />}
                                                 Rechazar
