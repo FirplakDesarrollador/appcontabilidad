@@ -54,10 +54,10 @@ export default function UsuariosPage() {
     const handleRoleChange = async (userId: string, newRole: string) => {
         setUpdatingId(userId);
         try {
-            const { error: updateError } = await supabase
-                .from('user_roles')
-                .update({ role: newRole })
-                .eq('user_id', userId);
+            const { error: updateError } = await supabase.rpc('update_user_role', {
+                target_user_id: userId,
+                new_role: newRole
+            });
             
             if (updateError) {
                 throw new Error(updateError.message || "Error al actualizar rol");
