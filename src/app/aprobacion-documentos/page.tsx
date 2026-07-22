@@ -119,10 +119,8 @@ export default function SupportDocumentsPage() {
                 throw new Error(data.error);
             }
             
-            if (data.documentInfo?.pdfUrl) {
-                setPreviewUrl(data.documentInfo.pdfUrl);
-            } else if (data.documentInfo?.fileName && data.documentInfo.fileName !== "Ver en SharePoint") {
-                setPreviewUrl(`/api/externo/documento/${doc.id}/download?file=${encodeURIComponent(data.documentInfo.fileName)}`);
+            if (data.documentInfo?.pdfUrl || data.documentInfo?.fileName) {
+                setPreviewUrl(`/api/externo/documento/${doc.id}/download`);
             } else {
                 throw new Error("No se encontraron adjuntos PDF válidos");
             }
@@ -799,7 +797,7 @@ export default function SupportDocumentsPage() {
         { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{formatCostCenter(p.value, p.data?.tablaCostos)}</div> },
         { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : 'Sin fecha'}</div> },
         { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || 'Sin observaciones'}</div> },
-        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{p.data?.pdf_url || p.data?.adjunto ? <a href={p.data.pdf_url || p.data.adjunto} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
+        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{p.data?.pdf_url || p.data?.adjunto ? <a href={`/api/externo/documento/${p.data.id}/download`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> }
     ], []);
 
     return (
@@ -1198,7 +1196,7 @@ export default function SupportDocumentsPage() {
                                             </div>
                                             <div className="space-y-3">
                                                 {/* Documento Principal */}
-                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-blue-200 transition-colors" onClick={() => { if (selectedDoc.pdf_url) window.open(selectedDoc.pdf_url, '_blank'); else window.open(`/api/externo/documento/${selectedDoc.id}/download`, '_blank'); }}>
+                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-blue-200 transition-colors" onClick={() => { window.open(`/api/externo/documento/${selectedDoc.id}/download?download=true`, '_blank'); }}>
                                                     <div className="flex items-center gap-3">
                                                         <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
                                                             <FileText className="h-5 w-5 text-blue-500" />

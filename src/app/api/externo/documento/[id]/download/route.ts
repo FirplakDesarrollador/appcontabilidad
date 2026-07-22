@@ -18,7 +18,7 @@ export async function GET(
 
         const { data: dbDoc, error } = await supabase
             .from('Documento_Soporte')
-            .select('pdf_url, adjunto, consecutivo')
+            .select('pdf_url, adjunto, consecutivo, proveedor')
             .eq('id', Number(itemId))
             .maybeSingle();
 
@@ -41,16 +41,22 @@ export async function GET(
         const fileBuffer = await fileResponse.arrayBuffer();
 
         let finalFileName = requestFileName || `documento_${dbDoc.consecutivo || itemId}.pdf`;
-        if (!finalFileName.toLowerCase().endsWith('.pdf')) {
+        
+        if (dbDoc.proveedor) {
+            const cleanProvider = dbDoc.proveedor.replace(/[<>:"/\\|?*]/g, '').trim();
+            finalFileName = `RAD ${cleanProvider} DOC SOPORTE.pdf`;
+        } else if (!finalFileName.toLowerCase().endsWith('.pdf')) {
             finalFileName = finalFileName.includes('.') 
                 ? finalFileName.replace(/\.[^/.]+$/, ".pdf")
                 : `${finalFileName}.pdf`;
         }
 
+        const isDownload = searchParams.get('download') === 'true';
+
         return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename="${finalFileName}"`,
+                'Content-Disposition': `${isDownload ? 'attachment' : 'inline'}; filename="${finalFileName}"`,
                 'Cache-Control': 'no-store',
             },
         });
