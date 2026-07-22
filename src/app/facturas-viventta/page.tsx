@@ -714,7 +714,15 @@ export default function ViventtaInvoicesPage() {
                                 <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Centro de Costo</div>
                                 <div className="text-sm font-black text-[#254153] mb-2 cursor-text select-text">{p.centroCosto || 'N/A'}</div>
                                 <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Cuenta</div>
-                                <div className="text-sm font-black text-[#254153] cursor-text select-text">{p.cuenta || 'N/A'}</div>
+                                <div className="text-sm font-black text-[#254153] mb-2 cursor-text select-text">{p.cuenta || 'N/A'}</div>
+                                {p.valor !== undefined && p.valor !== "" && (
+                                    <>
+                                        <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Valor Asignado</div>
+                                        <div className="text-sm font-black text-[#254153] cursor-text select-text">
+                                            {!isNaN(Number(p.valor)) ? new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(Number(p.valor)) : p.valor}
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         ))}
                     </div>
