@@ -44,3 +44,51 @@ CREATE TRIGGER on_auth_user_created
 -- IMPORTANT: 
 -- To make yourself an admin, run this command manually in the SQL editor:
 -- UPDATE public.user_roles SET role = 'admin' WHERE user_id = (SELECT id FROM auth.users WHERE email = 'tu_correo@ejemplo.com');
+
+-- 5. RPC & RLS updates to avoid using Service Role Key in Next.js
+
+-- 5a. Create a function to check if the current user is an admin
+CREATE OR REPLACE FUNCTION public.is_admin() 
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.user_roles 
+    WHERE user_id = auth.uid() AND role = 'admin'
+  );
+$$ LANGUAGE sql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+
+-- 5b. Update RLS policy to allow admins to update roles
+DROP POLICY IF EXISTS "Deny public update access to user_roles" ON public.user_roles;
+DROP POLICY IF EXISTS "Allow admins to update user_roles" ON public.user_roles;
+
+
+CREATE POLICY "Allow admins to update user_roles" ON public.user_roles 
+FOR UPDATE 
+USING (public.is_admin()) 
+WITH CHECK (public.is_admin());
+
+-- 5c. Create an RPC function to get all users safely
+CREATE OR REPLACE FUNCTION public.get_all_users()
+RETURNS TABLE (id UUID, email TEXT, created_at TIMESTAMPTZ, last_sign_in_at TIMESTAMPTZ, role TEXT)
+SECURITY DEFINER
+AS $$
+BEGIN
+  -- Verify if the caller is an admin
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'No autorizado';
+  END IF;
+
+  RETURN QUERY
+  SELECT 
+    au.id, 
+    au.email::text, 
+    au.created_at, 
+    au.last_sign_in_at,
+    COALESCE(ur.role, 'viewer')
+  FROM auth.users au
+  LEFT JOIN public.user_roles ur ON au.id = ur.user_id;
+END;
+$$ LANGUAGE plpgsql;
+
+GRANT EXECUTE ON FUNCTION public.get_all_users() TO authenticated;
