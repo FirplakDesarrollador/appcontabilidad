@@ -92,3 +92,28 @@ END;
 $$ LANGUAGE plpgsql;
 
 GRANT EXECUTE ON FUNCTION public.get_all_users() TO authenticated;
+
+-- 5d. Create an RPC function to update roles safely
+CREATE OR REPLACE FUNCTION public.update_user_role(target_user_id UUID, new_role TEXT)
+RETURNS void
+SECURITY DEFINER
+AS $$
+BEGIN
+  -- Verify if the caller is an admin
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'No autorizado';
+  END IF;
+
+  -- Validate new_role
+  IF new_role NOT IN ('admin', 'editor', 'viewer') THEN
+    RAISE EXCEPTION 'Rol inválido';
+  END IF;
+
+  -- Update the role
+  UPDATE public.user_roles
+  SET role = new_role, updated_at = now()
+  WHERE user_id = target_user_id;
+END;
+$$ LANGUAGE plpgsql;
+
+GRANT EXECUTE ON FUNCTION public.update_user_role(UUID, TEXT) TO authenticated;
