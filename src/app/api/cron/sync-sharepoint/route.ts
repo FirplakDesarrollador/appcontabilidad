@@ -22,6 +22,8 @@ function mapSpToSupabase(fields: any, spItemId: any, userMap?: Map<string, strin
         || fields.ResponsableAprobarLookupId
         || fields.Responsable_de_AutorizarLookupId;
     const responsable = lookupId && userMap ? (userMap.get(String(lookupId)) || null) : (fields.Responsable_de_Autorizar ?? null);
+    // NOTE: responsable may be null if the LookupId is not in the userMap yet.
+    // We handle this below by stripping null values before upsert.
 
     return {
         ID: Number(spItemId),
@@ -177,9 +179,15 @@ export async function GET(req: Request) {
             }
 
             console.log(`[CRON-SYNC] Upserting SP item ${spItemId} to Supabase...`);
+            // Strip null Responsable_de_Autorizar so we never overwrite an existing
+            // responsible person with null when SharePoint hasn't resolved the lookup.
+            const upsertData = { ...invoiceData };
+            if (upsertData.Responsable_de_Autorizar === null) {
+                delete upsertData.Responsable_de_Autorizar;
+            }
             const { error: upsertErr } = await supabaseAdmin
                 .from('Registro_Facturas')
-                .upsert(invoiceData, { onConflict: 'ID' });
+                .upsert(upsertData, { onConflict: 'ID' });
 
             if (upsertErr) {
                 console.error(`[CRON-SYNC] Failed upsert for SP ID ${spItemId}:`, upsertErr.message);

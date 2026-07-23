@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
 
         // 8. Upsert en Supabase para visibilidad inmediata
         try {
-            const invoiceData = {
+            const invoiceData: Record<string, any> = {
                 ID: Number(newItemId),
                 sharepoint_id: String(newItemId),
                 Nit: nit,
@@ -159,6 +159,11 @@ export async function POST(req: NextRequest) {
                 adjuntos_url: fields['adjuntos_url'] || null,
                 Creado: new Date().toISOString(),
             };
+            // Include the responsible person immediately so the invoice never
+            // appears as "Sin asignar" while waiting for the next sync cycle.
+            if (responsableName) {
+                invoiceData.Responsable_de_Autorizar = responsableName;
+            }
 
             const { error: supabaseError } = await supabaseAdmin
                 .from('Registro_Facturas')
