@@ -101,7 +101,7 @@ function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode
 export default function InvoicesPage() {
     const gridRef = useRef<AgGridReact>(null);
     const { toggleSidebar } = useSidebar();
-    const { role } = useAuth();
+    const { role, user } = useAuth();
     const [colWidths, setColWidths] = useState<Record<string, number>>({ 'C. Costos / Cuenta': 100 });
 
     const handleResize = (e: React.MouseEvent, col: string) => {
@@ -131,6 +131,15 @@ export default function InvoicesPage() {
     const [toProcessCount, setToProcessCount] = useState(0);
     const [hasMoreProcessed, setHasMoreProcessed] = useState(true);
     const [loadingMoreProcessed, setLoadingMoreProcessed] = useState(false);
+
+    const getProcesadoPorName = (email?: string) => {
+        if (!email) return "Desconocido";
+        const e = email.toLowerCase();
+        if (e.includes("mateo.benavides")) return "Mateo Benavides Rios";
+        if (e.includes("duvan.ramirez")) return "Duvan Esteban Ramirez Rua";
+        if (e.includes("practicontabilidad")) return "Jesús Angel Villalobos Rincon";
+        return email;
+    };
 
     const invoices = useMemo(() => {
         const combined = [...pendingInvoices];
@@ -702,18 +711,28 @@ export default function InvoicesPage() {
         });
     };
 
-    const handleAction = async (action: string, field: string = 'Aprobacion_Doliente') => {
+    const handleAction = async (action: string, field: string = 'Aprobacion_Doliente', procesadoPor?: string) => {
         if (!selectedInvoice) return;
+        if (field === 'Gestion_Contabilidad' && action === 'Procesado' && !procesadoPor) {
+            alert("Debes seleccionar quién procesa antes de cambiar el estado a Procesado.");
+            return;
+        }
+
         setActionLoading(action);
         try {
+            const body: any = {
+                itemId: selectedInvoice.id,
+                status: action,
+                field
+            };
+            if (procesadoPor) {
+                body.procesadoPor = procesadoPor;
+            }
+
             const res = await fetch("/api/sharepoint/update-status", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    itemId: selectedInvoice.id,
-                    status: action,
-                    field
-                })
+                body: JSON.stringify(body)
             });
 
             if (res.ok) {
@@ -724,6 +743,10 @@ export default function InvoicesPage() {
                     const updated = { ...inv };
                     if (field === 'Gestion_Contabilidad') {
                         updated.Gestion_Contabilidad = action;
+                        if (action === 'Procesado') {
+                            updated.FechaProcesado = nowIso;
+                            if (procesadoPor) updated.ProcesadoPor = procesadoPor;
+                        }
                     } else {
                         updated.Aprobacion_Doliente = action;
                         updated.FechaAprobacion = nowIso;
@@ -2011,7 +2034,14 @@ export default function InvoicesPage() {
                                                     <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Gestión Contabilidad</p>
                                                     <select
                                                         value={selectedInvoice.Gestion_Contabilidad || "Por Procesar"}
-                                                        onChange={(e) => handleAction(e.target.value, 'Gestion_Contabilidad')}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            if (val === 'Procesado') {
+                                                                handleAction(val, 'Gestion_Contabilidad', getProcesadoPorName(user?.email));
+                                                            } else {
+                                                                handleAction(val, 'Gestion_Contabilidad');
+                                                            }
+                                                        }}
                                                         disabled={!!actionLoading || role === 'viewer'}
                                                         className="w-full h-10 px-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254153]/20 transition-all cursor-pointer hover:border-[#254153]/30 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >

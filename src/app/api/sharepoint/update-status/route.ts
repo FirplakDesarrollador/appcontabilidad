@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 export async function POST(req: NextRequest) {
     try {
-        const { itemId, status, listName = 'Registro_de_Facturas', field = 'Aprobacion_Doliente' } = await req.json();
+        const { itemId, status, listName = 'Registro_de_Facturas', field = 'Aprobacion_Doliente', procesadoPor } = await req.json();
 
         if (!itemId || !status) {
             return NextResponse.json({ error: 'Missing itemId or status' }, { status: 400 });
@@ -17,6 +17,10 @@ export async function POST(req: NextRequest) {
             
             if (field === 'Gestion_Contabilidad') {
                 updatePayload.gestion_contabilidad = status;
+                if (status === 'Procesado') {
+                    updatePayload.FechaProcesado = new Date().toISOString();
+                    if (procesadoPor) updatePayload.ProcesadoPor = procesadoPor;
+                }
             } else if (field === 'Observaciones') {
                 updatePayload.observaciones = status;
             } else {
@@ -75,6 +79,11 @@ export async function POST(req: NextRequest) {
             };
             if (field === 'Gestion_Contabilidad') {
                 supaUpdate.Gestion_Contabilidad = status;
+                if (status === 'Procesado') {
+                    supaUpdate.FechaProcesado = new Date().toISOString();
+                    supaUpdate.Procesado = 'true';
+                    if (procesadoPor) supaUpdate.ProcesadoPor = procesadoPor;
+                }
             } else if (field === 'Observaciones') {
                 supaUpdate.Observaciones = status;
             } else {
@@ -86,9 +95,9 @@ export async function POST(req: NextRequest) {
             }
 
             await supabase
-                .from('Registro_Facturas')
+                .from(listName === 'Radicados de importación' ? 'Radicados_de_importacion' : listName)
                 .update(supaUpdate)
-                .eq('ID', Number(itemId));
+                .eq(listName === 'Registro_de_Facturas' ? 'ID' : 'id', Number(itemId));
         } catch (supaErr) {
             console.error('Failed to update Supabase cache:', supaErr);
         }

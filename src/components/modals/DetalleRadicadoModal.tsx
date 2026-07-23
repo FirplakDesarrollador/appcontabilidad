@@ -4,6 +4,7 @@ import React from "react";
 import { X, Search, Paperclip, Ship, Calendar, User, Hash, DollarSign, CheckCircle, Save, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
 
 interface DetalleRadicadoModalProps {
     isOpen: boolean;
@@ -13,9 +14,19 @@ interface DetalleRadicadoModalProps {
 }
 
 export function DetalleRadicadoModal({ isOpen, onClose, data, onSuccess }: DetalleRadicadoModalProps) {
+    const { user } = useAuth();
     const [estado, setEstado] = React.useState("");
     const [gestionContabilidad, setGestionContabilidad] = React.useState("");
     const [observaciones, setObservaciones] = React.useState("");
+
+    const getProcesadoPorName = (email?: string) => {
+        if (!email) return "Desconocido";
+        const e = email.toLowerCase();
+        if (e.includes("mateo.benavides")) return "Mateo Benavides Rios";
+        if (e.includes("duvan.ramirez")) return "Duvan Esteban Ramirez Rua";
+        if (e.includes("practicontabilidad")) return "Jesús Angel Villalobos Rincon";
+        return email;
+    };
 
     React.useEffect(() => {
         if (data) {
@@ -28,9 +39,14 @@ export function DetalleRadicadoModal({ isOpen, onClose, data, onSuccess }: Detal
     const handleUpdateField = async (field: string, value: string) => {
         if (!data) return;
         try {
+            const updatePayload: any = { [field]: value };
+            if (field === 'Gestion_Contabilidad' && value === 'Procesado') {
+                updatePayload.FechaProcesado = new Date().toISOString();
+            }
+
             const { error } = await supabase
                 .from('Radicados_de_importacion')
-                .update({ [field]: value })
+                .update(updatePayload)
                 .eq('id', data.id);
 
             if (error) throw error;
@@ -161,7 +177,14 @@ export function DetalleRadicadoModal({ isOpen, onClose, data, onSuccess }: Detal
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 setGestionContabilidad(val);
-                                                handleUpdateField("Gestion_Contabilidad", val);
+                                                if (val === 'Procesado') {
+                                                    const procesadoPor = getProcesadoPorName(user?.email);
+                                                    handleUpdateField("ProcesadoPor", procesadoPor).then(() => {
+                                                        handleUpdateField("Gestion_Contabilidad", val);
+                                                    });
+                                                } else {
+                                                    handleUpdateField("Gestion_Contabilidad", val);
+                                                }
                                             }}
                                             className="w-full text-xs p-1.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 focus:ring-1 focus:ring-[#254153] outline-none font-bold text-gray-700 cursor-pointer transition-colors"
                                         >

@@ -87,8 +87,11 @@ const renderCostCenterForModal = (costCenterStr: any, tableCostStr: any) => {
 
 export default function SupportDocumentsPage() {
     const { toggleSidebar } = useSidebar();
-    const { role } = useAuth();
-    const [documents, setDocuments] = useState<SharePointDocument[]>([]);
+    const { role, user } = useAuth();
+    const [documents, setDocuments] = useState<any[]>([]);
+    const [pendingCount, setPendingCount] = useState(0);
+    const [processedCount, setProcessedCount] = useState(0);
+    const [toProcessCount, setToProcessCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const [activeTab, setActiveTab] = useState<'pending' | 'to_process' | 'processed'>('pending');
@@ -97,6 +100,15 @@ export default function SupportDocumentsPage() {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewError, setPreviewError] = useState<string | null>(null);
     const [expandedPdfUrl, setExpandedPdfUrl] = useState<string | null>(null);
+
+    const getProcesadoPorName = (email?: string) => {
+        if (!email) return "Desconocido";
+        const e = email.toLowerCase();
+        if (e.includes("mateo.benavides")) return "Mateo Benavides Rios";
+        if (e.includes("duvan.ramirez")) return "Duvan Esteban Ramirez Rua";
+        if (e.includes("practicontabilidad")) return "Jesús Angel Villalobos Rincon";
+        return email;
+    };
 
     useEffect(() => {
         if (selectedDoc) {
@@ -262,7 +274,6 @@ export default function SupportDocumentsPage() {
     }, [activeTab]);
 
     const router = useRouter();
-    const [user, setUser] = useState<any>(null);
 
     useEffect(() => {
         const checkUser = async () => {
@@ -273,7 +284,6 @@ export default function SupportDocumentsPage() {
                     await supabase.auth.signOut();
                     router.push("/login");
                 } else {
-                    setUser(session.user);
                     fetchDocuments(); // Usará el nuevo límite de 100 por defecto para velocidad máxima
                 }
             } catch (err) {
@@ -386,19 +396,29 @@ export default function SupportDocumentsPage() {
         }
     };
 
-    const handleUpdateStatus = async (field: 'Aprobacion_Doliente' | 'Gestion_Contabilidad' | 'Observaciones', value: string) => {
+    const handleUpdateStatus = async (field: 'Aprobacion_Doliente' | 'Gestion_Contabilidad' | 'Observaciones', value: string, procesadoPor?: string) => {
         if (!selectedDoc) return;
+        if (field === 'Gestion_Contabilidad' && value === 'Procesado' && !procesadoPor) {
+            alert("Debes seleccionar quién procesa antes de cambiar el estado a Procesado.");
+            return;
+        }
+
         setIsUpdatingStatus(true);
         try {
+            const body: any = {
+                itemId: selectedDoc.id,
+                status: value,
+                listName: 'Documento_Soporte',
+                field
+            };
+            if (procesadoPor) {
+                body.procesadoPor = procesadoPor;
+            }
+
             const res = await fetch("/api/sharepoint/update-status", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    itemId: selectedDoc.id,
-                    status: value,
-                    listName: 'Documento_Soporte',
-                    field
-                })
+                body: JSON.stringify(body)
             });
 
             if (res.ok) {
@@ -406,11 +426,16 @@ export default function SupportDocumentsPage() {
                     await handleManualSapSync(selectedDoc, true);
                 }
 
+                const nowIso = new Date().toISOString();
                 const updatedDocs = documents.map(doc => {
                     if (doc.id === selectedDoc.id) {
                         const newDoc = { ...doc, [field]: value };
                         if (field === 'Aprobacion_Doliente' && value === 'Aprobado') {
                             newDoc.Gestion_Contabilidad = 'Por Procesar';
+                        }
+                        if (field === 'Gestion_Contabilidad' && value === 'Procesado') {
+                            newDoc.FechaProcesado = nowIso;
+                            if (procesadoPor) newDoc.ProcesadoPor = procesadoPor;
                         }
                         return newDoc;
                     }
@@ -421,6 +446,10 @@ export default function SupportDocumentsPage() {
                 const newSelected = { ...selectedDoc, [field]: value };
                 if (field === 'Aprobacion_Doliente' && value === 'Aprobado') {
                     newSelected.Gestion_Contabilidad = 'Por Procesar';
+                }
+                if (field === 'Gestion_Contabilidad' && value === 'Procesado') {
+                    newSelected.FechaProcesado = nowIso;
+                    if (procesadoPor) newSelected.ProcesadoPor = procesadoPor;
                 }
                 setSelectedDoc(newSelected);
                 alert("Estado actualizado correctamente");
@@ -1314,7 +1343,14 @@ export default function SupportDocumentsPage() {
                                                 <p className="text-[11px] font-bold text-gray-400 uppercase mb-1.5">Gestión Contabilidad</p>
                                                 <select
                                                     value={selectedDoc.Gestion_Contabilidad || "Pendiente"}
-                                                    onChange={(e) => handleUpdateStatus('Gestion_Contabilidad', e.target.value)}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        if (val === 'Procesado') {
+                                                            handleUpdateStatus('Gestion_Contabilidad', val, getProcesadoPorName(user?.email));
+                                                        } else {
+                                                            handleUpdateStatus('Gestion_Contabilidad', val);
+                                                        }
+                                                    }}
                                                     disabled={isUpdatingStatus || role === 'viewer'}
                                                     className="w-full appearance-none px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-[#254153] focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer disabled:opacity-50"
                                                 >
