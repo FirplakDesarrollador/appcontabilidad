@@ -219,6 +219,55 @@ export async function GET(req: Request) {
         }
 
         console.log('[CRON-SYNC] Complete!', stats);
+
+        // ── C. Auto-assign missing responsables from Proveedores_con_Responsable ──
+        try {
+            const { data: unassigned, error: unassignedErr } = await supabaseAdmin
+                .from('Registro_Facturas')
+                .select('ID, Nit')
+                .or('Responsable_de_Autorizar.is.null,Responsable_de_Autorizar.eq.')
+                .eq('Aprobacion_Doliente', 'Por Aprobar');
+
+            if (!unassignedErr && unassigned && unassigned.length > 0) {
+                console.log(`[CRON-SYNC] Found ${unassigned.length} invoices without responsable. Attempting auto-assign...`);
+
+                const { data: providers } = await supabaseAdmin
+                    .from('Proveedores_con_Responsable')
+                    .select('"Nit", "Responsable", "Autorizador", "Correo"');
+
+                if (providers && providers.length > 0) {
+                    const providerMap = new Map<string, { responsable: string; correo: string }>();
+                    for (const p of providers) {
+                        const key = p.Nit ? (p.Nit.includes('-') ? p.Nit.split('-')[0].trim() : p.Nit.trim()) : '';
+                        if (key && !providerMap.has(key)) {
+                            const name = p.Responsable || p.Autorizador || null;
+                            if (name) providerMap.set(key, { responsable: name, correo: p.Correo || '' });
+                        }
+                    }
+
+                    let autoAssigned = 0;
+                    for (const inv of unassigned) {
+                        const key = inv.Nit ? (inv.Nit.includes('-') ? inv.Nit.split('-')[0].trim() : inv.Nit.trim()) : '';
+                        const match = providerMap.get(key);
+                        if (match) {
+                            const { error: updateErr } = await supabaseAdmin
+                                .from('Registro_Facturas')
+                                .update({ Responsable_de_Autorizar: match.responsable })
+                                .eq('ID', inv.ID);
+                            if (!updateErr) {
+                                autoAssigned++;
+                                console.log(`[CRON-SYNC] Auto-assigned ID ${inv.ID} → ${match.responsable}`);
+                            }
+                        }
+                    }
+                    console.log(`[CRON-SYNC] Auto-assigned ${autoAssigned}/${unassigned.length} invoices.`);
+                    (stats as any).auto_assigned = autoAssigned;
+                }
+            }
+        } catch (autoErr: any) {
+            console.warn('[CRON-SYNC] Auto-assign step failed (non-fatal):', autoErr.message);
+        }
+
         return NextResponse.json({ success: true, stats });
 
     } catch (error: any) {
