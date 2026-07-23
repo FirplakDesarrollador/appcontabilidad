@@ -11,6 +11,10 @@
         {
             "path": "/api/sharepoint/sync",
             "schedule": "0 6,18 * * *"
+        },
+        {
+            "path": "/api/cron/record-daily-stats",
+            "schedule": "50 23 * * *"
         }
     ]
 }

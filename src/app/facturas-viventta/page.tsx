@@ -211,13 +211,21 @@ const INITIAL_MOCK_INVOICES: SharePointInvoice[] = [
 ];
 
 export default function ViventtaInvoicesPage() {
-    const { toggleSidebar } = useSidebar();
-    const { role } = useAuth();
+    const { role, user } = useAuth();
     
     // Core states — load from Supabase (Facturas_Viventta)
     const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
+
+    const getProcesadoPorName = (email?: string) => {
+        if (!email) return "Desconocido";
+        const e = email.toLowerCase();
+        if (e.includes("mateo.benavides")) return "Mateo Benavides Rios";
+        if (e.includes("duvan.ramirez")) return "Duvan Esteban Ramirez Rua";
+        if (e.includes("practicontabilidad")) return "Jesús Angel Villalobos Rincon";
+        return email;
+    };
 
     // Load invoices from Facturas_Viventta on mount
     const loadInvoicesFromDB = async () => {
@@ -558,8 +566,12 @@ export default function ViventtaInvoicesPage() {
         });
     };
 
-    const handleAction = async (action: string) => {
+    const handleAction = async (action: string, procesadoPor?: string) => {
         if (!selectedInvoice) return;
+        if (action === 'Procesado' && !procesadoPor) {
+            alert("Debes seleccionar quién procesa antes de cambiar el estado a Procesado.");
+            return;
+        }
         setActionLoading(action);
         
         try {
@@ -574,6 +586,10 @@ export default function ViventtaInvoicesPage() {
                 updateData.FechaAprobacion = new Date().toISOString();
             } else {
                 updateData.Gestion_Contabilidad = action;
+                if (action === 'Procesado') {
+                    updateData.FechaProcesado = new Date().toISOString();
+                    if (procesadoPor) updateData.ProcesadoPor = procesadoPor;
+                }
             }
 
             const res = await fetch(`/api/facturas-viventta/update`, {
@@ -1268,7 +1284,14 @@ export default function ViventtaInvoicesPage() {
                                                         <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Gestión Contabilidad</p>
                                                         <select
                                                             value={selectedInvoice.Gestion_Contabilidad || "Por Procesar"}
-                                                            onChange={(e) => handleAction(e.target.value)}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                if (val === 'Procesado') {
+                                                                    handleAction(val, getProcesadoPorName(user?.email));
+                                                                } else {
+                                                                    handleAction(val);
+                                                                }
+                                                            }}
                                                             disabled={role === 'viewer'}
                                                             className="w-full h-10 px-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#254153]/20 transition-all cursor-pointer hover:border-[#254153]/30 disabled:opacity-50"
                                                         >
