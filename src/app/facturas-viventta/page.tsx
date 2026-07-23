@@ -212,6 +212,7 @@ const INITIAL_MOCK_INVOICES: SharePointInvoice[] = [
 
 export default function ViventtaInvoicesPage() {
     const { role, user } = useAuth();
+    const { toggleSidebar } = useSidebar();
     
     // Core states — load from Supabase (Facturas_Viventta)
     const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
