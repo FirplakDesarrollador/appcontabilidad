@@ -12,21 +12,27 @@ const supabaseAdmin = createClient(
 export async function GET(req: Request) {
     try {
         // Verificar token de seguridad de Vercel (si está configurado)
-        const { searchParams } = new URL(req.url);
-        const secret = searchParams.get('secret');
-        if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
+        const authHeader = req.headers.get('authorization');
+        if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        console.log('[Cron] Guardando historial de métricas diario...');
+        console.log('[Cron] Starting daily stats sync...');
 
-        // Funciones auxiliares para simplificar el conteo
         const getCount = async (table: string, filters: (query: any) => any) => {
-            let query = supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
-            query = filters(query);
-            const { count, error } = await query;
-            if (error) throw error;
-            return count || 0;
+            try {
+                let query = supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
+                query = filters(query);
+                const { count, error } = await query;
+                if (error) {
+                    console.warn(`[Cron] Warning counting ${table}:`, error.message);
+                    return 0; // Return 0 gracefully if column doesn't exist
+                }
+                return count || 0;
+            } catch (err: any) {
+                console.warn(`[Cron] Error counting ${table}:`, err.message);
+                return 0;
+            }
         };
 
         const todayDate = new Date();
@@ -56,9 +62,9 @@ export async function GET(req: Request) {
         const facturasRadicadas = await getCount('Registro_Facturas', q => q.gte('Creado', today));
         const facturasAcumuladas = await getCount('Registro_Facturas', q => q.gte('Creado', firstDayOfMonth));
         const facturasVencidas = await getCount('Registro_Facturas', q => q.eq('Aprobacion_Doliente', 'Por Aprobar').lte('Creado', twoDaysAgo));
-        const facturasMateo = await getCount('Registro_Facturas', q => q.eq('ProcesadoPor', 'Mateo Benavides Rios').gte('FechaProcesado', today));
-        const facturasDuvan = await getCount('Registro_Facturas', q => q.eq('ProcesadoPor', 'Duvan Esteban Ramirez Rua').gte('FechaProcesado', today));
-        const facturasJesus = await getCount('Registro_Facturas', q => q.eq('ProcesadoPor', 'Jesús Angel Villalobos Rincon').gte('FechaProcesado', today));
+        const facturasMateo = await getCount('Registro_Facturas', q => q.eq('DigitadoPor', 'Mateo Benavides Rios').gte('FechaProcesado', today));
+        const facturasDuvan = await getCount('Registro_Facturas', q => q.eq('DigitadoPor', 'Duvan Esteban Ramirez Rua').gte('FechaProcesado', today));
+        const facturasJesus = await getCount('Registro_Facturas', q => q.eq('DigitadoPor', 'Jesús Angel Villalobos Rincon').gte('FechaProcesado', today));
 
         // 2. Aprobación de Documentos
         const documentosPorAprobar = await getCount('Documento_Soporte', q => q.in('aprobacion_doliente', ['Por Aprobar', 'Pendiente']));
