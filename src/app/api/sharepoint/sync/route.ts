@@ -93,7 +93,14 @@ export async function POST(req: Request) {
                 Gestion_Contabilidad: fields.Gestion_Contabilidad ?? null,
                 Observaciones: fields.Observaciones ?? null,
                 Consecutivo: fields.Consecutivo ?? null,
-                Responsable_de_Autorizar: fields.Responsable_de_Autorizar ?? null,
+                // Resolve the responsable from the Lookup field (Person column in SP).
+                // If no LookupId is present, fall back to the text field value.
+                // If the result is null, we omit it below to avoid overwriting existing data.
+                Responsable_de_Autorizar: (
+                    fields.ResponsabledeAutorizarLookupId ||
+                    fields.ResponsableAprobarLookupId ||
+                    fields.Responsable_de_AutorizarLookupId
+                ) ? null /* resolved below */ : (fields.Responsable_de_Autorizar ?? null),
                 FechaAprobacion: fields.FechaAprobacion ?? null,
                 centro_costos: fields.centro_costos ?? null,
                 Valor_total: fields["Valor_x0020_total"] ?? fields["Valor total"] ?? fields.Valor_total ?? null,
@@ -176,9 +183,16 @@ export async function POST(req: Request) {
             invoiceData.documentos = documentUrl;
 
             // c. Upsert to Supabase
+            // Strip null Responsable_de_Autorizar so we never overwrite an existing
+            // responsible person. SharePoint Lookup fields don't expand as plain text;
+            // a null here means «unknown», not «cleared».
+            const upsertPayload = { ...invoiceData };
+            if (upsertPayload.Responsable_de_Autorizar === null) {
+                delete upsertPayload.Responsable_de_Autorizar;
+            }
             const { error: upsertError } = await supabaseAdmin
                 .from('Registro_Facturas')
-                .upsert(invoiceData, { onConflict: 'ID' });
+                .upsert(upsertPayload, { onConflict: 'ID' });
 
             if (upsertError) {
                 console.error(`[SYNC] Error upserting invoice ${spItemId}:`, upsertError.message);
