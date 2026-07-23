@@ -20,15 +20,18 @@ export async function GET() {
             return count || 0;
         };
 
-        const getPorAprobarResponsables = async (table: string, userCol: string, filters: (query: any) => any) => {
-            let query = supabaseAdmin.from(table).select(userCol);
+        const getPorAprobarResponsables = async (table: string, userCol: string, dateCol: string, filters: (query: any) => any, limitDate: string) => {
+            let query = supabaseAdmin.from(table).select(`${userCol}, ${dateCol}`);
             query = filters(query);
             const { data, error } = await query;
             if (error) throw error;
-            return data.map((r: any) => r[userCol] ? String(r[userCol]).trim() : 'Sin Asignar');
+            return data.map((r: any) => ({
+                name: r[userCol] ? String(r[userCol]).trim() : 'Sin Asignar',
+                isOverdue: r[dateCol] && r[dateCol] <= limitDate
+            }));
         };
         
-        const responsablesAll: string[] = [];
+        const responsablesAll: {name: string, isOverdue: boolean}[] = [];
 
         const getTwoBusinessDaysAgo = (date: Date) => {
             let d = new Date(date);
@@ -51,7 +54,7 @@ export async function GET() {
              .or('Procesado.eq.false,Procesado.is.null')
         );
         const facturasVencidas = await getCount('Registro_Facturas', q => q.eq('Aprobacion_Doliente', 'Por Aprobar').lte('Creado', twoDaysAgo));
-        const res1 = await getPorAprobarResponsables('Registro_Facturas', 'Responsable_de_Autorizar', q => q.eq('Aprobacion_Doliente', 'Por Aprobar'));
+        const res1 = await getPorAprobarResponsables('Registro_Facturas', 'Responsable_de_Autorizar', 'Creado', q => q.eq('Aprobacion_Doliente', 'Por Aprobar'), twoDaysAgo);
         responsablesAll.push(...res1);
 
         // 2. Aprobación de Documentos (Documento_Soporte)
@@ -61,7 +64,7 @@ export async function GET() {
              .ilike('gestion_contabilidad', '%POR PROCESAR%')
         );
         const documentosVencidas = await getCount('Documento_Soporte', q => q.in('aprobacion_doliente', ['Por Aprobar', 'Pendiente']).lte('fecha_creacion', twoDaysAgo));
-        const res2 = await getPorAprobarResponsables('Documento_Soporte', 'responsable_nombre', q => q.in('aprobacion_doliente', ['Por Aprobar', 'Pendiente']));
+        const res2 = await getPorAprobarResponsables('Documento_Soporte', 'responsable_nombre', 'fecha_creacion', q => q.in('aprobacion_doliente', ['Por Aprobar', 'Pendiente']), twoDaysAgo);
         responsablesAll.push(...res2);
 
         // 3. Radicados de Importación (Radicados_de_importacion)
@@ -71,7 +74,7 @@ export async function GET() {
              .ilike('Gestion_Contabilidad', '%POR PROCESAR%')
         );
         const radicadosVencidas = await getCount('Radicados_de_importacion', q => q.in('Aprobacion_Doliente', ['Por Aprobar', 'Pendiente']).lte('Created', twoDaysAgo));
-        const res3 = await getPorAprobarResponsables('Radicados_de_importacion', 'Responsable_de_Autorizar', q => q.in('Aprobacion_Doliente', ['Por Aprobar', 'Pendiente']));
+        const res3 = await getPorAprobarResponsables('Radicados_de_importacion', 'Responsable_de_Autorizar', 'Created', q => q.in('Aprobacion_Doliente', ['Por Aprobar', 'Pendiente']), twoDaysAgo);
         responsablesAll.push(...res3);
 
         // 4. Facturas Viventta (Facturas_Viventta)
@@ -81,17 +84,19 @@ export async function GET() {
              .ilike('Gestion_Contabilidad', '%POR PROCESAR%')
         );
         const viventtaVencidas = await getCount('Facturas_Viventta', q => q.not('Aprobacion_Doliente', 'in', '("Aprobado","Rechazado")').lte('Creado', twoDaysAgo));
-        const res4 = await getPorAprobarResponsables('Facturas_Viventta', 'Responsable_de_Autorizar', q => q.not('Aprobacion_Doliente', 'in', '("Aprobado","Rechazado")'));
+        const res4 = await getPorAprobarResponsables('Facturas_Viventta', 'Responsable_de_Autorizar', 'Creado', q => q.not('Aprobacion_Doliente', 'in', '("Aprobado","Rechazado")'), twoDaysAgo);
         responsablesAll.push(...res4);
 
-        const responsablesCount: Record<string, number> = {};
+        const responsablesMap: Record<string, { total: number, overdue: number }> = {};
         responsablesAll.forEach(r => {
-            const name = r === 'null' || !r ? 'Sin Asignar' : r;
-            responsablesCount[name] = (responsablesCount[name] || 0) + 1;
+            const name = r.name === 'null' || !r.name ? 'Sin Asignar' : r.name;
+            if (!responsablesMap[name]) responsablesMap[name] = { total: 0, overdue: 0 };
+            responsablesMap[name].total += 1;
+            if (r.isOverdue) responsablesMap[name].overdue += 1;
         });
 
-        const porAprobarPorPersona = Object.entries(responsablesCount)
-            .map(([name, count]) => ({ name, count }))
+        const porAprobarPorPersona = Object.entries(responsablesMap)
+            .map(([name, stats]) => ({ name, count: stats.total, overdue: stats.overdue }))
             .sort((a, b) => b.count - a.count);
 
         return NextResponse.json({

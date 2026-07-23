@@ -352,7 +352,19 @@ export default function DashboardPage() {
                                             />
                                             <Tooltip 
                                                 cursor={{ fill: '#F3F4F6' }}
-                                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                                content={({ active, payload, label }) => {
+                                                    if (active && payload && payload.length) {
+                                                        const data = payload[0].payload;
+                                                        return (
+                                                            <div className="bg-white p-3 rounded-xl shadow-lg border border-gray-100">
+                                                                <p className="font-bold text-[#254153] mb-1">{label}</p>
+                                                                <p className="text-sm text-[#F97316]">Documentos Por Aprobar: {data.count}</p>
+                                                                <p className="text-sm text-red-500 font-medium">Por aprobar de + de 2 días: {data.overdue || 0}</p>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return null;
+                                                }}
                                             />
                                             <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
                                             <Bar dataKey="count" name="Documentos Por Aprobar" fill="#F97316" radius={[4, 4, 0, 0]} maxBarSize={50} />
