@@ -107,6 +107,32 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Auto-registrar proveedor si no existe en Viventta
+        if (responsableEmail && responsable) {
+            try {
+                const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
+                const { data: existingProvider, error: lookupError } = await supabase
+                    .from("Proveedores_Viventta")
+                    .select('"Nit"')
+                    .like("Nit", `${baseNit}%`)
+                    .limit(1);
+
+                if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
+                    await supabase.from("Proveedores_Viventta").insert({
+                        "Nit": nit,
+                        "Nombre de socio de negocios": proveedor,
+                        "Responsable": responsable,
+                        "Autorizador": responsable,
+                        "Correo": responsableEmail,
+                        "Creado": new Date().toISOString()
+                    });
+                    console.log(`[Supabase Viventta] Registrado nuevo proveedor con responsable: ${nit} - ${responsable}`);
+                }
+            } catch (providerErr) {
+                console.error("[Supabase Viventta] Error registrando Proveedor_Viventta automáticamente:", providerErr);
+            }
+        }
+
         return NextResponse.json({ 
             success: true, 
             item: newItem

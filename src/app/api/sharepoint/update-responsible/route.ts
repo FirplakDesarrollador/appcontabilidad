@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getGraphClient } from '@/lib/sharepoint';
 import { sendReassignmentNotification } from '@/lib/sendReassignmentNotification';
 import { supabase } from '@/lib/supabaseClient';
+import { createClient } from '@supabase/supabase-js';
 
+const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+);
 
 export async function POST(req: NextRequest) {
     try {
@@ -141,6 +146,38 @@ export async function POST(req: NextRequest) {
                     })
                     .eq('ID', Number(itemId));
                 console.log(`Supabase Registro_Facturas responsible updated for item ${itemId}`);
+                
+                // Auto-registrar proveedor si no existe
+                try {
+                    const { data: itemData } = await supabaseAdmin
+                        .from('Registro_Facturas')
+                        .select('nit, proveedor')
+                        .eq('ID', Number(itemId))
+                        .single();
+
+                    if (itemData && itemData.nit) {
+                        const baseNit = itemData.nit.includes('-') ? itemData.nit.split('-')[0] : itemData.nit;
+                        const { data: existingProvider, error: lookupError } = await supabaseAdmin
+                            .from("Proveedores_con_Responsable")
+                            .select('"Nit"')
+                            .like("Nit", `${baseNit}%`)
+                            .limit(1);
+
+                        if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
+                            await supabaseAdmin.from("Proveedores_con_Responsable").insert({
+                                "Nit": itemData.nit,
+                                "Nombre de socio de negocios": itemData.proveedor || providerName || "Proveedor Desconocido",
+                                "Responsable": userName,
+                                "Autorizador": userName,
+                                "Correo": userEmail,
+                                "Creado": new Date().toISOString()
+                            });
+                            console.log(`[Supabase] Auto-registrado nuevo proveedor con responsable: ${itemData.nit} - ${userName}`);
+                        }
+                    }
+                } catch (providerErr) {
+                    console.error("[Supabase] Error registrando Proveedor_con_Responsable automáticamente:", providerErr);
+                }
             }
         } catch (supaErr) {
             console.error('Failed to update Supabase cache for reassignment:', supaErr);
