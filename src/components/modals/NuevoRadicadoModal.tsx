@@ -105,6 +105,22 @@ export function NuevoRadicadoModal({ isOpen, onClose, onSuccess }: NuevoRadicado
         setLoading(true);
 
         try {
+            // Check if invoice number already exists for this provider
+            const { data: existingInvoice, error: checkError } = await supabase
+                .from("Radicados_de_importacion")
+                .select("id")
+                .eq("Nit", formData.Nit)
+                .eq("Nro_Factura", formData.Nro_Factura)
+                .limit(1);
+
+            if (checkError) throw checkError;
+
+            if (existingInvoice && existingInvoice.length > 0) {
+                alert(`El número de factura ${formData.Nro_Factura} ya se encuentra registrado para el proveedor con NIT ${formData.Nit}.`);
+                setLoading(false);
+                return;
+            }
+
             // Fetch next Consecutivo
             const { data: lastRecord, error: fetchError } = await supabase
                 .from("Radicados_de_importacion")
