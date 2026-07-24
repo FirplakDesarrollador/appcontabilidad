@@ -128,7 +128,7 @@ export default function PublicDocumentApprovalPage() {
         const proveedor = document?.proveedor ? document.proveedor.replace(/[<>:"/\\|?*]/g, '').trim() : "";
         const desiredFileName = proveedor ? `RAD ${proveedor} DOC SOPORTE.pdf` : `documento_${consecutivo}.pdf`;
 
-        const res = await fetch(`/api/externo/documento/${itemId}/download?rawFile=${encodeURIComponent(fileName)}&file=${encodeURIComponent(desiredFileName)}`);
+        const res = await fetch(`/api/externo/documento/${itemId}/download/${encodeURIComponent(desiredFileName)}?rawFile=${encodeURIComponent(fileName)}`);
         
         if (!res.ok) {
             const data = await res.json();
@@ -189,7 +189,7 @@ export default function PublicDocumentApprovalPage() {
             const proveedor = document?.proveedor ? document.proveedor.replace(/[<>:"/\\|?*]/g, '').trim() : "";
             const desiredFileName = proveedor ? `RAD ${proveedor} DOC SOPORTE.pdf` : `documento_${consecutivo}.pdf`;
 
-            const apiUrl = `/api/externo/documento/${itemId}/download?rawFile=${encodeURIComponent(fileName)}&file=${encodeURIComponent(desiredFileName)}`;
+            const apiUrl = `/api/externo/documento/${itemId}/download/${encodeURIComponent(desiredFileName)}?rawFile=${encodeURIComponent(fileName)}`;
             
             setPreviewUrl(apiUrl);
         } catch (err: any) {

@@ -193,7 +193,7 @@ export default function PublicApprovalPage() {
         const nroFactura = invoice?.nroFactura || "";
         const desiredFileName = `RAD ${consecutivo} ${proveedor} ${nroFactura}`.replace(/\s+/g, ' ').trim() + '.pdf';
         
-        const res = await fetch(`/api/externo/factura-viventta/${itemId}/download?rawFile=${encodeURIComponent(fileName)}&file=${encodeURIComponent(desiredFileName)}`);
+        const res = await fetch(`/api/externo/factura-viventta/${itemId}/download/${encodeURIComponent(desiredFileName)}?rawFile=${encodeURIComponent(fileName)}`);
         
         if (!res.ok) {
             const data = await res.json();
@@ -256,7 +256,7 @@ export default function PublicApprovalPage() {
             const nroFactura = invoice?.nroFactura || "";
             const desiredFileName = `RAD ${consecutivo} ${proveedor} ${nroFactura}`.replace(/\s+/g, ' ').trim() + '.pdf';
             
-            const apiUrl = `/api/externo/factura-viventta/${itemId}/download?rawFile=${encodeURIComponent(fileName)}&file=${encodeURIComponent(desiredFileName)}`;
+            const apiUrl = `/api/externo/factura-viventta/${itemId}/download/${encodeURIComponent(desiredFileName)}?rawFile=${encodeURIComponent(fileName)}`;
             
             const res = await fetch(apiUrl);
             if (!res.ok) {
