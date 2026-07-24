@@ -124,7 +124,11 @@ export default function PublicDocumentApprovalPage() {
 
     const fetchPdfBlob = async () => {
         const fileName = document?.documentInfo?.fileName || 'Documento';
-        const res = await fetch(`/api/externo/documento/${itemId}/download?file=${encodeURIComponent(fileName)}`);
+        const consecutivo = document?.consecutivo || document?.id || "";
+        const proveedor = document?.proveedor ? document.proveedor.replace(/[<>:"/\\|?*]/g, '').trim() : "";
+        const desiredFileName = proveedor ? `RAD ${proveedor} DOC SOPORTE.pdf` : `documento_${consecutivo}.pdf`;
+
+        const res = await fetch(`/api/externo/documento/${itemId}/download?rawFile=${encodeURIComponent(fileName)}&file=${encodeURIComponent(desiredFileName)}`);
         
         if (!res.ok) {
             const data = await res.json();
@@ -180,9 +184,14 @@ export default function PublicDocumentApprovalPage() {
                 setPreviewUrl(document.documentInfo.pdfUrl);
                 return;
             }
-            const blob = await fetchPdfBlob();
-            const url = window.URL.createObjectURL(blob);
-            setPreviewUrl(url);
+            const fileName = document?.documentInfo?.fileName || 'Documento';
+            const consecutivo = document?.consecutivo || document?.id || "";
+            const proveedor = document?.proveedor ? document.proveedor.replace(/[<>:"/\\|?*]/g, '').trim() : "";
+            const desiredFileName = proveedor ? `RAD ${proveedor} DOC SOPORTE.pdf` : `documento_${consecutivo}.pdf`;
+
+            const apiUrl = `/api/externo/documento/${itemId}/download?rawFile=${encodeURIComponent(fileName)}&file=${encodeURIComponent(desiredFileName)}`;
+            
+            setPreviewUrl(apiUrl);
         } catch (err: any) {
             setPreviewError(err.message || "No se pudo cargar la vista previa");
         } finally {

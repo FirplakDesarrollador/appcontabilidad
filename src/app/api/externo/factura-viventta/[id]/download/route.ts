@@ -49,7 +49,9 @@ export async function GET(
 
         const fileBuffer = await pdfResponse.arrayBuffer();
 
+        const { searchParams } = new URL(req.url);
         const encodedFileName = encodeURIComponent(finalFileName);
+
         return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': 'application/pdf',

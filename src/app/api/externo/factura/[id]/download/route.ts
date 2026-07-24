@@ -10,7 +10,7 @@ export async function GET(
     try {
         const { id: itemId } = await params;
         const { searchParams } = new URL(req.url);
-        const requestFileName = searchParams.get('file');
+        const requestFileName = searchParams.get('rawFile') || searchParams.get('file');
 
         if (!itemId) {
             return NextResponse.json({ error: 'Missing itemId' }, { status: 400 });

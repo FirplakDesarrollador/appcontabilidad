@@ -187,7 +187,12 @@ export default function PublicApprovalPage() {
         }
 
         const fileName = invoice?.documentInfo?.fileName || 'Factura';
-        const res = await fetch(`/api/externo/factura/${itemId}/download?file=${encodeURIComponent(fileName)}`);
+        const consecutivo = invoice?.consecutivo || invoice?.id || "";
+        const proveedor = invoice?.proveedor || "";
+        const nroFactura = invoice?.nroFactura || "";
+        const desiredFileName = `RAD ${consecutivo} ${proveedor} ${nroFactura}`.replace(/\s+/g, ' ').trim() + '.pdf';
+        
+        const res = await fetch(`/api/externo/factura/${itemId}/download?rawFile=${encodeURIComponent(fileName)}&file=${encodeURIComponent(desiredFileName)}`);
         
         if (!res.ok) {
             const data = await res.json();
@@ -245,7 +250,12 @@ export default function PublicApprovalPage() {
             }
 
             const fileName = invoice?.documentInfo?.fileName || 'Factura';
-            const apiUrl = `/api/externo/factura/${itemId}/download?file=${encodeURIComponent(fileName)}`;
+            const consecutivo = invoice?.consecutivo || invoice?.id || "";
+            const proveedor = invoice?.proveedor || "";
+            const nroFactura = invoice?.nroFactura || "";
+            const desiredFileName = `RAD ${consecutivo} ${proveedor} ${nroFactura}`.replace(/\s+/g, ' ').trim() + '.pdf';
+            
+            const apiUrl = `/api/externo/factura/${itemId}/download?rawFile=${encodeURIComponent(fileName)}&file=${encodeURIComponent(desiredFileName)}`;
             
             const res = await fetch(apiUrl);
             if (!res.ok) {
