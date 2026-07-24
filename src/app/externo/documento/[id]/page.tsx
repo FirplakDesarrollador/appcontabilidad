@@ -130,7 +130,17 @@ export default function PublicDocumentApprovalPage() {
             const data = await res.json();
             throw new Error(data.error || "No se ha encontrado documento soporte en PDF");
         }
-        return await res.blob();
+
+        const contentDisposition = res.headers.get('Content-Disposition');
+        let serverFileName = fileName;
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename\*?=['"]?(?:UTF-\d['"]*)?([^;\r\n"']*)['"]?/i);
+            if (filenameMatch && filenameMatch[1]) {
+                serverFileName = decodeURIComponent(filenameMatch[1]);
+            }
+        }
+        
+        return { blob: await res.blob(), filename: serverFileName };
     };
 
     const handleDownload = async () => {
@@ -146,12 +156,11 @@ export default function PublicDocumentApprovalPage() {
                 window.document.body.removeChild(a);
                 return;
             }
-            const blob = await fetchPdfBlob();
-            const fileName = document?.documentInfo?.fileName || 'Documento';
+            const { blob, filename } = await fetchPdfBlob();
             const url = window.URL.createObjectURL(blob);
             const a = window.document.createElement('a');
             a.href = url;
-            a.download = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+            a.download = filename.toLowerCase().endsWith('.pdf') ? filename : `${filename}.pdf`;
             window.document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);

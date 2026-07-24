@@ -52,11 +52,12 @@ export async function GET(
         }
 
         const isDownload = searchParams.get('download') === 'true';
+        const encodedFileName = encodeURIComponent(finalFileName);
 
         return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `${isDownload ? 'attachment' : 'inline'}; filename="${finalFileName}"`,
+                'Content-Disposition': `${isDownload ? 'attachment' : 'inline'}; filename="${finalFileName.replace(/["\\]/g, '')}"; filename*=UTF-8''${encodedFileName}`,
                 'Cache-Control': 'no-store',
             },
         });
