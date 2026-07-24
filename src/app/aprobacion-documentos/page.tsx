@@ -1114,8 +1114,8 @@ export default function SupportDocumentsPage() {
                 {selectedDoc && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedDoc(null)} className="absolute inset-0 bg-[#254153]/40 backdrop-blur-md" />
-                        <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="bg-white rounded-[32px] shadow-2xl w-full max-w-4xl relative overflow-hidden border border-white/20">
-                            <div className="p-8">
+                        <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="bg-white rounded-[32px] shadow-2xl w-full max-w-4xl relative overflow-hidden border border-white/20 flex flex-col max-h-[90vh]">
+                            <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
                                 <div className="flex justify-between items-start mb-8">
                                     <div className="flex items-center gap-4">
                                         <div className="h-14 w-14 bg-blue-50 rounded-2xl flex items-center justify-center">
