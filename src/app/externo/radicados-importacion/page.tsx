@@ -17,6 +17,8 @@ export default function ExternoRadicadoImportacionPage() {
     const [isSearching, setIsSearching] = useState(false);
     const [showProviderDropdown, setShowProviderDropdown] = useState(false);
     const [file, setFile] = useState<File | null>(null);
+    const [invoiceError, setInvoiceError] = useState<string | null>(null);
+    const [isValidatingInvoice, setIsValidatingInvoice] = useState(false);
 
     const [formData, setFormData] = useState({
         Nit: "",
@@ -52,6 +54,43 @@ export default function ExternoRadicadoImportacionPage() {
         return () => clearTimeout(timeoutId);
     }, [searchTerm]);
 
+    useEffect(() => {
+        const validateInvoice = async () => {
+            if (!formData.Nro_Factura || !formData.Nit) {
+                setInvoiceError(null);
+                return;
+            }
+            
+            setIsValidatingInvoice(true);
+            try {
+                const { data, error } = await supabase
+                    .from("Radicados_de_importacion")
+                    .select("id")
+                    .eq("Nit", formData.Nit)
+                    .eq("Nro_Factura", formData.Nro_Factura)
+                    .limit(1);
+                    
+                if (error) throw error;
+                
+                if (data && data.length > 0) {
+                    setInvoiceError("Este número de factura ya está registrado para el proveedor.");
+                } else {
+                    setInvoiceError(null);
+                }
+            } catch (err) {
+                console.error("Error validating invoice:", err);
+            } finally {
+                setIsValidatingInvoice(false);
+            }
+        };
+
+        const timeoutId = setTimeout(() => {
+            validateInvoice();
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+    }, [formData.Nro_Factura, formData.Nit]);
+
     const selectProvider = (provider: Provider) => {
         setFormData((prev) => ({
             ...prev,
@@ -69,7 +108,8 @@ export default function ExternoRadicadoImportacionPage() {
         formData.Nro_Factura.trim() !== "" &&
         formData.Monto.toString().trim() !== "" &&
         formData.Responsable_de_Autorizar.trim() !== "" &&
-        file !== null;
+        file !== null &&
+        invoiceError === null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -82,6 +122,22 @@ export default function ExternoRadicadoImportacionPage() {
         setLoading(true);
 
         try {
+            // Check if invoice number already exists for this provider
+            const { data: existingInvoice, error: checkError } = await supabase
+                .from("Radicados_de_importacion")
+                .select("id")
+                .eq("Nit", formData.Nit)
+                .eq("Nro_Factura", formData.Nro_Factura)
+                .limit(1);
+
+            if (checkError) throw checkError;
+
+            if (existingInvoice && existingInvoice.length > 0) {
+                alert(`El número de factura ${formData.Nro_Factura} ya se encuentra registrado para el proveedor con NIT ${formData.Nit}.`);
+                setLoading(false);
+                return;
+            }
+
             const { data: lastRecord, error: fetchError } = await supabase
                 .from("Radicados_de_importacion")
                 .select("Consecutivo")
@@ -239,9 +295,15 @@ export default function ExternoRadicadoImportacionPage() {
                                 required
                                 value={formData.Nro_Factura}
                                 onChange={(e) => setFormData({ ...formData, Nro_Factura: e.target.value })}
-                                className="w-full h-11 px-4 rounded-xl border border-gray-200 focus:border-[#254153] focus:ring-1 focus:ring-[#254153] outline-none transition-all text-sm"
+                                className={`w-full h-11 px-4 rounded-xl border outline-none transition-all text-sm ${
+                                    invoiceError 
+                                    ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500' 
+                                    : 'border-gray-200 focus:border-[#254153] focus:ring-1 focus:ring-[#254153]'
+                                }`}
                                 placeholder="Número de factura"
                             />
+                            {isValidatingInvoice && <p className="text-xs text-gray-500 mt-1">Validando factura...</p>}
+                            {invoiceError && <p className="text-xs text-red-500 mt-1">{invoiceError}</p>}
                         </div>
                         <div className="space-y-2">
                             <label className="text-sm font-semibold text-gray-700">Valor Total</label>
