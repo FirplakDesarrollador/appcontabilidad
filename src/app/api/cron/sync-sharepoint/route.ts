@@ -98,8 +98,8 @@ export async function GET(req: Request) {
 
         console.log('[CRON-SYNC] Initiating bidirectional delta sync...');
         
-        // 1. Determine last sync interval (5.5 minutes ago to ensure overlap, 365 days if manual)
-        const minutesBack = isManual ? 365 * 24 * 60 : 5.5;
+        // 1. Determine last sync interval (24 hours ago to ensure safety net, 365 days if manual)
+        const minutesBack = isManual ? 365 * 24 * 60 : 24 * 60;
         const lastSyncTime = new Date(Date.now() - minutesBack * 60 * 1000);
         console.log(`[CRON-SYNC] Syncing changes since: ${lastSyncTime.toISOString()} (manual: ${isManual})`);
 
