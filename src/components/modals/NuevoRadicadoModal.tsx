@@ -24,6 +24,8 @@ export function NuevoRadicadoModal({ isOpen, onClose, onSuccess }: NuevoRadicado
     const [isSearching, setIsSearching] = useState(false);
     const [showProviderDropdown, setShowProviderDropdown] = useState(false);
     const [file, setFile] = useState<File | null>(null);
+    const [invoiceError, setInvoiceError] = useState<string | null>(null);
+    const [isValidatingInvoice, setIsValidatingInvoice] = useState(false);
 
     const [formData, setFormData] = useState({
         Nit: "",
@@ -46,6 +48,7 @@ export function NuevoRadicadoModal({ isOpen, onClose, onSuccess }: NuevoRadicado
             });
             setSearchTerm("");
             setFile(null);
+            setInvoiceError(null);
         }
     }, [isOpen]);
 
@@ -75,6 +78,43 @@ export function NuevoRadicadoModal({ isOpen, onClose, onSuccess }: NuevoRadicado
         return () => clearTimeout(timeoutId);
     }, [searchTerm]);
 
+    useEffect(() => {
+        const validateInvoice = async () => {
+            if (!formData.Nro_Factura || !formData.Nit) {
+                setInvoiceError(null);
+                return;
+            }
+            
+            setIsValidatingInvoice(true);
+            try {
+                const { data, error } = await supabase
+                    .from("Radicados_de_importacion")
+                    .select("id")
+                    .eq("Nit", formData.Nit)
+                    .eq("Nro_Factura", formData.Nro_Factura)
+                    .limit(1);
+                    
+                if (error) throw error;
+                
+                if (data && data.length > 0) {
+                    setInvoiceError("Este número de factura ya está registrado para el proveedor.");
+                } else {
+                    setInvoiceError(null);
+                }
+            } catch (err) {
+                console.error("Error validating invoice:", err);
+            } finally {
+                setIsValidatingInvoice(false);
+            }
+        };
+
+        const timeoutId = setTimeout(() => {
+            validateInvoice();
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+    }, [formData.Nro_Factura, formData.Nit]);
+
     const selectProvider = (provider: Provider) => {
         setFormData((prev) => ({
             ...prev,
@@ -92,7 +132,8 @@ export function NuevoRadicadoModal({ isOpen, onClose, onSuccess }: NuevoRadicado
         formData.Nro_Factura.trim() !== "" &&
         formData.Monto.toString().trim() !== "" &&
         formData.Responsable_de_Autorizar.trim() !== "" &&
-        file !== null;
+        file !== null &&
+        invoiceError === null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -302,9 +343,15 @@ export function NuevoRadicadoModal({ isOpen, onClose, onSuccess }: NuevoRadicado
                                         required
                                         value={formData.Nro_Factura}
                                         onChange={(e) => setFormData({ ...formData, Nro_Factura: e.target.value })}
-                                        className="w-full h-11 px-4 rounded-xl border border-gray-200 focus:border-[#254153] focus:ring-1 focus:ring-[#254153] outline-none transition-all text-sm"
+                                        className={`w-full h-11 px-4 rounded-xl border outline-none transition-all text-sm ${
+                                            invoiceError 
+                                            ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-500' 
+                                            : 'border-gray-200 focus:border-[#254153] focus:ring-1 focus:ring-[#254153]'
+                                        }`}
                                         placeholder="Número de factura"
                                     />
+                                    {isValidatingInvoice && <p className="text-xs text-gray-500 mt-1">Validando factura...</p>}
+                                    {invoiceError && <p className="text-xs text-red-500 mt-1">{invoiceError}</p>}
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-sm font-semibold text-gray-700">Valor Total</label>
