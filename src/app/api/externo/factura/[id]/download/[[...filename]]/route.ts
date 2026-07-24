@@ -84,11 +84,13 @@ export async function GET(
                 : `${finalFileName}.pdf`;
         }
 
+        const isDownload = req.nextUrl.searchParams.get('download') === 'true';
+        const dispositionType = isDownload ? 'attachment' : 'inline';
         const encodedFileName = encodeURIComponent(finalFileName);
         return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename="${finalFileName.replace(/["\\]/g, '')}"; filename*=UTF-8''${encodedFileName}`,
+                'Content-Disposition': `${dispositionType}; filename="${finalFileName.replace(/["\\]/g, '')}"; filename*=UTF-8''${encodedFileName}`,
                 'Cache-Control': 'public, max-age=300',
             },
         });

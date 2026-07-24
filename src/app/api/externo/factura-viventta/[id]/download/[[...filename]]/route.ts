@@ -50,12 +50,14 @@ export async function GET(
         const fileBuffer = await pdfResponse.arrayBuffer();
 
         const { searchParams } = new URL(req.url);
+        const isDownload = searchParams.get('download') === 'true';
+        const dispositionType = isDownload ? 'attachment' : 'inline';
         const encodedFileName = encodeURIComponent(finalFileName);
 
         return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename="${finalFileName.replace(/["\\]/g, '')}"; filename*=UTF-8''${encodedFileName}`,
+                'Content-Disposition': `${dispositionType}; filename="${finalFileName.replace(/["\\]/g, '')}"; filename*=UTF-8''${encodedFileName}`,
                 'Cache-Control': 'public, max-age=300',
             },
         });
