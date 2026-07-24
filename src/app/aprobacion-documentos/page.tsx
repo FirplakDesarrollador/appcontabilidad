@@ -1244,7 +1244,7 @@ export default function SupportDocumentsPage() {
                                                         const anexos = selectedDoc.adjunto ? JSON.parse(selectedDoc.adjunto) : null;
                                                         if (Array.isArray(anexos)) {
                                                             return anexos.map((anexo, idx) => (
-                                                                <div key={idx} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(anexo.url, '_blank')}>
+                                                                <div key={idx} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(`/api/externo/documento/${selectedDoc.id}/download?download=true&anexoIndex=${idx}`, '_blank')}>
                                                                     <div className="flex items-center gap-3">
                                                                         <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
                                                                             <FileText className="h-5 w-5 text-emerald-500" />
@@ -1260,7 +1260,7 @@ export default function SupportDocumentsPage() {
                                                         } else if (selectedDoc.adjunto && selectedDoc.adjunto !== selectedDoc.pdf_url) {
                                                             // Legacy format where adjunto is just a single string URL and different from pdf_url
                                                             return (
-                                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(selectedDoc.adjunto, '_blank')}>
+                                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(`/api/externo/documento/${selectedDoc.id}/download?download=true&anexoIndex=0`, '_blank')}>
                                                                     <div className="flex items-center gap-3">
                                                                         <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
                                                                             <FileText className="h-5 w-5 text-emerald-500" />
@@ -1278,7 +1278,7 @@ export default function SupportDocumentsPage() {
                                                         // Ignore parsing errors, meaning it's a raw URL. If it's different from pdf_url, show it.
                                                         if (selectedDoc.adjunto && selectedDoc.adjunto !== selectedDoc.pdf_url && selectedDoc.adjunto.startsWith('http')) {
                                                             return (
-                                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(selectedDoc.adjunto, '_blank')}>
+                                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(`/api/externo/documento/${selectedDoc.id}/download?download=true&anexoIndex=0`, '_blank')}>
                                                                     <div className="flex items-center gap-3">
                                                                         <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
                                                                             <FileText className="h-5 w-5 text-emerald-500" />
