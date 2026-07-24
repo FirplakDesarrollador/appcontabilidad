@@ -589,7 +589,10 @@ export default function ViventtaInvoicesPage() {
                 updateData.Gestion_Contabilidad = action;
                 if (action === 'Procesado') {
                     updateData.FechaProcesado = new Date().toISOString();
-                    if (procesadoPor) updateData.ProcesadoPor = procesadoPor;
+                    if (procesadoPor) {
+                        updateData.ProcesadoPor = procesadoPor;
+                        updateData.DigitadoPor = procesadoPor;
+                    }
                 }
             }
 

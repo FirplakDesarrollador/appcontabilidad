@@ -503,7 +503,7 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                                 initial={{ opacity: 0, y: 5 }}
                                                 animate={{ opacity: 1, y: 0 }}
                                                 exit={{ opacity: 0, y: 5 }}
-                                                className="absolute z-[110] w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden max-h-40 overflow-y-auto"
+                                                className="absolute bottom-full mb-1 z-[110] w-full bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden max-h-40 overflow-y-auto"
                                             >
                                                 {userResults.map((user) => (
                                                     <button

@@ -19,7 +19,10 @@ export async function POST(req: NextRequest) {
                 updatePayload.gestion_contabilidad = status;
                 if (status === 'Procesado') {
                     updatePayload.FechaProcesado = new Date().toISOString();
-                    if (procesadoPor) updatePayload.ProcesadoPor = procesadoPor;
+                    if (procesadoPor) {
+                        updatePayload.ProcesadoPor = procesadoPor;
+                        updatePayload.DigitadoPor = procesadoPor;
+                    }
                 }
             } else if (field === 'Observaciones') {
                 updatePayload.observaciones = status;
@@ -84,6 +87,7 @@ export async function POST(req: NextRequest) {
                     supaUpdate.Procesado = 'true';
                     if (procesadoPor) {
                         supaUpdate.DigitadoPor = procesadoPor;
+                        supaUpdate.ProcesadoPor = procesadoPor;
                     }
                 }
             } else if (field === 'Observaciones') {

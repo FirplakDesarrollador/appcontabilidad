@@ -88,7 +88,7 @@ export async function GET(
         return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `inline; filename="${finalFileName.replace(/["\\]/g, '')}"; filename*=UTF-8''${encodedFileName}`,
+                'Content-Disposition': `attachment; filename="${finalFileName.replace(/["\\]/g, '')}"; filename*=UTF-8''${encodedFileName}`,
                 'Cache-Control': 'public, max-age=300',
             },
         });

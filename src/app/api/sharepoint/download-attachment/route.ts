@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
         return new NextResponse(buffer, {
             headers: {
                 'Content-Type': contentType,
-                'Content-Disposition': `inline; filename="${targetFileName}"`,
+                'Content-Disposition': `attachment; filename="${targetFileName}"`,
             },
         });
 

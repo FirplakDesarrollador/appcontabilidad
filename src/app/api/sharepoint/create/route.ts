@@ -172,6 +172,34 @@ export async function POST(req: NextRequest) {
             if (supabaseError) {
                 console.error('Error al sincronizar con Supabase inmediatamente:', supabaseError.message);
             } else {
+                // Auto-create Proveedor en Proveedores_con_Responsable si no existe
+                try {
+                    const { data: provData, error: provCheckError } = await supabaseAdmin
+                        .from('Proveedores_con_Responsable')
+                        .select('Nit')
+                        .eq('Nit', nit)
+                        .maybeSingle();
+                        
+                    if (!provCheckError && !provData) {
+                        const { error: provInsertError } = await supabaseAdmin
+                            .from('Proveedores_con_Responsable')
+                            .insert({
+                                "Nit": nit,
+                                "Nombre de socio de negocios": proveedor,
+                                "Responsable": responsableName,
+                                "Autorizador": responsableName, // By default the authorizer is the responsible
+                                "Creado": new Date().toISOString()
+                            });
+                        if (provInsertError) {
+                            console.error('Error auto-creando Proveedor_con_Responsable:', provInsertError.message);
+                        } else {
+                            console.log(`Proveedor auto-creado en Proveedores_con_Responsable: ${proveedor} (${nit})`);
+                        }
+                    }
+                } catch (provEx) {
+                    console.error('Exception auto-creando Proveedor_con_Responsable:', provEx);
+                }
+
                 // --- Auto-approval detection ---
                 try {
                     const { data: checkData } = await supabaseAdmin

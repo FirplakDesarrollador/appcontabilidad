@@ -9,30 +9,29 @@ export async function GET(
 ) {
     try {
         const { id: itemId } = await params;
-        const { searchParams } = new URL(req.url);
-        const requestFileName = searchParams.get('file');
 
         if (!itemId) {
             return NextResponse.json({ error: 'Missing itemId' }, { status: 400 });
         }
 
-        const { data: dbDoc, error } = await supabase
-            .from('Documento_Soporte')
-            .select('pdf_url, adjunto, consecutivo, proveedor')
-            .eq('id', Number(itemId))
+        // 1. Fetch radicado from Supabase
+        const { data: radicado, error } = await supabase
+            .from('Radicados_de_importacion')
+            .select('adjuntos_url, Consecutivo, Proveedor, Nro_Factura')
+            .eq('id', itemId)
             .maybeSingle();
 
-        if (error || !dbDoc) {
-            return NextResponse.json({ error: 'Documento no encontrado' }, { status: 404 });
+        if (error || !radicado) {
+            return NextResponse.json({ error: 'Radicado no encontrado' }, { status: 404 });
         }
 
-        const pdfUrl = dbDoc.pdf_url || dbDoc.adjunto;
+        const pdfUrl = radicado.adjuntos_url;
 
         if (!pdfUrl) {
-            return NextResponse.json({ error: 'No se ha encontrado documento en PDF' }, { status: 404 });
+            return NextResponse.json({ error: 'No se ha encontrado documento adjunto' }, { status: 404 });
         }
 
-        // Fetch the file from the public URL to return it as an attachment blob
+        // 2. Fetch the file from the public URL
         const fileResponse = await fetch(pdfUrl);
         if (!fileResponse.ok) {
             throw new Error(`Failed to fetch file from storage: ${fileResponse.statusText}`);
@@ -40,20 +39,19 @@ export async function GET(
 
         const fileBuffer = await fileResponse.arrayBuffer();
 
-        let finalFileName = requestFileName || `documento_${dbDoc.consecutivo || itemId}.pdf`;
+        // 3. Build filename: RAD (numero de consecutivo) (nombre del proveedor) (numero de factura)
+        const consecutivo = radicado.Consecutivo || "";
+        const proveedor = radicado.Proveedor || "";
+        const nroFactura = radicado.Nro_Factura || "";
         
-        if (dbDoc.proveedor) {
-            const cleanProvider = dbDoc.proveedor.replace(/[<>:"/\\|?*]/g, '').trim();
-            finalFileName = `RAD ${cleanProvider} DOC SOPORTE.pdf`;
-        } else if (!finalFileName.toLowerCase().endsWith('.pdf')) {
-            finalFileName = finalFileName.includes('.') 
-                ? finalFileName.replace(/\.[^/.]+$/, ".pdf")
-                : `${finalFileName}.pdf`;
+        let finalFileName = `RAD ${consecutivo} ${proveedor} ${nroFactura}`.replace(/\s+/g, ' ').trim();
+        if (!finalFileName.toLowerCase().endsWith('.pdf')) {
+            finalFileName = `${finalFileName}.pdf`;
         }
 
-        const isDownload = searchParams.get('download') === 'true';
         const encodedFileName = encodeURIComponent(finalFileName);
 
+        // 4. Return as attachment
         return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': 'application/pdf',
@@ -63,7 +61,7 @@ export async function GET(
         });
 
     } catch (error: any) {
-        console.error('Error in document download:', error);
+        console.error('Error in radicado download:', error);
         return NextResponse.json({ error: error.message || 'Error al procesar la descarga' }, { status: 500 });
     }
 }

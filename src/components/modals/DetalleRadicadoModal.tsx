@@ -231,13 +231,13 @@ export function DetalleRadicadoModal({ isOpen, onClose, data, onSuccess }: Detal
                                         Documento Adjunto
                                     </h3>
                                     <a 
-                                        href={data.adjuntos_url} 
+                                        href={`/api/externo/radicado/${data.id}/download`} 
                                         target="_blank" 
                                         rel="noopener noreferrer"
                                         className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-blue-200 text-blue-600 rounded-xl text-sm font-bold shadow-sm hover:bg-blue-50 hover:shadow transition-all w-full justify-center"
                                     >
                                         <Search className="h-4 w-4" />
-                                        Ver Archivo Original
+                                        Ver / Descargar Archivo
                                     </a>
                                 </div>
                             )}
