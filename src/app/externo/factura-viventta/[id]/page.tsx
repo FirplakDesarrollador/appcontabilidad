@@ -179,12 +179,11 @@ export default function PublicApprovalPage() {
             try {
                 const res = await fetch(directUrl);
                 if (res.ok) {
-                    return await res.blob();
+                    return { blob: await res.blob(), filename: invoice?.documentInfo?.fileName || 'Factura.pdf' };
                 }
                 throw new Error("No se pudo descargar el archivo directo");
             } catch (err: any) {
                 console.warn('Error fetching direct url (likely CORS), falling back to API proxy:', err);
-                // Fall through to API proxy
             }
         }
 
@@ -195,19 +194,28 @@ export default function PublicApprovalPage() {
             const data = await res.json();
             throw new Error(data.error || "No se ha encontrado factura en PDF");
         }
-        return await res.blob();
+
+        const contentDisposition = res.headers.get('Content-Disposition');
+        let serverFileName = fileName;
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename\*?=['"]?(?:UTF-\d['"]*)?([^;\r\n"']*)['"]?/i);
+            if (filenameMatch && filenameMatch[1]) {
+                serverFileName = decodeURIComponent(filenameMatch[1]);
+            }
+        }
+        
+        return { blob: await res.blob(), filename: serverFileName };
     };
 
     const handleDownload = async () => {
         try {
             setDownloadLoading(true);
-            const blob = await fetchPdfBlob();
-            const fileName = invoice?.documentInfo?.fileName || 'Factura';
+            const { blob, filename } = await fetchPdfBlob();
             
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            let downloadName = fileName;
+            let downloadName = filename;
             if (!downloadName.toLowerCase().endsWith('.pdf')) {
                 downloadName = downloadName.includes('.') 
                     ? downloadName.replace(/\.[^/.]+$/, ".pdf")

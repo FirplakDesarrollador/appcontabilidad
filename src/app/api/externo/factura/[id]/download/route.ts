@@ -84,10 +84,11 @@ export async function GET(
                 : `${finalFileName}.pdf`;
         }
 
+        const encodedFileName = encodeURIComponent(finalFileName);
         return new NextResponse(fileBuffer, {
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `inline; filename="${finalFileName}"`,
+                'Content-Disposition': `inline; filename="${finalFileName.replace(/["\\]/g, '')}"; filename*=UTF-8''${encodedFileName}`,
                 'Cache-Control': 'public, max-age=300',
             },
         });
