@@ -82,7 +82,9 @@ export async function POST(req: NextRequest) {
                 if (status === 'Procesado') {
                     supaUpdate.FechaProcesado = new Date().toISOString();
                     supaUpdate.Procesado = 'true';
-                    if (procesadoPor) supaUpdate.ProcesadoPor = procesadoPor;
+                    if (procesadoPor) {
+                        supaUpdate.DigitadoPor = procesadoPor;
+                    }
                 }
             } else if (field === 'Observaciones') {
                 supaUpdate.Observaciones = status;

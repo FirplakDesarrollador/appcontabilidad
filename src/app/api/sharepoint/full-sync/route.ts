@@ -52,7 +52,7 @@ export async function POST(req: Request) {
                     CUFE: item.CUFE ?? null,
                     InformeRecepcion: item.InformeRecepcion ?? null,
                     FechaProcesado: item.FechaProcesado ?? null,
-                    DigitadoPor: item.DigitadoPor ?? null,
+                    DigitadoPor: (item.DigitadoPor && item.DigitadoPor !== 'SharePoint App') ? item.DigitadoPor : undefined,
                     Datos_adjuntos: hasAttachmentsFlag ? 1 : 0,
                     tablaCostos: item.tablaCostos ?? null,
                     Procesado: item.Procesado != null ? String(item.Procesado) : null,

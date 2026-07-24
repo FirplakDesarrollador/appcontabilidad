@@ -45,7 +45,7 @@ function mapSpToSupabase(fields: any, spItemId: any, userMap?: Map<string, strin
         CUFE: fields.CUFE ?? null,
         InformeRecepcion: fields.InformeRecepcion ?? null,
         FechaProcesado: fields.FechaProcesado ?? null,
-        DigitadoPor: fields.DigitadoPor ?? null,
+        DigitadoPor: (fields.DigitadoPor && fields.DigitadoPor !== 'SharePoint App') ? fields.DigitadoPor : undefined,
         Datos_adjuntos: hasAttachmentsFlag ? 1 : 0,
         tablaCostos: fields.tablaCostos ?? null,
         Procesado: fields.Procesado != null ? String(fields.Procesado) : null,
