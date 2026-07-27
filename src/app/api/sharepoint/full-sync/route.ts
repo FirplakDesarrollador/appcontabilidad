@@ -79,11 +79,46 @@ export async function POST(req: Request) {
         }
 
         console.log(`[FULL-SYNC] Full sync finished: ${inserted} items synced successfully, ${errors} items failed.`);
+
+        // 5. Delete orphaned items
+        console.log('[FULL-SYNC] Checking for orphaned items to delete...');
+        let deletedCount = 0;
+        try {
+            const spIds = new Set(spItems.map((item: any) => parseInt(item.id, 10)));
+            const { data: supaIdsData, error: supaIdsError } = await supabaseAdmin
+                .from('Registro_Facturas')
+                .select('ID');
+                
+            if (!supaIdsError && supaIdsData) {
+                const supaIds = supaIdsData.map((r: any) => r.ID);
+                const toDelete = supaIds.filter((id: number) => !spIds.has(id));
+                
+                if (toDelete.length > 0) {
+                    console.log(`[FULL-SYNC] Found ${toDelete.length} orphaned items. Deleting...`);
+                    const deleteBatchSize = 200;
+                    for (let i = 0; i < toDelete.length; i += deleteBatchSize) {
+                        const chunk = toDelete.slice(i, i + deleteBatchSize);
+                        await supabaseAdmin
+                            .from('Registro_Facturas')
+                            .delete()
+                            .in('ID', chunk);
+                        deletedCount += chunk.length;
+                    }
+                    console.log(`[FULL-SYNC] Deleted ${deletedCount} orphaned items.`);
+                } else {
+                    console.log('[FULL-SYNC] No orphaned items found.');
+                }
+            }
+        } catch (delErr) {
+            console.error('[FULL-SYNC] Error deleting orphaned items:', delErr);
+        }
+
         return NextResponse.json({
             success: true,
             total: spItems.length,
             synced: inserted,
-            errors
+            errors,
+            deleted: deletedCount
         });
 
     } catch (error: any) {
