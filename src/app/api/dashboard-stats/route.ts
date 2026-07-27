@@ -51,7 +51,6 @@ export async function GET() {
         const facturasPorProcesar = await getCount('Registro_Facturas', q => 
             q.eq('Aprobacion_Doliente', 'Aprobado')
              .ilike('Gestion_Contabilidad', '%POR PROCESAR%')
-             .or('Procesado.eq.false,Procesado.is.null')
         );
         const facturasVencidas = await getCount('Registro_Facturas', q => q.eq('Aprobacion_Doliente', 'Por Aprobar').lte('Creado', twoDaysAgo));
         const res1 = await getPorAprobarResponsables('Registro_Facturas', 'Responsable_de_Autorizar', 'Creado', q => q.eq('Aprobacion_Doliente', 'Por Aprobar'), twoDaysAgo);
