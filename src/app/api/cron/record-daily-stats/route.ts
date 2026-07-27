@@ -60,6 +60,7 @@ export async function GET(req: Request) {
         const facturasPorProcesar = await getCount('Registro_Facturas', q => 
             q.eq('Aprobacion_Doliente', 'Aprobado')
              .ilike('Gestion_Contabilidad', '%POR PROCESAR%')
+             .or('Procesado.eq.false,Procesado.is.null')
         );
         const facturasRadicadas = await getCount('Registro_Facturas', q => q.gte('Creado', today));
         const facturasAcumuladas = await getCount('Registro_Facturas', q => q.gte('Creado', firstDayOfMonth));
