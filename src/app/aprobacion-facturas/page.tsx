@@ -942,13 +942,13 @@ export default function InvoicesPage() {
     const isToProcess = (inv: SharePointInvoice) => {
         const state = (inv.Aprobacion_Doliente || "").toLowerCase();
         const contabilidad = (inv.Gestion_Contabilidad || "").toLowerCase();
-        return state.includes("aprobado") && contabilidad.includes("por procesar") && String(inv.Procesado) !== 'true';
+        return state.includes("aprobado") && contabilidad.includes("por procesar") && !inv.FechaProcesado;
     };
 
     const isProcessed = (inv: SharePointInvoice) => {
         const state = (inv.Aprobacion_Doliente || "").toLowerCase();
         const contabilidad = (inv.Gestion_Contabilidad || "").toLowerCase();
-        return state.includes("aprobado") || state.includes("rechazado") || contabilidad.includes("procesado") || String(inv.Procesado) === 'true';
+        return state.includes("aprobado") || state.includes("rechazado") || contabilidad.includes("procesado") || !!inv.FechaProcesado;
     };
 
     const filteredInvoices = invoices.filter(inv => {

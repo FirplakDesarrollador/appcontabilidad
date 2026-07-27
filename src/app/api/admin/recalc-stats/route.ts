@@ -34,7 +34,7 @@ export async function GET(req: Request) {
         const { data: missingDP, error: backfillErr } = await supabaseAdmin
             .from('Registro_Facturas')
             .select('ID, DigitadoPor, FechaProcesado, Modificado_por')
-            .or('Gestion_Contabilidad.eq.Procesado,Procesado.eq.true')
+            .or('Gestion_Contabilidad.eq.Procesado,FechaProcesado.not.is.null')
             .or('DigitadoPor.is.null,DigitadoPor.eq.')
             .not('FechaProcesado', 'is', null);
 
