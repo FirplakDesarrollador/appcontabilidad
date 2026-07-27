@@ -190,6 +190,27 @@ export async function POST(req: Request) {
             if (upsertPayload.Responsable_de_Autorizar === null) {
                 delete upsertPayload.Responsable_de_Autorizar;
             }
+            // Protect app-owned fields: FechaProcesado and DigitadoPor live in
+            // Supabase only — if SP sends null, preserve the existing Supabase value.
+            if (upsertPayload.FechaProcesado === null) {
+                delete upsertPayload.FechaProcesado;
+            }
+            if (!upsertPayload.DigitadoPor) {
+                delete upsertPayload.DigitadoPor;
+            }
+            // CRITICAL race-condition guard: if the existing Supabase record already
+            // has FechaProcesado, the user processed this invoice. Never let a sync
+            // revert Gestion_Contabilidad back to 'Por Procesar'.
+            // Check if there's an existing Supabase record with FechaProcesado.
+            const { data: existingRow } = await supabaseAdmin
+                .from('Registro_Facturas')
+                .select('FechaProcesado')
+                .eq('ID', Number(spItemId))
+                .maybeSingle();
+            if (existingRow?.FechaProcesado && upsertPayload.Gestion_Contabilidad === 'Por Procesar') {
+                console.log(`[SYNC] Skip GC revert for ID ${spItemId} — already has FechaProcesado`);
+                delete upsertPayload.Gestion_Contabilidad;
+            }
             const { error: upsertError } = await supabaseAdmin
                 .from('Registro_Facturas')
                 .upsert(upsertPayload, { onConflict: 'ID' });

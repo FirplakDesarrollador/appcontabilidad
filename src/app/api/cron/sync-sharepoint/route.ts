@@ -195,6 +195,14 @@ export async function GET(req: Request) {
             if (!upsertData.DigitadoPor) {
                 delete upsertData.DigitadoPor;
             }
+            // CRITICAL: If Supabase already has FechaProcesado for this item, it means
+            // a user already processed it. Never allow a sync to revert Gestion_Contabilidad
+            // back to 'Por Procesar' — this avoids the race condition where the sync
+            // captures the old SP value before the update-status PATCH completes.
+            if (conflictEntry?.FechaProcesado && upsertData.Gestion_Contabilidad === 'Por Procesar') {
+                console.log(`[CRON-SYNC] Skip GC revert for ID ${spItemId} — already has FechaProcesado in Supabase`);
+                delete upsertData.Gestion_Contabilidad;
+            }
             const { error: upsertErr } = await supabaseAdmin
                 .from('Registro_Facturas')
                 .upsert(upsertData, { onConflict: 'ID' });
