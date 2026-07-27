@@ -66,9 +66,21 @@ export async function POST(req: Request) {
 
             console.log(`[FULL-SYNC] Processing batch ${Math.floor(i / batchSize) + 1} (${mappedChunk.length} items)...`);
             
+            // For items that are already in Supabase, we must not overwrite
+            // FechaProcesado/DigitadoPor with null — those fields are owned by
+            // the app (not SharePoint) and must be preserved.
+            // Use update (merge) semantics: remove null-valued app-owned fields
+            // so Supabase keeps the existing value.
+            const safeChunk = mappedChunk.map((row: any) => {
+                const r = { ...row };
+                if (r.FechaProcesado === null) delete r.FechaProcesado;
+                if (!r.DigitadoPor) delete r.DigitadoPor;
+                return r;
+            });
+
             const { error } = await supabaseAdmin
                 .from('Registro_Facturas')
-                .upsert(mappedChunk, { onConflict: 'ID' });
+                .upsert(safeChunk, { onConflict: 'ID' });
 
             if (error) {
                 console.error(`[FULL-SYNC] Error inserting chunk starting at index ${i}:`, error.message);

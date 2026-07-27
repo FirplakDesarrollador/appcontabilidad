@@ -180,11 +180,20 @@ export async function GET(req: Request) {
             }
 
             console.log(`[CRON-SYNC] Upserting SP item ${spItemId} to Supabase...`);
-            // Strip null Responsable_de_Autorizar so we never overwrite an existing
-            // responsible person with null when SharePoint hasn't resolved the lookup.
+            // Strip null fields that live exclusively in Supabase and must never
+            // be overwritten by SP data coming in as null.
             const upsertData = { ...invoiceData };
             if (upsertData.Responsable_de_Autorizar === null) {
                 delete upsertData.Responsable_de_Autorizar;
+            }
+            // FechaProcesado and DigitadoPor are set by the app when processing.
+            // SharePoint doesn't own these fields, so if SP sends null we must
+            // preserve the existing Supabase value instead of overwriting.
+            if (upsertData.FechaProcesado === null) {
+                delete upsertData.FechaProcesado;
+            }
+            if (!upsertData.DigitadoPor) {
+                delete upsertData.DigitadoPor;
             }
             const { error: upsertErr } = await supabaseAdmin
                 .from('Registro_Facturas')
