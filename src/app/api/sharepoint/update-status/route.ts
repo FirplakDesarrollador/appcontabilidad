@@ -60,6 +60,12 @@ export async function POST(req: NextRequest) {
         const updateData: any = {};
         if (field === 'Gestion_Contabilidad') {
             updateData.Gestion_Contabilidad = status;
+            if (status === 'Procesado') {
+                updateData.FechaProcesado = new Date().toISOString();
+                if (procesadoPor) {
+                    updateData.DigitadoPor = procesadoPor;
+                }
+            }
         } else if (field === 'Observaciones') {
             updateData.Observaciones = status;
         } else {
@@ -100,8 +106,14 @@ export async function POST(req: NextRequest) {
                 }
             }
 
+            const supaTable = listName === 'Radicados de importación'
+                ? 'Radicados_de_importacion'
+                : listName === 'Registro_de_Facturas'
+                    ? 'Registro_Facturas'
+                    : listName;
+
             await supabase
-                .from(listName === 'Radicados de importación' ? 'Radicados_de_importacion' : listName)
+                .from(supaTable)
                 .update(supaUpdate)
                 .eq(listName === 'Registro_de_Facturas' ? 'ID' : 'id', Number(itemId));
         } catch (supaErr) {

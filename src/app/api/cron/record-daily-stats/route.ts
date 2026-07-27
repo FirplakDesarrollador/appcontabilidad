@@ -36,21 +36,24 @@ export async function GET(req: Request) {
         };
 
         const todayDate = new Date();
-        const today = todayDate.toISOString().split('T')[0]; // YYYY-MM-DD
-        const firstDayOfMonth = new Date(todayDate.getFullYear(), todayDate.getMonth(), 1).toISOString().split('T')[0]; // YYYY-MM-01
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(todayDate); // YYYY-MM-DD en hora Colombia
+        const colombiaYear = parseInt(today.substring(0, 4));
+        const colombiaMonth = parseInt(today.substring(5, 7)) - 1;
+        const firstDayOfMonth = `${today.substring(0, 7)}-01`; // YYYY-MM-01
 
-        const getTwoBusinessDaysAgo = (date: Date) => {
-            let d = new Date(date);
+        const getTwoBusinessDaysAgo = (dateStr: string) => {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            let dd = new Date(y, m - 1, d);
             let count = 0;
             while (count < 2) {
-                d.setDate(d.getDate() - 1);
-                if (d.getDay() !== 0 && d.getDay() !== 6) { // 0 = Sun, 6 = Sat
+                dd.setDate(dd.getDate() - 1);
+                if (dd.getDay() !== 0 && dd.getDay() !== 6) {
                     count++;
                 }
             }
-            return d.toISOString().split('T')[0];
+            return `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`;
         };
-        const twoDaysAgo = getTwoBusinessDaysAgo(todayDate);
+        const twoDaysAgo = getTwoBusinessDaysAgo(today);
 
         // 1. Aprobación de Facturas
         const facturasPorAprobar = await getCount('Registro_Facturas', q => q.eq('Aprobacion_Doliente', 'Por Aprobar'));
