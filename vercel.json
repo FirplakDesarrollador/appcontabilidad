@@ -14,7 +14,7 @@
         },
         {
             "path": "/api/cron/record-daily-stats",
-            "schedule": "30 23 * * *"
+            "schedule": "50 4 * * *"
         }
     ]
 }
