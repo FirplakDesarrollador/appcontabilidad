@@ -18,6 +18,8 @@ const listIdCache: Record<string, string> = {};     // key: `${siteId}::${listNa
 let globalUserMap: Map<string, string> | null = null;
 let lastUserFetch: number = 0;
 const USER_CACHE_TTL = 1000 * 60 * 30; // 30 minutos
+let userDirectoryCache: { name: string; email: string }[] | null = null;
+let lastUserDirectoryFetch: number = 0;
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 async function getAccessToken() {
@@ -45,7 +47,7 @@ export const getGraphClient = async () => {
 
 // ─── Helpers cacheados ────────────────────────────────────────────────────────
 /** Obtiene el siteId con caché de memoria. Sólo hace la llamada Graph la primera vez. */
-async function getCachedSiteId(client: Client, siteSlug: string = 'FPKContabilidad'): Promise<string> {
+export async function getCachedSiteId(client: Client, siteSlug: string = 'FPKContabilidad'): Promise<string> {
     if (siteIdCache[siteSlug]) return siteIdCache[siteSlug];
     const siteResponse = await client.api(`/sites/firplaksa.sharepoint.com:/sites/${siteSlug}`).get();
     siteIdCache[siteSlug] = siteResponse.id;
@@ -91,6 +93,36 @@ export async function getCachedUserMap(client: Client, siteId: string): Promise<
         if (!globalUserMap) globalUserMap = new Map();
     }
     return globalUserMap!;
+}
+
+/** Obtiene el directorio de usuarios (nombre + email) con caché de 30 minutos. */
+export async function getCachedUserDirectory(client: Client, siteId: string): Promise<{ name: string; email: string }[]> {
+    const now = Date.now();
+    if (userDirectoryCache && (now - lastUserDirectoryFetch < USER_CACHE_TTL)) return userDirectoryCache;
+
+    const directory: { name: string; email: string }[] = [];
+    try {
+        console.log("[SharePoint] Fetching User Information List (directory)...");
+        let nextLink: string | null = `/sites/${siteId}/lists('User Information List')/items?$expand=fields($select=Title,EMail)&$top=500`;
+        while (nextLink) {
+            const response = await client.api(nextLink).get();
+            for (const u of response.value) {
+                const name = u.fields?.Title;
+                const email = u.fields?.EMail;
+                if (name && email && !directory.some(d => d.email === email)) {
+                    directory.push({ name, email });
+                }
+            }
+            nextLink = response['@odata.nextLink'] ? response['@odata.nextLink'].split('v1.0')[1] : null;
+        }
+        userDirectoryCache = directory;
+        lastUserDirectoryFetch = now;
+        console.log(`[SharePoint] Loaded ${directory.length} users into directory cache`);
+    } catch (e: any) {
+        console.warn('[SharePoint] Could not load user directory:', e.message);
+        if (!userDirectoryCache) userDirectoryCache = [];
+    }
+    return userDirectoryCache!;
 }
 
 /** 
