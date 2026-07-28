@@ -205,7 +205,7 @@ export function NuevoRadicadoModal({ isOpen, onClose, onSuccess }: NuevoRadicado
                 attachments = true;
             }
 
-            const { error } = await supabase
+            const { data: insertedData, error } = await supabase
                 .from("Radicados_de_importacion")
                 .insert([{
                     Nit: formData.Nit,
