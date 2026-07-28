@@ -92,16 +92,7 @@ function ModalInfoItem({ icon, label, value, subValue }: { icon: React.ReactNode
     );
 }
 
-// Simulated mock database of users
-const MOCK_USERS = [
-    { id: "1", name: "Mateo Benavides", email: "mateo.benavides@firplak.com" },
-    { id: "2", name: "Carlos Mario Restrepo", email: "carlos.restrepo@firplak.com" },
-    { id: "3", name: "Juan Esteban Pérez", email: "juan.perez@firplak.com" },
-    { id: "4", name: "Andrea Gómez", email: "andrea.gomez@firplak.com" },
-    { id: "5", name: "Diana Carolina Montoya", email: "diana.montoya@firplak.com" }
-];
-
-
+// Simulated mock database of users removed, now fetching from Supabase
 
 // Initial mock invoices
 const INITIAL_MOCK_INVOICES: SharePointInvoice[] = [
@@ -214,10 +205,10 @@ export default function ViventtaInvoicesPage() {
     const { role, user } = useAuth();
     const { toggleSidebar } = useSidebar();
     
-    // Core states — load from Supabase (Facturas_Viventta)
     const [invoices, setInvoices] = useState<SharePointInvoice[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
+    const [usersList, setUsersList] = useState<{id: string, name: string, email: string}[]>([]);
 
     const getProcesadoPorName = (email?: string) => {
         if (!email) return "Desconocido";
@@ -265,8 +256,23 @@ export default function ViventtaInvoicesPage() {
         }
     };
 
+    // Load users from Proveedores_Viventta
+    const loadUsers = async () => {
+        try {
+            const res = await fetch('/api/proveedores-viventta/responsables');
+            const data = await res.json();
+            if (data.success && data.items) {
+                setUsersList(data.items);
+            }
+        } catch (error) {
+            console.error("Error loading responsables:", error);
+        }
+    };
+
+    // Load initial data
     useEffect(() => {
         loadInvoicesFromDB();
+        loadUsers();
     }, []);
 
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
@@ -480,7 +486,7 @@ export default function ViventtaInvoicesPage() {
             if (userSearchQuery.length >= 2) {
                 setIsSearchingUsers(true);
                 setTimeout(() => {
-                    const filtered = MOCK_USERS.filter(u =>
+                    const filtered = usersList.filter(u =>
                         u.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
                         u.email.toLowerCase().includes(userSearchQuery.toLowerCase())
                     );
@@ -650,7 +656,7 @@ export default function ViventtaInvoicesPage() {
             formData.append('observaciones', createFormData.observaciones);
             formData.append('responsable', createFormData.responsable);
             
-            const user = MOCK_USERS.find(u => u.name === createFormData.responsable);
+            const user = usersList.find(u => u.name === createFormData.responsable);
             if (user) {
                 formData.append('responsableEmail', user.email);
             }
@@ -1582,7 +1588,7 @@ export default function ViventtaInvoicesPage() {
                                                 className="w-full h-11 px-4 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:bg-white transition-all text-[#254153] font-bold"
                                             >
                                                 <option value="">Selecciona un responsable...</option>
-                                                {MOCK_USERS.map(u => (
+                                                {usersList.map(u => (
                                                     <option key={u.id} value={u.name}>{u.name}</option>
                                                 ))}
                                             </select>
