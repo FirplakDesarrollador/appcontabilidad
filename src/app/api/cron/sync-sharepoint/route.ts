@@ -249,11 +249,21 @@ export async function GET(req: Request) {
             if (!unassignedErr && unassigned && unassigned.length > 0) {
                 console.log(`[CRON-SYNC] Found ${unassigned.length} invoices without responsable. Attempting auto-assign...`);
 
-                const { data: providers } = await supabaseAdmin
-                    .from('Proveedores_con_Responsable')
-                    .select('"Nit", "Responsable", "Autorizador", "Correo"');
+                // Paginar: PostgREST limita a 1000 filas por defecto y esta tabla ya las supera.
+                const providers: any[] = [];
+                let providersOffset = 0;
+                while (true) {
+                    const { data: chunk, error: providersErr } = await supabaseAdmin
+                        .from('Proveedores_con_Responsable')
+                        .select('"Nit", "Responsable", "Autorizador", "Correo"')
+                        .range(providersOffset, providersOffset + 999);
+                    if (providersErr || !chunk || chunk.length === 0) break;
+                    providers.push(...chunk);
+                    if (chunk.length < 1000) break;
+                    providersOffset += 1000;
+                }
 
-                if (providers && providers.length > 0) {
+                if (providers.length > 0) {
                     const providerMap = new Map<string, { responsable: string; correo: string }>();
                     for (const p of providers) {
                         const key = p.Nit ? (p.Nit.includes('-') ? p.Nit.split('-')[0].trim() : p.Nit.trim()) : '';
