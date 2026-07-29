@@ -50,7 +50,25 @@ export async function GET(
             }
         }
 
-        // 2. Fallback to FPKContabilidad Attachments
+        // 2. Fallback to the Supabase Storage URL (facturas creadas manualmente,
+        // que nunca quedan como adjunto nativo de SharePoint ni en ITPowerApps).
+        if (!fileBuffer) {
+            const directUrl = invoiceDetails.fp || invoiceDetails.documentos;
+            if (typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl) && !directUrl.includes('sharepoint.com')) {
+                console.log(`[Direct Download] Falling back to direct storage URL for item ${itemId}...`);
+                try {
+                    const directRes = await fetch(directUrl);
+                    if (directRes.ok) {
+                        fileBuffer = await directRes.arrayBuffer();
+                        console.log(`[Direct Download] Successfully fetched file from direct storage URL`);
+                    }
+                } catch (directErr) {
+                    console.error(`[Direct Download] Failed to fetch from direct storage URL:`, directErr);
+                }
+            }
+        }
+
+        // 3. Fallback to FPKContabilidad Attachments
         if (!fileBuffer && requestFileName && requestFileName !== 'Ver en SharePoint') {
             console.log(`[Direct Download] Falling back to FPKContabilidad attachments for ${requestFileName}...`);
             try {
@@ -72,11 +90,11 @@ export async function GET(
         }
 
         if (!fileBuffer) {
-            console.warn(`[Direct Download] PDF not found for item ${itemId} after both attempts.`);
+            console.warn(`[Direct Download] PDF not found for item ${itemId} after all attempts.`);
             return NextResponse.json({ error: 'No se ha encontrado factura en PDF' }, { status: 404 });
         }
 
-        // 3. Serve the file
+        // 4. Serve the file
         // Ensure PDF extension if missing
         if (!finalFileName.toLowerCase().endsWith('.pdf')) {
             finalFileName = finalFileName.includes('.') 
