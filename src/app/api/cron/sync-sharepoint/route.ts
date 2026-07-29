@@ -212,6 +212,64 @@ export async function GET(req: Request) {
                 stats.errors++;
             } else {
                 stats.sp_to_sb++;
+
+                // --- Auto-approval detection (trigger trg_auto_aprobar_factura) ---
+                // El trigger de Supabase pone Aprobacion_Doliente='Aprobado' y arma
+                // centro_costos durante el upsert de arriba si el proveedor tiene
+                // aprobacion_automatica=true. Aqui solo reaccionamos cuando el
+                // upsert acaba de causar ese cambio (SP todavia decia otra cosa):
+                // reflejamos el estado en SharePoint y subimos el preliminar a SAP.
+                // El estado "Procesado" (FechaProcesado) sigue siendo manual.
+                if (invoiceData.Aprobacion_Doliente !== 'Aprobado') {
+                    try {
+                        const { data: checkData } = await supabaseAdmin
+                            .from('Registro_Facturas')
+                            .select('Aprobacion_Doliente, centro_costos, Nro_Factura, Nit, Proveedor, Valor_total, Consecutivo')
+                            .eq('ID', Number(spItemId))
+                            .single();
+
+                        if (checkData && checkData.Aprobacion_Doliente === 'Aprobado') {
+                            console.log(`[CRON-SYNC][Auto-Approve] Invoice ${spItemId} auto-approved by DB trigger.`);
+
+                            try {
+                                await graphClient.api(`/sites/${siteId}/lists/${listId}/items/${spItemId}/fields`).patch({
+                                    Aprobacion_Doliente: 'Aprobado',
+                                    Observaciones: 'Aprobado automáticamente',
+                                    centro_costos: checkData.centro_costos
+                                });
+                            } catch (spPatchErr: any) {
+                                console.error('[CRON-SYNC][Auto-Approve] Error patching SharePoint:', spPatchErr.message);
+                            }
+
+                            try {
+                                const { createSapDraft } = await import('@/lib/sap');
+                                await createSapDraft({
+                                    nit: checkData.Nit || "",
+                                    total: checkData.Valor_total || "0",
+                                    distribuciones: checkData.centro_costos ? JSON.parse(checkData.centro_costos) : [],
+                                    anticipo: 'f',
+                                    observations: 'Aprobado automáticamente por regla de proveedor',
+                                    nroFactura: checkData.Nro_Factura || String(spItemId),
+                                    docTypeDesc: 'FACTURA',
+                                    itemId: String(spItemId),
+                                    consecutivo: checkData.Consecutivo || String(spItemId),
+                                    proveedorName: checkData.Proveedor || "Proveedor Desconocido"
+                                });
+                            } catch (sapErr: any) {
+                                console.error('[CRON-SYNC][Auto-Approve] Error en SAP:', sapErr.message);
+                                await supabaseAdmin.from('log_errores_sap').insert({
+                                    factura_id: Number(spItemId),
+                                    nro_factura: checkData.Nro_Factura || String(spItemId),
+                                    proveedor: checkData.Proveedor,
+                                    error_mensaje: sapErr.message,
+                                    detalles: sapErr
+                                });
+                            }
+                        }
+                    } catch (autoErr: any) {
+                        console.warn('[CRON-SYNC][Auto-Approve] Detection failed (non-fatal):', autoErr.message);
+                    }
+                }
             }
         }
 
