@@ -12,9 +12,9 @@ const supabaseAdmin = createClient(
 export async function POST(req: NextRequest) {
     try {
         const formData = await req.formData();
-        
-        const nroFactura = formData.get('nroFactura') as string;
-        const nit = formData.get('nit') as string;
+
+        const nroFactura = (formData.get('nroFactura') as string || '').trim();
+        const nit = (formData.get('nit') as string || '').trim();
         const proveedor = formData.get('proveedor') as string;
         const responsableEmail = formData.get('responsableEmail') as string;
         const files = formData.getAll('files') as File[];
@@ -31,17 +31,32 @@ export async function POST(req: NextRequest) {
         const siteIdFPK = siteFPK.id;
 
         // 2. Verificar si la factura ya existe para este proveedor (NIT)
-        // Buscamos en la lista Registro_de_Facturas
-        const existingItems = await client.api(`/sites/${siteIdFPK}/lists/Registro_de_Facturas/items`)
-            .header('Prefer', 'HonorNonIndexedQueriesWarningMayFailRandomly')
-            .expand('fields')
-            .filter(`fields/Nro_Factura eq '${nroFactura}' and fields/Title eq '${nit}'`)
-            .get();
+        // Consultamos Supabase (indexado y confiable) en vez del filtro compuesto
+        // de Graph API, que en listas grandes de SharePoint puede devolver
+        // resultados incompletos sin avisar. Comparamos normalizado (sin
+        // espacios sueltos, sin digito de verificacion del NIT) porque datos
+        // historicos tienen esas inconsistencias.
+        const normalizedNit = nit.replace(/[^0-9]/g, '');
+        const normalizedNro = nroFactura.toUpperCase();
 
-        if (existingItems.value && existingItems.value.length > 0) {
-            return NextResponse.json({ 
-                error: 'DUPLICATED', 
-                message: `La factura ${nroFactura} ya está registrada para el proveedor con NIT ${nit}.` 
+        const { data: candidates, error: dupCheckError } = await supabaseAdmin
+            .from('Registro_Facturas')
+            .select('ID, Nit, Nro_Factura')
+            .ilike('Nro_Factura', `%${normalizedNro}%`);
+
+        if (dupCheckError) {
+            console.error('Error checking for duplicates:', dupCheckError.message);
+        }
+
+        const isDuplicate = (candidates || []).some(c =>
+            (c.Nro_Factura || '').trim().toUpperCase() === normalizedNro &&
+            (c.Nit || '').replace(/[^0-9]/g, '') === normalizedNit
+        );
+
+        if (isDuplicate) {
+            return NextResponse.json({
+                error: 'DUPLICATED',
+                message: `La factura ${nroFactura} ya está registrada para el proveedor con NIT ${nit}.`
             }, { status: 400 });
         }
 

@@ -1,6 +1,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getGraphClient } from '@/lib/sharepoint';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+);
 
 export async function GET(req: NextRequest) {
     try {
@@ -12,19 +17,25 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ exists: false });
         }
 
-        const client = await getGraphClient();
-        const siteFPK = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-        const siteIdFPK = siteFPK.id;
+        const normalizedNit = nit.replace(/[^0-9]/g, '');
+        const normalizedNro = nroFactura.trim().toUpperCase();
 
-        const existingItems = await client.api(`/sites/${siteIdFPK}/lists/Registro_de_Facturas/items`)
-            .header('Prefer', 'HonorNonIndexedQueriesWarningMayFailRandomly')
-            .expand('fields')
-            .filter(`fields/Nro_Factura eq '${nroFactura}' and fields/Title eq '${nit}'`)
-            .get();
+        // Traemos candidatos por coincidencia parcial (ilike) y comparamos exacto
+        // ya normalizado en JS: la comparacion exacta contra SharePoint fallaba
+        // con espacios sueltos o NIT con/sin digito de verificacion.
+        const { data: candidates, error } = await supabaseAdmin
+            .from('Registro_Facturas')
+            .select('ID, Nit, Nro_Factura')
+            .ilike('Nro_Factura', `%${normalizedNro}%`);
 
-        const exists = existingItems.value && existingItems.value.length > 0;
+        if (error) throw error;
 
-        return NextResponse.json({ 
+        const exists = (candidates || []).some(c =>
+            (c.Nro_Factura || '').trim().toUpperCase() === normalizedNro &&
+            (c.Nit || '').replace(/[^0-9]/g, '') === normalizedNit
+        );
+
+        return NextResponse.json({
             exists,
             message: exists ? `La factura ${nroFactura} ya está registrada para este proveedor.` : null
         });
