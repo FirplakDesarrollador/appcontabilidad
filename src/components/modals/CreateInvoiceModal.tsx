@@ -321,7 +321,7 @@ export function CreateInvoiceModal({ isOpen, onClose, onSuccess }: CreateInvoice
                                                                         const res = await fetch(`/api/providers/responsable?nit=${encodeURIComponent(p.numero_identificacion)}`);
                                                                         const data = await res.json();
                                                                         if (data.found && data.responsable) {
-                                                                            if (data.correo) {
+                                                                            if (data.correo && data.correo.includes('@')) {
                                                                                 setFormData(prev => ({...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: data.correo}));
                                                                                 setUserSearch(data.responsable);
                                                                                 setAutoFilledResponsable(true);

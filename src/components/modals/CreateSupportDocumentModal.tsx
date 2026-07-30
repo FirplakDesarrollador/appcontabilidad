@@ -288,7 +288,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                                                         if (data.found && data.responsable) {
                                                                             let cleanName = data.responsable.replace(/\uFFFD/g, 'ñ');
                                                                             
-                                                                            if (data.correo) {
+                                                                            if (data.correo && data.correo.includes('@')) {
                                                                                 setFormData(prev => ({...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: data.correo}));
                                                                                 setUserSearch(data.responsable);
                                                                                 setAutoFilledResponsable(true);
