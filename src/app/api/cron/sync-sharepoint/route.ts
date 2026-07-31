@@ -297,12 +297,14 @@ export async function GET(req: Request) {
         console.log('[CRON-SYNC] Complete!', stats);
 
         // ── C. Auto-assign missing responsables from Proveedores_con_Responsable ──
+        // No filtramos por Aprobacion_Doliente: una factura aprobada automaticamente
+        // (regla de proveedor) o aprobada manualmente antes de tener responsable
+        // quedaba fuera de este query para siempre y nunca se le asignaba.
         try {
             const { data: unassigned, error: unassignedErr } = await supabaseAdmin
                 .from('Registro_Facturas')
                 .select('ID, Nit')
-                .or('Responsable_de_Autorizar.is.null,Responsable_de_Autorizar.eq.')
-                .eq('Aprobacion_Doliente', 'Por Aprobar');
+                .or('Responsable_de_Autorizar.is.null,Responsable_de_Autorizar.eq.');
 
             if (!unassignedErr && unassigned && unassigned.length > 0) {
                 console.log(`[CRON-SYNC] Found ${unassigned.length} invoices without responsable. Attempting auto-assign...`);
