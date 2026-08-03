@@ -8,7 +8,8 @@ import https from 'https';
 import { supabase } from './supabaseClient';
 
 export interface SapDistribution {
-    centroCostos: string;
+    centroCostos?: string;
+    centroCosto?: string;
     cuenta: string;
     valor: string | number;
 }
@@ -24,6 +25,8 @@ export interface SapDraftPayload {
     itemId?: string | number; // SharePoint Sequence ID
     proveedorName?: string; // Provider Name from SharePoint
     seriesName?: string; // Optional Series Name for SAP auto-numbering
+    consecutivo?: string | number; // Manual Consecutivo
+    docCurrency?: string; // e.g. 'USD' or 'COP'
 }
 
 interface SapBusinessPartner {
@@ -111,7 +114,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
         nroFactura, 
         docTypeDesc = 'FACTURA',
         itemId,
-        proveedorName
+        proveedorName,
+        docCurrency
     } = payload;
 
     if (!nit || total === undefined || total === null) {
@@ -277,6 +281,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
                     UnitPrice: numericValor,
                     LineTotal: numericValor,
                     TaxCode: String(taxCode).substring(0, 8),
+                    ...(docCurrency ? { Currency: docCurrency } : {})
                 });
             }
         }
@@ -306,7 +311,8 @@ export async function createSapDraft(payload: SapDraftPayload) {
             Comments: finalComments.substring(0, 250), // SAP limit is usually 250
             DocumentLines: documentLines,
             Series: -1, // Manual
-            HandWritten: "tYES"
+            HandWritten: "tYES",
+            ...(docCurrency ? { DocCurrency: docCurrency } : {})
         };
 
         const consecutivoValue = payload.consecutivo ? parseInt(payload.consecutivo.toString(), 10) : (itemId ? parseInt(itemId.toString(), 10) : null);

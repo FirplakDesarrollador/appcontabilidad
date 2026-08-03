@@ -195,7 +195,10 @@ export async function POST(req: NextRequest) {
         // 4. Trigger SAP Draft Creation
         let sapResult = null;
         try {
-            console.log("[Manual SAP Draft] Payload distribuciones:", JSON.stringify(distribuciones, null, 2));
+            const isImport = source === 'Radicados_de_importacion';
+            const docCurrency = isImport ? 'USD' : undefined;
+
+            console.log(`[Manual SAP Draft] Payload distribuciones (Currency: ${docCurrency || 'Local'}):`, JSON.stringify(distribuciones, null, 2));
             sapResult = await createSapDraft({
                 nit: invoice.Nit!,
                 total: invoice["Valor total"]!,
@@ -203,9 +206,11 @@ export async function POST(req: NextRequest) {
                 anticipo: invoice.tiene_anticipo ? 't' : 'f',
                 observations: invoice.Observaciones || 'Sincronización manual desde portal de aprobación',
                 nroFactura: invoice.Nro_Factura!,
+                docTypeDesc: isImport ? 'RADICADO IMPORTACION' : (source === 'Documento_Soporte' ? 'DOCUMENTO SOPORTE' : 'FACTURA'),
                 itemId: String(invoiceId),
                 consecutivo: consecutivoReal,
-                proveedorName: proveedorReal
+                proveedorName: proveedorReal,
+                docCurrency: docCurrency
             });
 
             return NextResponse.json({ 
