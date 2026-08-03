@@ -29,7 +29,8 @@ import {
     CartesianGrid,
     Tooltip,
     Legend,
-    ResponsiveContainer
+    ResponsiveContainer,
+    LabelList
 } from 'recharts';
 
 export default function DashboardPage() {
@@ -326,6 +327,12 @@ export default function DashboardPage() {
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                             <div className="flex justify-between items-center mb-6">
                                 <h3 className="text-lg font-bold text-[#254153]">Por Aprobar por Persona</h3>
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-50 border border-orange-200/80 rounded-xl">
+                                    <span className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Total General:</span>
+                                    <span className="text-sm font-extrabold text-orange-700">
+                                        {statsLoading ? "..." : (totals.porAprobar || porAprobarPersonas.reduce((acc, curr) => acc + (Number(curr.count) || 0), 0))}
+                                    </span>
+                                </div>
                             </div>
                             <div className="h-[300px] w-full">
                                 {statsLoading ? (
@@ -334,7 +341,7 @@ export default function DashboardPage() {
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart
                                             data={porAprobarPersonas}
-                                            margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
+                                            margin={{ top: 25, right: 30, left: 0, bottom: 5 }}
                                             barGap={8}
                                         >
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
@@ -366,8 +373,18 @@ export default function DashboardPage() {
                                                     return null;
                                                 }}
                                             />
-                                            <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
-                                            <Bar dataKey="count" name="Documentos Por Aprobar" fill="#F97316" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                                            <Legend 
+                                                iconType="circle" 
+                                                wrapperStyle={{ paddingTop: '20px' }}
+                                                formatter={(value) => (
+                                                    <span className="text-sm font-medium text-gray-700">
+                                                        {value} <span className="font-bold text-[#F97316]">({statsLoading ? '...' : (totals.porAprobar || porAprobarPersonas.reduce((acc, curr) => acc + (Number(curr.count) || 0), 0))})</span>
+                                                    </span>
+                                                )}
+                                            />
+                                            <Bar dataKey="count" name="Documentos Por Aprobar" fill="#F97316" radius={[4, 4, 0, 0]} maxBarSize={50}>
+                                                <LabelList dataKey="count" position="top" fill="#C2410C" fontSize={11} fontWeight={700} />
+                                            </Bar>
                                         </BarChart>
                                     </ResponsiveContainer>
                                 )}
