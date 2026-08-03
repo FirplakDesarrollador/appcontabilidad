@@ -275,12 +275,6 @@ export default function InvoicesPage() {
             setPreviewError(null);
             setPreviewLoading(true);
 
-            const directUrl = invoice?.documentos || invoice?.fp;
-            if (directUrl && (directUrl.startsWith('http://') || directUrl.startsWith('https://')) && !directUrl.includes('sharepoint.com')) {
-                setPreviewUrl(directUrl);
-                return;
-            }
-
             const fileName = invoice?.documentInfo?.fileName || 'Factura';
             const apiUrl = `/api/externo/factura/${invoice.id}/download?file=${encodeURIComponent(fileName)}`;
             const res = await fetch(apiUrl);
