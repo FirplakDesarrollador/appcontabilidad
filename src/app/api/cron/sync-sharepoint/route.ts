@@ -370,7 +370,7 @@ export async function GET(req: Request) {
             console.warn('[CRON-SYNC] Auto-assign step failed (non-fatal):', autoErr.message);
         }
 
-        return NextResponse.json({ success: true, stats });
+        return NextResponse.json({ success: true, stats, _deployMarker: 'gc-guard-live-check-v1' });
 
     } catch (error: any) {
         console.error('[CRON-SYNC] Error:', error);
