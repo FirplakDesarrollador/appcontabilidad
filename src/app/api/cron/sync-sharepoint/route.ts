@@ -162,7 +162,6 @@ export async function GET(req: Request) {
 
         const stats = { sp_to_sb: 0, sb_to_sp: 0, errors: 0, skipped: 0 };
         const processedSPIds = new Set<string>();
-        const debugTrace: any[] = [];
 
         // ── A. Process SharePoint Changes to Supabase ─────────────────────────
         for (const spItem of spChanges) {
@@ -179,7 +178,6 @@ export async function GET(req: Request) {
                 if (sbDate > spDate) {
                     console.log(`[CRON-SYNC] Skip ID ${spItemId} (Supabase is newer than SP)`);
                     stats.skipped++;
-                    if (debugTrace.length < 50) debugTrace.push({ spItemId, action: 'skip_sb_newer', spDate, sbDate });
                     continue;
                 }
             }
@@ -216,20 +214,9 @@ export async function GET(req: Request) {
                 .select('FechaProcesado')
                 .eq('ID', Number(spItemId))
                 .maybeSingle();
-            const locked = !!liveRow?.FechaProcesado;
-            if (locked) {
+            if (liveRow?.FechaProcesado) {
                 console.log(`[CRON-SYNC] Locking Gestion_Contabilidad for ID ${spItemId} — already has FechaProcesado in Supabase (live check)`);
                 delete upsertData.Gestion_Contabilidad;
-            }
-            if (debugTrace.length < 50) {
-                debugTrace.push({
-                    spItemId,
-                    action: 'upsert',
-                    spGestionContabilidad: invoiceData.Gestion_Contabilidad,
-                    liveFechaProcesado: liveRow?.FechaProcesado ?? null,
-                    locked,
-                    finalGestionContabilidadInPayload: upsertData.Gestion_Contabilidad,
-                });
             }
             const { error: upsertErr } = await supabaseAdmin
                 .from('Registro_Facturas')
@@ -384,7 +371,7 @@ export async function GET(req: Request) {
             console.warn('[CRON-SYNC] Auto-assign step failed (non-fatal):', autoErr.message);
         }
 
-        return NextResponse.json({ success: true, stats, debugTrace });
+        return NextResponse.json({ success: true, stats });
 
     } catch (error: any) {
         console.error('[CRON-SYNC] Error:', error);
