@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGraphClient } from '@/lib/sharepoint';
-import { supabase } from '@/lib/supabaseClient';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function POST(req: NextRequest) {
     try {
@@ -34,7 +39,7 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            const { error: supaErr } = await supabase
+            const { error: supaErr } = await supabaseAdmin
                 .from('Documento_Soporte')
                 .update(updatePayload)
                 .eq('id', Number(itemId));
@@ -81,7 +86,7 @@ export async function POST(req: NextRequest) {
 
         console.log(`Successfully updated status for item ${itemId} in SharePoint`);
 
-        // 4. Update Supabase
+        // 4. Update Supabase (using admin client to bypass RLS)
         try {
             const supaUpdate: any = {
                 updated_at: new Date().toISOString()
@@ -112,12 +117,18 @@ export async function POST(req: NextRequest) {
                     ? 'Registro_Facturas'
                     : listName;
 
-            await supabase
+            const { error: supaErr, count } = await supabaseAdmin
                 .from(supaTable)
                 .update(supaUpdate)
                 .eq(listName === 'Registro_de_Facturas' ? 'ID' : 'id', Number(itemId));
+
+            if (supaErr) {
+                console.error(`[update-status] Supabase update FAILED for ${supaTable} ID ${itemId}:`, supaErr.message);
+            } else {
+                console.log(`[update-status] Supabase update OK for ${supaTable} ID ${itemId} — field=${field} status=${status}`);
+            }
         } catch (supaErr) {
-            console.error('Failed to update Supabase cache:', supaErr);
+            console.error('[update-status] Failed to update Supabase cache:', supaErr);
         }
 
         return NextResponse.json({ success: true });
@@ -126,3 +137,4 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+
