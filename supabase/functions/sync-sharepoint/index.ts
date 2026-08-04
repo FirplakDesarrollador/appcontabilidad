@@ -138,21 +138,21 @@ Deno.serve(async (req: Request) => {
 
         const mapSupabaseToSp = (sbItem: any) => {
             const payload: any = {};
-            if (sbItem.Proveedor !== null)               payload.Proveedor = sbItem.Proveedor;
-            if (sbItem.Nit !== null)                      payload.Nit = sbItem.Nit;
-            if (sbItem.Nro_Factura !== null)              payload.Nro_Factura = sbItem.Nro_Factura;
-            if (sbItem.Aprobacion_Doliente !== null)      payload.Aprobacion_Doliente = sbItem.Aprobacion_Doliente;
-            if (sbItem.Gestion_Contabilidad !== null)     payload.Gestion_Contabilidad = sbItem.Gestion_Contabilidad;
-            if (sbItem.Observaciones !== null)            payload.Observaciones = sbItem.Observaciones;
-            if (sbItem.Consecutivo !== null)              payload.Consecutivo = sbItem.Consecutivo;
-            if (sbItem.centro_costos !== null)            payload.centro_costos = sbItem.centro_costos;
-            if (sbItem.tiene_anticipo !== null)           payload.tiene_anticipo = sbItem.tiene_anticipo;
-            if (sbItem.CUFE !== null)                     payload.CUFE = sbItem.CUFE;
-            if (sbItem.InformeRecepcion !== null)         payload.InformeRecepcion = sbItem.InformeRecepcion;
-            if (sbItem.FechaAprobacion !== null)          payload.FechaAprobacion = sbItem.FechaAprobacion;
-            if (sbItem.fp !== null)                       payload.fp = sbItem.fp;
-            if (sbItem.Procesado !== null)               payload.Procesado = sbItem.Procesado === 'true' || sbItem.Procesado === true;
-            if (sbItem.Valor_total !== null)              payload.Valortotal = sbItem.Valor_total;
+            if (sbItem.Proveedor !== null && sbItem.Proveedor !== undefined)               payload.Proveedor = sbItem.Proveedor;
+            if (sbItem.Nit !== null && sbItem.Nit !== undefined)                            payload.Nit = sbItem.Nit;
+            if (sbItem.Nro_Factura !== null && sbItem.Nro_Factura !== undefined)              payload.Nro_Factura = sbItem.Nro_Factura;
+            // Aprobacion_Doliente: EXCLUDED — only flows SP→SB
+            // Gestion_Contabilidad: EXCLUDED — only flows SP→SB
+            if (sbItem.Observaciones !== null && sbItem.Observaciones !== undefined)            payload.Observaciones = sbItem.Observaciones;
+            if (sbItem.Consecutivo !== null && sbItem.Consecutivo !== undefined)              payload.Consecutivo = sbItem.Consecutivo;
+            if (sbItem.centro_costos !== null && sbItem.centro_costos !== undefined)            payload.centro_costos = sbItem.centro_costos;
+            if (sbItem.tiene_anticipo !== null && sbItem.tiene_anticipo !== undefined)           payload.tiene_anticipo = sbItem.tiene_anticipo;
+            if (sbItem.CUFE !== null && sbItem.CUFE !== undefined)                     payload.CUFE = sbItem.CUFE;
+            if (sbItem.InformeRecepcion !== null && sbItem.InformeRecepcion !== undefined)         payload.InformeRecepcion = sbItem.InformeRecepcion;
+            // FechaAprobacion: EXCLUDED — only flows SP→SB
+            if (sbItem.fp !== null && sbItem.fp !== undefined)                       payload.fp = sbItem.fp;
+            // Procesado: EXCLUDED — only flows SP→SB
+            if (sbItem.Valor_total !== null && sbItem.Valor_total !== undefined)              payload.Valortotal = sbItem.Valor_total;
             return payload;
         };
 
@@ -173,9 +173,34 @@ Deno.serve(async (req: Request) => {
             }
 
             console.log(`[SP->SB] Upserting SP ID: ${spItemId}`);
+            const upsertData = { ...invoiceData };
+            if (upsertData.Responsable_de_Autorizar === null) {
+                delete upsertData.Responsable_de_Autorizar;
+            }
+            if (upsertData.FechaProcesado === null) {
+                delete upsertData.FechaProcesado;
+            }
+            if (!upsertData.DigitadoPor) {
+                delete upsertData.DigitadoPor;
+            }
+
+            // Case-insensitive protection check against reverting Gestion_Contabilidad
+            const gcLower = String(upsertData.Gestion_Contabilidad || '').toLowerCase();
+            if (gcLower === 'por procesar') {
+                const { data: liveRow } = await supabase
+                    .from('Registro_Facturas')
+                    .select('FechaProcesado')
+                    .eq('ID', Number(spItemId))
+                    .maybeSingle();
+                if (liveRow?.FechaProcesado) {
+                    console.log(`[SP->SB] Skip GC revert for ID ${spItemId} — already has FechaProcesado in Supabase`);
+                    delete upsertData.Gestion_Contabilidad;
+                }
+            }
+
             const { error } = await supabase
                 .from('Registro_Facturas')
-                .upsert(invoiceData, { onConflict: 'ID' });
+                .upsert(upsertData, { onConflict: 'ID' });
             
             if (error) console.error(`[SP->SB] Failed for ${spItemId}:`, error.message);
             else spToSbCount++;

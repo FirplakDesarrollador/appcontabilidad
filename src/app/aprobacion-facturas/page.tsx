@@ -310,10 +310,10 @@ export default function InvoicesPage() {
 
             const attachments = normalizeManualAttachments(data.attachments);
             setPendingInvoices(prev => prev.map(inv =>
-                inv.id === selectedInvoice.id ? { ...inv, adjuntos_url: attachments } : inv
+                String(inv.id) === String(selectedInvoice.id) ? { ...inv, adjuntos_url: attachments } : inv
             ));
             setProcessedInvoices(prev => prev.map(inv =>
-                inv.id === selectedInvoice.id ? { ...inv, adjuntos_url: attachments } : inv
+                String(inv.id) === String(selectedInvoice.id) ? { ...inv, adjuntos_url: attachments } : inv
             ));
             setSelectedInvoice({ ...selectedInvoice, adjuntos_url: attachments });
             setManualAttachmentFiles([]);
@@ -733,7 +733,7 @@ export default function InvoicesPage() {
                 const nowIso = new Date().toISOString();
                 
                 const updateInvoiceState = (inv: any) => {
-                    if (inv.id !== selectedInvoice.id) return inv;
+                    if (String(inv.id) !== String(selectedInvoice.id)) return inv;
                     const updated = { ...inv };
                     if (field === 'Gestion_Contabilidad') {
                         updated.Gestion_Contabilidad = action;
