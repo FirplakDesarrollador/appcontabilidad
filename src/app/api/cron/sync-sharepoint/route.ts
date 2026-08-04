@@ -205,7 +205,8 @@ export async function GET(req: Request) {
             // Se revisa el valor EN VIVO (no la foto sbChanges tomada al inicio de la
             // corrida) porque si el usuario procesa la factura mientras el cron ya esta
             // en curso, su cambio no alcanza a estar en esa foto y la proteccion fallaba.
-            if (upsertData.Gestion_Contabilidad === 'Por Procesar') {
+            const gcLower = String(upsertData.Gestion_Contabilidad || '').toLowerCase();
+            if (gcLower === 'por procesar') {
                 const { data: liveRow } = await supabaseAdmin
                     .from('Registro_Facturas')
                     .select('FechaProcesado')
