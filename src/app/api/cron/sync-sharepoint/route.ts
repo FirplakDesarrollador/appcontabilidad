@@ -199,23 +199,24 @@ export async function GET(req: Request) {
                 delete upsertData.DigitadoPor;
             }
             // CRITICAL: If Supabase already has FechaProcesado for this item, it means
-            // a user already processed it. Never allow a sync to revert Gestion_Contabilidad
-            // back to 'Por Procesar' — this avoids the race condition where the sync
-            // captures the old SP value before the update-status PATCH completes.
-            // Se revisa el valor EN VIVO (no la foto sbChanges tomada al inicio de la
-            // corrida) porque si el usuario procesa la factura mientras el cron ya esta
-            // en curso, su cambio no alcanza a estar en esa foto y la proteccion fallaba.
-            const gcLower = String(upsertData.Gestion_Contabilidad || '').toLowerCase();
-            if (gcLower === 'por procesar') {
-                const { data: liveRow } = await supabaseAdmin
-                    .from('Registro_Facturas')
-                    .select('FechaProcesado')
-                    .eq('ID', Number(spItemId))
-                    .maybeSingle();
-                if (liveRow?.FechaProcesado) {
-                    console.log(`[CRON-SYNC] Skip GC revert for ID ${spItemId} — already has FechaProcesado in Supabase (live check)`);
-                    delete upsertData.Gestion_Contabilidad;
-                }
+            // a user already processed it. Gestion_Contabilidad queda LOCKED contra
+            // cualquier valor que traiga SharePoint, sin importar cual sea — no solo
+            // cuando dice literalmente "Por Procesar". El indice de busqueda de
+            // SharePoint (el que respalda el filtro fields/Modified usado para detectar
+            // cambios) puede devolver valores de campo desactualizados por varios
+            // minutos incluso cuando el Modified ya se actualizo, asi que no confiamos
+            // en el valor entrante en absoluto una vez que Supabase marco la factura
+            // como procesada. Se revisa el valor EN VIVO (no la foto sbChanges tomada
+            // al inicio de la corrida) porque el usuario puede procesar la factura
+            // mientras el cron ya esta en curso.
+            const { data: liveRow } = await supabaseAdmin
+                .from('Registro_Facturas')
+                .select('FechaProcesado')
+                .eq('ID', Number(spItemId))
+                .maybeSingle();
+            if (liveRow?.FechaProcesado) {
+                console.log(`[CRON-SYNC] Locking Gestion_Contabilidad for ID ${spItemId} — already has FechaProcesado in Supabase (live check)`);
+                delete upsertData.Gestion_Contabilidad;
             }
             const { error: upsertErr } = await supabaseAdmin
                 .from('Registro_Facturas')
@@ -370,7 +371,7 @@ export async function GET(req: Request) {
             console.warn('[CRON-SYNC] Auto-assign step failed (non-fatal):', autoErr.message);
         }
 
-        return NextResponse.json({ success: true, stats, _deployMarker: 'gc-guard-live-check-v1' });
+        return NextResponse.json({ success: true, stats });
 
     } catch (error: any) {
         console.error('[CRON-SYNC] Error:', error);

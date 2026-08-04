@@ -184,18 +184,20 @@ Deno.serve(async (req: Request) => {
                 delete upsertData.DigitadoPor;
             }
 
-            // Case-insensitive protection check against reverting Gestion_Contabilidad
-            const gcLower = String(upsertData.Gestion_Contabilidad || '').toLowerCase();
-            if (gcLower === 'por procesar') {
-                const { data: liveRow } = await supabase
-                    .from('Registro_Facturas')
-                    .select('FechaProcesado')
-                    .eq('ID', Number(spItemId))
-                    .maybeSingle();
-                if (liveRow?.FechaProcesado) {
-                    console.log(`[SP->SB] Skip GC revert for ID ${spItemId} — already has FechaProcesado in Supabase`);
-                    delete upsertData.Gestion_Contabilidad;
-                }
+            // Gestion_Contabilidad queda LOCKED contra cualquier valor que traiga
+            // SharePoint una vez que Supabase ya tiene FechaProcesado -- no solo
+            // cuando el valor entrante es literalmente "Por Procesar". El indice de
+            // busqueda de SharePoint que respalda el filtro fields/Modified puede
+            // devolver campos desactualizados por varios minutos incluso despues de
+            // que Modified ya se actualizo.
+            const { data: liveRow } = await supabase
+                .from('Registro_Facturas')
+                .select('FechaProcesado')
+                .eq('ID', Number(spItemId))
+                .maybeSingle();
+            if (liveRow?.FechaProcesado) {
+                console.log(`[SP->SB] Locking Gestion_Contabilidad for ID ${spItemId} — already has FechaProcesado in Supabase`);
+                delete upsertData.Gestion_Contabilidad;
             }
 
             const { error } = await supabase
