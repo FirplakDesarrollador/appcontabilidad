@@ -59,10 +59,13 @@ function mapSpToSupabase(fields: any, spItemId: any, userMap?: Map<string, strin
 }
 
 // Supabase → SharePoint Mapper
-// IMPORTANTE: Los campos de estado (Aprobacion_Doliente, Gestion_Contabilidad, Procesado)
-// NO se incluyen aquí. Estos campos son gestionados exclusivamente en SharePoint
-// y solo fluyen SP→SB, nunca al revés, para evitar sobrescribir datos correctos
-// con datos desactualizados de Supabase.
+// IMPORTANTE: Los campos de estado (Aprobacion_Doliente, Gestion_Contabilidad, Procesado,
+// FechaAprobacion) NO se incluyen aquí. Estos campos son gestionados exclusivamente en
+// SharePoint y solo fluyen SP→SB, nunca al revés, para evitar sobrescribir datos correctos
+// con datos desactualizados de Supabase. FechaAprobacion se agrego a esta exclusion porque
+// la ventana fija de 24h de esta sync hace que cualquier factura tocada en el ultimo dia se
+// vuelva a parchear en cada corrida, lo que terminaba corriendo la fecha de aprobacion real
+// hacia "ahora" en cada ciclo.
 function mapSupabaseToSp(sbItem: any) {
     const payload: any = {};
     if (sbItem.Proveedor !== undefined)               payload.Proveedor = sbItem.Proveedor;
@@ -78,7 +81,7 @@ function mapSupabaseToSp(sbItem: any) {
     if (sbItem.tiene_anticipo !== undefined)           payload.tiene_anticipo = sbItem.tiene_anticipo;
     if (sbItem.CUFE !== undefined)                     payload.CUFE = sbItem.CUFE;
     if (sbItem.InformeRecepcion !== undefined)         payload.InformeRecepcion = sbItem.InformeRecepcion;
-    if (sbItem.FechaAprobacion !== undefined)          payload.FechaAprobacion = sbItem.FechaAprobacion;
+    // FechaAprobacion: EXCLUIDO — solo fluye SP→SB
     if (sbItem.fp !== undefined)                       payload.fp = sbItem.fp;
     // Procesado: EXCLUIDO — solo fluye SP→SB
     if (sbItem.Valor_total !== undefined)              payload.Valortotal = sbItem.Valor_total;
