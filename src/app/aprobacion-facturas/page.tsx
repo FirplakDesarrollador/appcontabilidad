@@ -755,6 +755,14 @@ export default function InvoicesPage() {
                 setProcessedInvoices(prev => prev.map(updateInvoiceState));
                 setSelectedInvoice(prev => prev ? updateInvoiceState(prev) : null);
                 alert(`Factura ${action.toLowerCase()} correctamente`);
+
+                // Al pasar de Por Procesar a Procesado, refrescamos contra el
+                // servidor (no solo el parche optimista local) para que las
+                // pestañas Por Procesar / Histórico queden consistentes con
+                // la base de datos de inmediato.
+                if (field === 'Gestion_Contabilidad' && action === 'Procesado') {
+                    fetchHistory(true);
+                }
             } else {
                 const data = await res.json();
                 alert(`Error: ${data.error}`);
