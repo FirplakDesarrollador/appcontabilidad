@@ -35,6 +35,7 @@ interface InvoiceData {
     nit: string;
     valorTotal: string;
     nroFactura: string;
+    consecutivo?: string;
     fechaRegistro: string;
     estadoFactura: string;
     aprobacionDoliente: string;
@@ -42,6 +43,9 @@ interface InvoiceData {
     responsableActual?: string;
     documentInfo?: any;
     adjuntosUrl?: ManualAttachment[];
+    observaciones?: string;
+    documentos?: any;
+    fp?: any;
 }
 
 interface ManualAttachment {

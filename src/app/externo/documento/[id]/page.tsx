@@ -32,12 +32,14 @@ interface DocumentData {
     nit: string;
     valorTotal: string;
     nroFactura: string; 
+    consecutivo?: string;
     fechaRegistro: string;
     estadoFactura: string;
     aprobacionDoliente: string;
     gestionContabilidad: string;
     responsableActual?: string;
     documentInfo?: any;
+    observaciones?: string;
 }
 
 const parseSafeFloat = (val: any): number => {

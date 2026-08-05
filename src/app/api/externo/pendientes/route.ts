@@ -9,6 +9,41 @@ const supabaseAdmin = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+function normalizeStr(str: string): string {
+    return (str || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+}
+
+function matchesResponsable(respParam: string, name?: string | null, email?: string | null): boolean {
+    const target = normalizeStr(respParam);
+    if (!target) return false;
+    
+    const n = normalizeStr(name || '');
+    const e = normalizeStr(email || '');
+
+    if (n === target || e === target) return true;
+    if (n && (n.includes(target) || target.includes(n))) return true;
+    if (e && (e.includes(target) || target.includes(e))) return true;
+
+    // Check if multiple tokens of the search query exist in the name
+    const tokens = target.split(/\s+/).filter(t => t.length > 2);
+    if (tokens.length >= 2 && tokens.every(tok => n.includes(tok))) return true;
+
+    return false;
+}
+
+function isPendingStatus(statusRaw?: string | null): boolean {
+    if (!statusRaw) return true;
+    const status = normalizeStr(statusRaw);
+    if (status === 'aprobado' || status === 'rechazado' || status === 'anulado' || status === 'cancelado') {
+        return false;
+    }
+    return status.includes('pendiente') || status.includes('por aprobar') || status === '';
+}
+
 export async function GET(req: NextRequest) {
     try {
         const { searchParams } = new URL(req.url);
@@ -18,68 +53,130 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Missing responsable parameter' }, { status: 400 });
         }
 
-        const [facturas, { data: docData }] = await Promise.all([
-            fetchAllSharePointItems('Registro_de_Facturas').then(res => res.map(i => ({ ...i, _isDocSoporte: false }))),
-            supabaseAdmin.from('Documento_Soporte').select('*')
+        // Fetch from the 3 approval sources concurrently (Radicados de importación do NOT require approval)
+        const [
+            spFacturasResult,
+            supabaseFacturasResult,
+            docSoporteResult,
+            viventtaResult
+        ] = await Promise.allSettled([
+            fetchAllSharePointItems('Registro_de_Facturas'),
+            supabaseAdmin.from('Registro_Facturas').select('*'),
+            supabaseAdmin.from('Documento_Soporte').select('*'),
+            supabaseAdmin.from('Facturas_Viventta').select('*')
         ]);
-        
-        const mappedDocData = (docData || []).map(item => ({
-            ...item,
-            _isDocSoporte: true,
-            Title: item.nit,
-            Proveedor: item.proveedor,
-            Valortotal: item.valor_total,
-            Consecutivo_Doc_Soporte: item.consecutivo,
-            Aprobacion_Doliente: item.aprobacion_doliente,
-            Responsable_de_Autorizar: item.responsable_nombre,
-            Created: item.fecha_creacion || item.created_at
-        }));
 
-        const allItems = [...facturas, ...mappedDocData];
+        const normalizedItems: any[] = [];
 
-        // Filter by responsable and status (Pending)
-        const pendingItems = allItems.filter(item => {
-            const itemResponsable = String(item.Responsable_de_Autorizar || "").toLowerCase();
-            const searchResponsable = responsable.toLowerCase();
-            
-            const isResponsable = itemResponsable === searchResponsable;
-            const rawStatus = item.Aprobacion_Doliente || item.AprobacionDoliente || "Pendiente";
-            const status = String(rawStatus).toLowerCase();
-            const isPending = status.includes("pendiente") || status.includes("por aprobar");
-            
-            return isResponsable && isPending;
-        });
+        // 1. Facturas Firplak (Use SharePoint items or Supabase fallback)
+        let facturasList: any[] = [];
+        if (spFacturasResult.status === 'fulfilled' && spFacturasResult.value && spFacturasResult.value.length > 0) {
+            facturasList = spFacturasResult.value;
+        } else if (supabaseFacturasResult.status === 'fulfilled' && supabaseFacturasResult.value.data) {
+            facturasList = supabaseFacturasResult.value.data;
+        }
 
-        // Normalize data for the view
-        const normalized = pendingItems.map(item => {
-             const nitValue = item.Title || item.Nit_x0020_ || item["Nit "] || item.Nit || "N/A";
-             const valorTotal = item.Valortotal ?? item.Valor_x0020_total ?? item["Valor total"] ?? item.Monto ?? 0;
-             const isDocSoporte = item._isDocSoporte;
-             const nroDoc = isDocSoporte 
-                ? (item.Consecutivo_Doc_Soporte || "S/N") 
-                : (item.Nro_Factura || "N/A");
-             
-             return {
-                 id: item.id,
-                 proveedor: item.Proveedor || item.tsic || "N/A",
-                 nit: nitValue,
-                 valorTotal: valorTotal.toString(),
-                 nroFactura: nroDoc,
-                 fechaRegistro: item.Created || item.OData__RegistrationDate,
-                 aprobacionDoliente: item.Aprobacion_Doliente || item.AprobacionDoliente || "Pendiente",
-                 responsableActual: item.Responsable_de_Autorizar || "No asignado",
-                 tipo: isDocSoporte ? "DOCUMENTO SOPORTE" : "FACTURA"
-             };
+        for (const item of facturasList) {
+            const respName = item.Responsable_de_Autorizar || item.Responsable_x0020_de_x0020_Auto || item.responsable_nombre;
+            const respEmail = item.Responsable_email || item.Responsable_x0020_email || item.Email_Responsable;
+            const status = item.Aprobacion_Doliente || item.AprobacionDoliente || "Pendiente";
+
+            if (matchesResponsable(responsable, respName, respEmail) && isPendingStatus(status)) {
+                const nitValue = item.Title || item.Nit_x0020_ || item["Nit "] || item.Nit || "N/A";
+                const valorTotal = item.Valortotal ?? item.Valor_x0020_total ?? item["Valor total"] ?? item.Monto ?? 0;
+                
+                normalizedItems.push({
+                    id: String(item.id || item.ID),
+                    proveedor: item.Proveedor || item.tsic || item.Nombre_proveedor || item.Razon_social || "N/A",
+                    nit: nitValue,
+                    valorTotal: valorTotal.toString(),
+                    nroFactura: item.Nro_Factura || item.Factura || "N/A",
+                    consecutivo: item.Consecutivo || item.consecutivo || "",
+                    fechaRegistro: item.Created || item.Creado || item.OData__RegistrationDate || new Date().toISOString(),
+                    aprobacionDoliente: status,
+                    responsableActual: respName || "No asignado",
+                    tipo: "FACTURA",
+                    modulo: "Aprobación de facturas",
+                    moneda: "COP",
+                    url: `/externo/factura/${item.id || item.ID}`
+                });
+            }
+        }
+
+        // 2. Documentos Soporte
+        if (docSoporteResult.status === 'fulfilled' && docSoporteResult.value.data) {
+            for (const item of docSoporteResult.value.data) {
+                const respName = item.responsable_nombre || item.Responsable_de_Autorizar;
+                const respEmail = item.responsable_email || item.Responsable_email;
+                const status = item.aprobacion_doliente || item.Aprobacion_Doliente || "Pendiente";
+
+                if (matchesResponsable(responsable, respName, respEmail) && isPendingStatus(status)) {
+                    normalizedItems.push({
+                        id: String(item.id),
+                        proveedor: item.proveedor || item.Proveedor || "N/A",
+                        nit: item.nit || item.Nit || "N/A",
+                        valorTotal: (item.valor_total ?? item.Valor_total ?? 0).toString(),
+                        nroFactura: item.consecutivo ? String(item.consecutivo) : (item.nro_factura || "S/N"),
+                        consecutivo: item.consecutivo ? String(item.consecutivo) : "",
+                        fechaRegistro: item.fecha_creacion || item.created_at || new Date().toISOString(),
+                        aprobacionDoliente: status,
+                        responsableActual: respName || "No asignado",
+                        tipo: "DOCUMENTO SOPORTE",
+                        modulo: "Aprobación de docs soporte",
+                        moneda: "COP",
+                        url: `/externo/documento/${item.id}`
+                    });
+                }
+            }
+        }
+
+        // 3. Facturas Viventta
+        if (viventtaResult.status === 'fulfilled' && viventtaResult.value.data) {
+            for (const item of viventtaResult.value.data) {
+                const respName = item.Responsable_de_Autorizar || item.responsable_nombre;
+                const respEmail = item.Responsable_email || item.responsable_email;
+                const status = item.Aprobacion_Doliente || "Pendiente";
+
+                if (matchesResponsable(responsable, respName, respEmail) && isPendingStatus(status)) {
+                    normalizedItems.push({
+                        id: String(item.id),
+                        proveedor: item.Proveedor || "N/A",
+                        nit: item.Nit || "N/A",
+                        valorTotal: (item.Valor_total ?? item.Monto ?? 0).toString(),
+                        nroFactura: item.Nro_Factura || item.Consecutivo || "N/A",
+                        consecutivo: item.Consecutivo || "",
+                        fechaRegistro: item.Creado || item.created_at || new Date().toISOString(),
+                        aprobacionDoliente: status,
+                        responsableActual: respName || "No asignado",
+                        tipo: "FACTURA VIVENTTA",
+                        modulo: "Facturas Viventta",
+                        moneda: "COP",
+                        url: `/externo/factura-viventta/${item.id}`
+                    });
+                }
+            }
+        }
+
+        // Sort by fechaRegistro descending (newest first)
+        normalizedItems.sort((a, b) => {
+            const dateA = a.fechaRegistro ? new Date(a.fechaRegistro).getTime() : 0;
+            const dateB = b.fechaRegistro ? new Date(b.fechaRegistro).getTime() : 0;
+            return dateB - dateA;
         });
 
         return NextResponse.json({
             success: true,
-            total: normalized.length,
-            items: normalized
+            total: normalizedItems.length,
+            items: normalizedItems,
+            countsByModule: {
+                facturas: normalizedItems.filter(i => i.tipo === 'FACTURA').length,
+                docSoporte: normalizedItems.filter(i => i.tipo === 'DOCUMENTO SOPORTE').length,
+                viventta: normalizedItems.filter(i => i.tipo === 'FACTURA VIVENTTA').length,
+            }
         });
 
     } catch (error: any) {
-        console.error('Error fetching pending invoices:', error);
+        console.error('Error fetching pending items for approval modules:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

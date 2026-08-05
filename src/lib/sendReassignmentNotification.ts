@@ -26,10 +26,21 @@ export async function sendReassignmentNotification({
     return false;
   }
 
-  const isSupportDocument = listName === "Documento_Soporte";
-  const documentType = isSupportDocument ? "documento soporte" : "factura";
-  const externalPath = isSupportDocument ? "documento" : "factura";
-  const linkUrl = `${APP_BASE_URL}/externo/${externalPath}/${itemId}`;
+  let documentType = "factura";
+  let externalPath = "factura";
+
+  if (listName === "Documento_Soporte") {
+    documentType = "documento soporte";
+    externalPath = "documento";
+  } else if (listName === "Radicados_de_importacion") {
+    documentType = "radicado de importación";
+    externalPath = "radicado";
+  } else if (listName === "Facturas_Viventta") {
+    documentType = "factura Viventta";
+    externalPath = "factura-viventta";
+  }
+
+  const linkUrl = `${APP_BASE_URL}/externo/${externalPath}/${itemId}?responsable=${encodeURIComponent(recipientEmail)}`;
   const linkLabel = `Abrir ${documentType}`;
   const displayNumber = invoiceNumber || String(itemId);
   const actor = assignedByName || "El equipo de contabilidad";
@@ -37,8 +48,8 @@ export async function sendReassignmentNotification({
   const providerText = providerName ? ` del proveedor ${providerName}` : "";
 
   const payload = {
-    titulo: `Te reasignaron la ${documentType} ${displayNumber}`,
-    contenido: `${greeting}${actor} te ha asignado la ${documentType} ${displayNumber}${providerText}. Por favor revisala en el portal de aprobacion.`,
+    titulo: `Te reasignaron ${documentType.startsWith("f") || documentType.startsWith("d") ? "la" : "el"} ${documentType} ${displayNumber}`,
+    contenido: `${greeting}${actor} te ha asignado ${documentType.startsWith("f") || documentType.startsWith("d") ? "la" : "el"} ${documentType} ${displayNumber}${providerText}. Por favor revísalo en el portal de aprobación.`,
     link: `<a href="${linkUrl}">${linkLabel}</a>`,
     responsable: recipientEmail,
   };
