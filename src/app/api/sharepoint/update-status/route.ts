@@ -97,8 +97,13 @@ export async function POST(req: NextRequest) {
                     supaUpdate.FechaProcesado = new Date().toISOString();
                     supaUpdate.Procesado = 'true';
                     if (procesadoPor) {
+                        // NOTA: Registro_Facturas no tiene columna ProcesadoPor (solo
+                        // DigitadoPor). Incluirla hacia que PostgREST rechazara TODO
+                        // el update con "column does not exist", y el error quedaba
+                        // atrapado en el catch de abajo sin avisar al usuario -- la
+                        // factura nunca se guardaba como Procesado pese a mostrar
+                        // "exito".
                         supaUpdate.DigitadoPor = procesadoPor;
-                        supaUpdate.ProcesadoPor = procesadoPor;
                     }
                 }
             } else if (field === 'Observaciones') {
@@ -124,11 +129,21 @@ export async function POST(req: NextRequest) {
 
             if (supaErr) {
                 console.error(`[update-status] Supabase update FAILED for ${supaTable} ID ${itemId}:`, supaErr.message);
+                // SharePoint ya se actualizo (paso 3), pero el cache de Supabase que
+                // lee la app no quedo al dia. Antes esto se tragaba en silencio y la
+                // API respondia {success:true} igual, asi que el usuario nunca se
+                // enteraba de que la factura no quedaba guardada como Procesado.
+                return NextResponse.json({
+                    error: `Se actualizo en SharePoint pero fallo el guardado en la base de datos: ${supaErr.message}`
+                }, { status: 500 });
             } else {
                 console.log(`[update-status] Supabase update OK for ${supaTable} ID ${itemId} — field=${field} status=${status}`);
             }
-        } catch (supaErr) {
+        } catch (supaErr: any) {
             console.error('[update-status] Failed to update Supabase cache:', supaErr);
+            return NextResponse.json({
+                error: `Se actualizo en SharePoint pero fallo el guardado en la base de datos: ${supaErr?.message || supaErr}`
+            }, { status: 500 });
         }
 
         return NextResponse.json({ success: true });
