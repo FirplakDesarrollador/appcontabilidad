@@ -89,6 +89,9 @@ const normalizeManualAttachments = (value: any): ManualAttachment[] => {
             const parsed = JSON.parse(value);
             return Array.isArray(parsed) ? parsed : [];
         } catch {
+            if (value.startsWith("http")) {
+                return [{ name: "Documento Adjunto", url: value }];
+            }
             return [];
         }
     }

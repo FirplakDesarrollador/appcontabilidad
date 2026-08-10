@@ -233,6 +233,9 @@ export default function InvoicesPage() {
                 const parsed = JSON.parse(value);
                 return Array.isArray(parsed) ? parsed : [];
             } catch {
+                if (value.startsWith("http")) {
+                    return [{ name: "Documento Adjunto", url: value }];
+                }
                 return [];
             }
         }
@@ -837,11 +840,12 @@ export default function InvoicesPage() {
     const renderCostCenterForModal = (costCenterStr: any, tableCostStr: any) => {
         if (!costCenterStr && !tableCostStr) return <span className="text-gray-400 italic">Sin asignar</span>;
         
+        let costCenterContent = null;
         if (costCenterStr) {
             try {
                 const parsed = typeof costCenterStr === 'string' ? JSON.parse(costCenterStr) : costCenterStr;
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    return (
+                    costCenterContent = (
                         <div className="flex flex-col gap-2">
                             {parsed.map((p: any, i: number) => (
                                 <div key={i} className="flex flex-col bg-gray-50 p-3 rounded-lg border border-gray-100">
@@ -863,17 +867,32 @@ export default function InvoicesPage() {
                     );
                 }
             } catch (e) {
-                return <div className="text-sm font-bold text-[#254153] whitespace-pre-wrap cursor-text select-text">{String(costCenterStr)}</div>;
+                costCenterContent = <div className="text-sm font-bold text-[#254153] whitespace-pre-wrap cursor-text select-text">{String(costCenterStr)}</div>;
             }
         }
         
+        let tableCostContent = null;
         if (tableCostStr) {
-            if (typeof tableCostStr === 'object' && tableCostStr.Url) {
-                return <a href={tableCostStr.Url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-sm font-bold">Ver tabla adjunta</a>;
+            let parsedTable = tableCostStr;
+            if (typeof tableCostStr === 'string') {
+                try {
+                    parsedTable = JSON.parse(tableCostStr);
+                } catch(e) {}
             }
-            return <div className="text-sm font-bold text-[#254153] whitespace-pre-wrap cursor-text select-text">{String(tableCostStr)}</div>;
+            if (typeof parsedTable === 'object' && parsedTable && parsedTable.Url) {
+                tableCostContent = <a href={parsedTable.Url} target="_blank" rel="noopener noreferrer" className="inline-flex mt-3 bg-blue-50 text-blue-600 px-4 py-2 rounded-xl hover:bg-blue-100 transition-colors text-sm font-bold items-center gap-2"><FileText className="h-4 w-4" /> Ver tabla adjunta</a>;
+            } else {
+                tableCostContent = <div className="text-sm font-bold text-[#254153] whitespace-pre-wrap cursor-text select-text mt-2">{String(tableCostStr)}</div>;
+            }
         }
         
+        return (
+            <div className="flex flex-col">
+                {costCenterContent}
+                {tableCostContent}
+            </div>
+        );
+
         return <span className="text-gray-400 italic">Sin asignar</span>;
     };
 
@@ -1031,7 +1050,31 @@ export default function InvoicesPage() {
         { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{formatCostCenter(p.value, p.data?.tablaCostos)}</div> },
         { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
         { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || "Sin observaciones"}</div> },
-        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 150, filter: false, sortable: false, cellRenderer: (p: any) => <div className="h-full flex items-center">{(p.data?.documentInfo || p.data?.Attachments) ? <a href={`/api/externo/factura/${p.data?.id}/download?file=${encodeURIComponent(p.data?.documentInfo?.fileName || 'Factura.pdf')}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Adjunto"><FileText className="h-3.5 w-3.5" /><span className="text-[10px] font-black uppercase tracking-tight">Ver Adjunto</span></a> : <span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span>}</div> },
+        { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 220, filter: false, sortable: false, cellRenderer: (p: any) => {
+            const hasMain = (p.data?.documentInfo || p.data?.Attachments);
+            const manuals = normalizeManualAttachments(p.value || p.data?.adjuntos_url);
+            
+            if (!hasMain && manuals.length === 0) {
+                return <div className="h-full flex items-center"><span className="text-[10px] text-gray-300 font-medium italic">Sin adjuntos</span></div>;
+            }
+            
+            return (
+                <div className="h-full flex items-center gap-1.5 overflow-hidden">
+                    {hasMain && (
+                        <a href={`/api/externo/factura/${p.data?.id}/download?file=${encodeURIComponent(p.data?.documentInfo?.fileName || 'Factura.pdf')}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100/50" title="Ver Documento Principal">
+                            <FileText className="h-3.5 w-3.5 shrink-0" />
+                            <span className="text-[9px] font-black uppercase tracking-tight">Principal</span>
+                        </a>
+                    )}
+                    {manuals.length > 0 && manuals.map((m: any, i: number) => (
+                        <a key={i} href={m.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-50 text-gray-600 hover:bg-gray-100 transition-all border border-gray-100" title={m.name}>
+                            <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                            <span className="text-[9px] font-black uppercase tracking-tight max-w-[40px] truncate">{m.name?.split('.')[0] || `Adj ${i+1}`}</span>
+                        </a>
+                    ))}
+                </div>
+            );
+        } },
         { headerName: 'Anticipo / Tarjeta', field: 'tiene_anticipo', width: 150, cellRenderer: (p: any) => <div className="h-full flex items-center">{renderAnticipoBadge(p.value)}</div> }
     ], [syncingId]);
 

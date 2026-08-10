@@ -34,6 +34,9 @@ function normalizeAttachments(value: unknown): ManualAttachment[] {
             const parsed = JSON.parse(value);
             return Array.isArray(parsed) ? parsed : [];
         } catch {
+            if (value.startsWith("http")) {
+                return [{ name: "Documento Adjunto", url: value, path: value, type: "application/octet-stream", size: 0, uploadedAt: new Date().toISOString() }];
+            }
             return [];
         }
     }
