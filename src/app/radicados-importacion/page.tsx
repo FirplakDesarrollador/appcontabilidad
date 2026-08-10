@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { motion } from "framer-motion";
 import { Menu, Search, Ship, Download, Filter, Plus, Loader2, Link, UploadCloud } from "lucide-react";
 import { useSidebar } from "@/context/SidebarContext";
+import { useAuth } from "@/context/AuthContext";
 import { AgGridReact } from 'ag-grid-react';
 import { ModuleRegistry, AllCommunityModule, themeQuartz, ClientSideRowModelModule, CsvExportModule } from 'ag-grid-community';
 import { supabase } from "@/lib/supabaseClient";
@@ -65,6 +66,7 @@ const MOCK_DATA = [
 
 export default function RadicadosImportacionPage() {
     const { toggleSidebar } = useSidebar();
+    const { role } = useAuth();
     const [searchTerm, setSearchTerm] = useState("");
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -191,9 +193,9 @@ export default function RadicadosImportacionPage() {
                     </button>
                     <button 
                         onClick={() => handleManualSapSync(params.data)}
-                        disabled={syncingId === params.data.id}
+                        disabled={syncingId === params.data.id || role === 'viewer'}
                         className="h-8 w-8 p-0 text-gray-400 border border-gray-100 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 bg-white rounded-lg transition-all shadow-sm flex items-center justify-center disabled:opacity-50"
-                        title="Crear preliminar en SAP"
+                        title={role === 'viewer' ? "No tienes permisos" : "Crear preliminar en SAP"}
                     >
                         {syncingId === params.data.id ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" />
@@ -246,13 +248,15 @@ export default function RadicadosImportacionPage() {
                             <Link className="h-4 w-4" />
                             <span className="hidden sm:inline">Copiar Link Público</span>
                         </button>
-                        <button 
-                            onClick={() => setIsModalOpen(true)}
-                            className="h-10 px-4 bg-[#254153] hover:bg-[#1a2e3b] text-white rounded-xl font-medium transition-all flex items-center gap-2 text-sm shadow-sm"
-                        >
-                            <Plus className="h-4 w-4" />
-                            <span className="hidden sm:inline">Nuevo Radicado</span>
-                        </button>
+                        {role !== 'viewer' && (
+                            <button 
+                                onClick={() => setIsModalOpen(true)}
+                                className="h-10 px-4 bg-[#254153] text-white hover:bg-[#1a2d3a] rounded-xl font-bold transition-colors flex items-center gap-2 text-sm shadow-sm"
+                            >
+                                <Plus className="h-4 w-4" />
+                                <span className="hidden sm:inline">Nuevo Radicado</span>
+                            </button>
+                        )}
                     </div>
                 </header>
 

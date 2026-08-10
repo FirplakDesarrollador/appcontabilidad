@@ -14,7 +14,7 @@ interface DetalleRadicadoModalProps {
 }
 
 export function DetalleRadicadoModal({ isOpen, onClose, data, onSuccess }: DetalleRadicadoModalProps) {
-    const { user } = useAuth();
+    const { user, role } = useAuth();
     const [estado, setEstado] = React.useState("");
     const [gestionContabilidad, setGestionContabilidad] = React.useState("");
     const [observaciones, setObservaciones] = React.useState("");
@@ -159,12 +159,13 @@ export function DetalleRadicadoModal({ isOpen, onClose, data, onSuccess }: Detal
                                         <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">Estado</p>
                                         <select 
                                             value={estado}
+                                            disabled={role === 'viewer'}
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 setEstado(val);
                                                 handleUpdateField("Aprobacion_Doliente", val);
                                             }}
-                                            className="w-full text-xs p-1.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 focus:ring-1 focus:ring-[#254153] outline-none font-bold text-gray-700 cursor-pointer transition-colors"
+                                            className="w-full text-xs p-1.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 focus:ring-1 focus:ring-[#254153] outline-none font-bold text-gray-700 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <option value="Aprobado">Aprobado</option>
                                             <option value="Rechazado">Rechazado</option>
@@ -174,6 +175,7 @@ export function DetalleRadicadoModal({ isOpen, onClose, data, onSuccess }: Detal
                                         <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">Gestión Contabilidad</p>
                                         <select 
                                             value={gestionContabilidad}
+                                            disabled={role === 'viewer'}
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 setGestionContabilidad(val);
@@ -186,7 +188,7 @@ export function DetalleRadicadoModal({ isOpen, onClose, data, onSuccess }: Detal
                                                     handleUpdateField("Gestion_Contabilidad", val);
                                                 }
                                             }}
-                                            className="w-full text-xs p-1.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 focus:ring-1 focus:ring-[#254153] outline-none font-bold text-gray-700 cursor-pointer transition-colors"
+                                            className="w-full text-xs p-1.5 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 focus:ring-1 focus:ring-[#254153] outline-none font-bold text-gray-700 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <option value="Por Procesar">Por Procesar</option>
                                             <option value="Procesado">Procesado</option>
@@ -212,13 +214,14 @@ export function DetalleRadicadoModal({ isOpen, onClose, data, onSuccess }: Detal
                                 <h3 className="text-sm font-bold text-gray-700">Observaciones</h3>
                                 <textarea
                                     value={observaciones}
+                                    disabled={role === 'viewer'}
                                     onChange={(e) => setObservaciones(e.target.value)}
                                     onBlur={(e) => {
                                         if (e.target.value !== (data.Observaciones || "")) {
                                             handleUpdateField("Observaciones", e.target.value);
                                         }
                                     }}
-                                    className="w-full p-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white hover:bg-gray-100 focus:hover:bg-white focus:border-[#254153] focus:ring-1 focus:ring-[#254153] outline-none transition-all text-sm resize-none custom-scrollbar min-h-[80px]"
+                                    className="w-full p-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white hover:bg-gray-100 focus:hover:bg-white focus:border-[#254153] focus:ring-1 focus:ring-[#254153] outline-none transition-all text-sm resize-none custom-scrollbar min-h-[80px] disabled:opacity-50 disabled:cursor-not-allowed"
                                     placeholder="Sin observaciones adicionales..."
                                 />
                             </div>
