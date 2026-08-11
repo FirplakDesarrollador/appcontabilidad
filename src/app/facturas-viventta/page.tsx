@@ -234,6 +234,7 @@ export default function ViventtaInvoicesPage() {
                     Proveedor: row.Proveedor || '',
                     Nro_Factura: row.Nro_Factura || '',
                     Valor_total: row.Valor_total || '0',
+                    Monto: row.Valor_total || '0',
                     Aprobacion_Doliente: row.Aprobacion_Doliente || 'Por Aprobar',
                     Gestion_Contabilidad: row.Gestion_Contabilidad || 'Pendiente',
                     Responsable_de_Autorizar: row.Responsable_de_Autorizar || '',
