@@ -432,8 +432,8 @@ export default function DashboardPage() {
                                         <th scope="col" className="px-4 py-3 font-semibold rounded-tl-lg">Fecha</th>
                                         <th scope="col" className="px-4 py-3 font-semibold text-center">Nuevas (Hoy)</th>
                                         <th scope="col" className="px-4 py-3 font-semibold text-center">Acumuladas (Mes)</th>
-                                        <th scope="col" className="px-4 py-3 font-semibold text-center">Aprobadas (Hoy)</th>
-                                        <th scope="col" className="px-4 py-3 font-semibold text-center">Total Aprobadas (Mes)</th>
+                                        <th scope="col" className="px-4 py-3 font-semibold text-center">Gestionadas (Hoy)</th>
+                                        <th scope="col" className="px-4 py-3 font-semibold text-center">Total Gestionadas (Mes)</th>
                                         <th scope="col" className="px-4 py-3 font-semibold text-center">Total por Aprobar</th>
                                         <th scope="col" className="px-4 py-3 font-semibold text-center">Alertas (&gt;2 días)</th>
                                         <th scope="col" className="px-4 py-3 font-semibold text-center">Total por Procesar</th>
@@ -544,9 +544,9 @@ export default function DashboardPage() {
                                                                     <span className="text-gray-300 mx-1">|</span>
                                                                     <span className="text-purple-600 mr-1" title="Acumuladas">Σ {mod.radicadasAcumuladas || 0}</span>
                                                                     <span className="text-gray-300 mx-1">|</span>
-                                                                    <span className="text-amber-600 mr-1" title="Aprobadas (Hoy)">✓ {mod.aprobadas || 0}</span>
+                                                                    <span className="text-amber-600 mr-1" title="Gestionadas (Hoy)">✓ {mod.aprobadas || 0}</span>
                                                                     <span className="text-gray-300 mx-1">|</span>
-                                                                    <span className="text-yellow-600 mr-1" title="Total Aprobadas (Mes)">Σ✓ {mod.aprobadasAcumuladas || 0}</span>
+                                                                    <span className="text-yellow-600 mr-1" title="Total Gestionadas (Mes)">Σ✓ {mod.aprobadasAcumuladas || 0}</span>
                                                                     <span className="text-gray-300 mx-1">|</span>
                                                                     <span className="text-orange-600" title="Por Aprobar">{mod.porAprobar}</span>
                                                                     <span className="text-gray-300 mx-1">|</span>
