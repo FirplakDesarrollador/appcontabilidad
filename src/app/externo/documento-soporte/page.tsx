@@ -95,7 +95,7 @@ export default function DocumentoSoporteExternoPage() {
                     // Función auxiliar para buscar usuario
                     const searchUser = async (nameToSearch: string) => {
                         let cleanSearchName = nameToSearch.replace(/\uFFFD/g, 'ñ');
-                        const parts = cleanSearchName.split(' ');
+                        const parts = cleanSearchName.split(' ').filter(p => p.trim() !== '');
                         const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanSearchName;
                         
                         const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
@@ -103,20 +103,26 @@ export default function DocumentoSoporteExternoPage() {
                         const users = userData.users || [];
                         
                         if (users.length > 0) {
-                            // 1. Intentar match exacto con el searchQuery
-                            let match = users.find((u: any) => u.name.toLowerCase().includes(searchQuery.toLowerCase()));
-                            // 2. Si no, intentar que incluya todas las partes principales
-                            if (!match && parts.length > 1) {
-                                match = users.find((u: any) => {
-                                    const uName = u.name.toLowerCase();
-                                    return uName.includes(parts[0].toLowerCase()) && uName.includes(parts[1].toLowerCase());
-                                });
+                            const exact = users.find((u: any) => u.name.toLowerCase() === cleanSearchName.toLowerCase());
+                            if (exact) return exact;
+
+                            let bestMatch = users[0];
+                            let bestScore = -1;
+
+                            for (const user of users) {
+                                const userNameLower = user.name.toLowerCase();
+                                let score = 0;
+                                for (const part of parts) {
+                                    if (userNameLower.includes(part.toLowerCase())) {
+                                        score++;
+                                    }
+                                }
+                                if (score > bestScore) {
+                                    bestScore = score;
+                                    bestMatch = user;
+                                }
                             }
-                            // 3. Fallback al primer nombre
-                            if (!match) {
-                                match = users.find((u: any) => u.name.toLowerCase().includes(parts[0].toLowerCase()));
-                            }
-                            return match || users[0];
+                            return bestMatch;
                         }
                         return null;
                     };
