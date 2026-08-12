@@ -50,10 +50,12 @@ export default function DashboardPage() {
     const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth() + 1);
     const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear());
 
-    const fetchHistory = async () => {
+    const fetchHistory = async (m?: number, y?: number) => {
         try {
             setHistoryLoading(true);
-            const response = await fetch('/api/dashboard-history');
+            const month = m || selectedMonth;
+            const year = y || selectedYear;
+            const response = await fetch(`/api/dashboard-history?month=${month}&year=${year}`);
             const data = await response.json();
             if (data.success) {
                 setHistory(data.history);
@@ -64,6 +66,7 @@ export default function DashboardPage() {
             setHistoryLoading(false);
         }
     };
+
 
     const fetchStats = async () => {
         try {
@@ -105,6 +108,14 @@ export default function DashboardPage() {
 
         checkUser();
     }, [router]);
+
+    // Re-fetch history when month/year selector changes
+    useEffect(() => {
+        if (!loading) {
+            fetchHistory(selectedMonth, selectedYear);
+        }
+    }, [selectedMonth, selectedYear]);
+
 
     if (loading) {
         return (
@@ -455,20 +466,14 @@ export default function DashboardPage() {
                                                 </div>
                                             </td>
                                         </tr>
-                                    ) : history.filter(day => {
-                                            const [year, month] = day.fecha.split('-');
-                                            return parseInt(year) === selectedYear && parseInt(month) === selectedMonth;
-                                        }).length === 0 ? (
+                                    ) : history.length === 0 ? (
                                         <tr>
                                             <td colSpan={12} className="px-4 py-8 text-center text-gray-400">
                                                 No hay registros históricos para este mes todavía.
                                             </td>
                                         </tr>
                                     ) : (
-                                        history.filter(day => {
-                                            const [year, month] = day.fecha.split('-');
-                                            return parseInt(year) === selectedYear && parseInt(month) === selectedMonth;
-                                        }).map((day, idx, arr) => (
+                                        history.map((day, idx, arr) => (
                                             <tr key={day.fecha} className={`border-b border-gray-50 hover:bg-gray-50/30 transition-colors ${idx === arr.length - 1 ? 'border-none' : ''}`}>
                                                 <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
                                                     {day.fecha}

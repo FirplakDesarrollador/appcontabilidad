@@ -11,39 +11,68 @@ const supabase = createClient(
 export async function GET(req: Request) {
     try {
         const { searchParams } = new URL(req.url);
-        const limitDays = parseInt(searchParams.get('days') || '7');
+        // Accept month/year to fetch the full month data
+        const now = new Date();
+        const colombiaDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(now);
+        const defaultYear = parseInt(colombiaDate.substring(0, 4));
+        const defaultMonth = parseInt(colombiaDate.substring(5, 7));
+        
+        const year = parseInt(searchParams.get('year') || String(defaultYear));
+        const month = parseInt(searchParams.get('month') || String(defaultMonth));
+        
+        const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+        const firstDay = `${monthStr}-01`;
+        // Last day of selected month
+        const lastDay = new Date(year, month, 0); // day 0 of next month = last day of this month
+        const lastDayStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+        
+        // We also need the LAST record from the previous month to calculate aprobadas for day 1
+        // Fetch previous month's last day of data
+        const prevMonth = month === 1 ? 12 : month - 1;
+        const prevYear = month === 1 ? year - 1 : year;
+        const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+        
+        const { data: prevData } = await supabase
+            .from('Historial_Metricas_Diarias')
+            .select('*')
+            .gte('fecha', `${prevMonthStr}-01`)
+            .lt('fecha', firstDay)
+            .order('fecha', { ascending: false })
+            .limit(4); // Last day of prev month, 4 modules
 
-        // Fetch the records grouped by date
+        // Fetch full month of selected data
         const { data, error } = await supabase
             .from('Historial_Metricas_Diarias')
             .select('*')
-            .order('fecha', { ascending: false })
-            // we multiply by 4 because there are 4 modules per day
-            .limit(limitDays * 4);
+            .gte('fecha', firstDay)
+            .lte('fecha', lastDayStr)
+            .order('fecha', { ascending: true });
 
         if (error) {
-            // Si la tabla no existe, devolver un array vacío graciosamente
             if (error.code === '42P01') {
                 return NextResponse.json({ success: true, history: [] });
             }
             throw error;
         }
 
-        // Transformar los datos para la gráfica / tabla
-        // Formato deseado: [{ fecha: '2026-07-23', totalRadicadas: 8, totalRadicadasAcumuladas: 100, ...}, ...]
         const groupedByDate: Record<string, any> = {};
         
-        // Calcular "aprobadas" basadas en: (por aprobar ayer) + (radicadas hoy) - (por aprobar hoy)
-        // Y calcular acumulado de aprobadas por mes
-        // Para esto necesitamos iterar de más antiguo a más reciente
+        // Initialize lastPorAprobarByModule from the previous month's last day
         const lastPorAprobarByModule: Record<string, number> = {};
-        const aprobadasAcumuladas: Record<string, number> = {}; // key: "YYYY-MM_modulo"
-        const digitadasAcumuladas: Record<string, number> = {}; // key: "YYYY-MM_modulo"
-        const reversedData = [...(data || [])].reverse();
+        if (prevData && prevData.length > 0) {
+            // prevData is ordered desc, so the first entries are from the latest day
+            const lastPrevDay = prevData[0].fecha;
+            prevData.filter((r: any) => r.fecha === lastPrevDay).forEach((row: any) => {
+                lastPorAprobarByModule[row.modulo] = row.por_aprobar;
+            });
+        }
         
-        reversedData.forEach((row: any) => {
-            const monthKey = row.fecha.substring(0, 7); // "YYYY-MM"
-            const accumKey = `${monthKey}_${row.modulo}`;
+        const aprobadasAcumuladas: Record<string, number> = {};
+        const digitadasAcumuladas: Record<string, number> = {};
+        
+        // Data is already ordered ascending
+        (data || []).forEach((row: any) => {
+            const accumKey = `${monthStr}_${row.modulo}`;
 
             let aprobadasDia = 0;
             if (lastPorAprobarByModule[row.modulo] !== undefined) {
@@ -66,6 +95,7 @@ export async function GET(req: Request) {
             digitadasAcumuladas[accumKey] += totalDigitadasDia;
             row.digitadas_acumuladas_mes = digitadasAcumuladas[accumKey];
         });
+
 
         data?.forEach((row: any) => {
             if (!groupedByDate[row.fecha]) {
