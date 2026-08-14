@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useSidebar } from "@/context/SidebarContext";
 import { useAuth } from "@/context/AuthContext";
-import { PieChart, FileCheck, FileText, LogOut, RefreshCw, BarChart3, ChevronLeft, X, Ship, Users } from "lucide-react";
+import { PieChart, FileCheck, FileText, LogOut, RefreshCw, BarChart3, ChevronLeft, X, Ship, Users, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
@@ -31,6 +31,7 @@ export function Sidebar() {
         { name: "Aprobación de documento soporte", icon: FileText, path: "/aprobacion-documentos" },
         { name: "Radicados de importación", icon: Ship, path: "/radicados-importacion" },
         { name: "Facturas Viventta", icon: FileCheck, path: "/facturas-viventta" },
+        { name: "Responsables por Proveedor", icon: UserCheck, path: "/proveedores-responsables" },
         { name: "Cargue de TRM en SAP", icon: RefreshCw, path: "/cargue-trm" },
         { name: "Revisión de factura DIAN", icon: FileCheck, path: "/revision-factura-dian" },
         { name: "Informe junta", icon: BarChart3, path: "/informe-junta" },
