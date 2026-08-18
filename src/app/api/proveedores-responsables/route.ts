@@ -229,12 +229,11 @@ export async function POST(req: NextRequest) {
         const { data, error } = await supabaseAdmin
             .from("Proveedores_con_Responsable")
             .insert(insertPayload)
-            .select()
-            .single();
+            .select();
 
         if (error) throw error;
 
-        return NextResponse.json({ success: true, item: data });
+        return NextResponse.json({ success: true, item: data?.[0] || insertPayload });
     } catch (err: any) {
         console.error("Error in POST /api/proveedores-responsables:", err);
         return NextResponse.json({ error: err.message || "Error al crear proveedor" }, { status: 500 });
@@ -258,8 +257,8 @@ export async function PUT(req: NextRequest) {
             user_email
         } = body;
 
-        if (!id) {
-            return NextResponse.json({ error: "ID de registro requerido" }, { status: 400 });
+        if (!id && !nit) {
+            return NextResponse.json({ error: "ID o NIT de registro requerido" }, { status: 400 });
         }
 
         const now = new Date();
@@ -274,11 +273,13 @@ export async function PUT(req: NextRequest) {
                     "Responsables": responsable || null
                 })
                 .eq("ID", id)
-                .select()
-                .single();
+                .select();
 
             if (error) throw error;
-            return NextResponse.json({ success: true, item: data });
+            if (!data || data.length === 0) {
+                throw new Error("No se pudo actualizar en Proveedores_Viventta. Verifica que la variable SUPABASE_SERVICE_ROLE_KEY esté configurada en Vercel.");
+            }
+            return NextResponse.json({ success: true, item: data[0] });
         }
 
         const updatePayload: any = {
@@ -294,16 +295,37 @@ export async function PUT(req: NextRequest) {
             "Modificado por": user_email || "Usuario del Sistema"
         };
 
-        const { data, error } = await supabaseAdmin
-            .from("Proveedores_con_Responsable")
-            .update(updatePayload)
-            .eq("id", id)
-            .select()
-            .single();
+        let data: any[] | null = null;
+        let error: any = null;
+
+        // Intentar actualizar por id
+        if (id) {
+            const resId = await supabaseAdmin
+                .from("Proveedores_con_Responsable")
+                .update(updatePayload)
+                .eq("id", id)
+                .select();
+            data = resId.data;
+            error = resId.error;
+        }
+
+        // Fallback por NIT si por ID no actualizó filas
+        if (!error && (!data || data.length === 0) && nit) {
+            const resNit = await supabaseAdmin
+                .from("Proveedores_con_Responsable")
+                .update(updatePayload)
+                .eq("Nit", nit.trim())
+                .select();
+            data = resNit.data;
+            error = resNit.error;
+        }
 
         if (error) throw error;
+        if (!data || data.length === 0) {
+            throw new Error("No se pudo actualizar el registro. Verifica que la variable de entorno SUPABASE_SERVICE_ROLE_KEY esté agregada en los Environment Variables de Vercel para permitir permisos de edición.");
+        }
 
-        return NextResponse.json({ success: true, item: data });
+        return NextResponse.json({ success: true, item: data[0] });
     } catch (err: any) {
         console.error("Error in PUT /api/proveedores-responsables:", err);
         return NextResponse.json({ error: err.message || "Error al actualizar proveedor" }, { status: 500 });
