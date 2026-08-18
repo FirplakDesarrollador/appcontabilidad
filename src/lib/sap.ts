@@ -219,30 +219,25 @@ export async function createSapDraft(payload: SapDraftPayload) {
         const documentLines: any[] = [];
         
         if (Array.isArray(distribuciones) && distribuciones.length > 0) {
-            // Bulk fetch all relevant Articulos to avoid sequential queries
-            const uniqueAccountCodes = Array.from(new Set(distribuciones.map(d => {
-                const rawAccount = d.cuenta || '';
-                return rawAccount.split(' ')[0].trim();
-            }).filter(code => code)));
-
+            // Cargar todos los artículos y cuentas para mapeo exacto y resolución inteligente de fallbacks
             let allArticulos: any[] = [];
-            if (uniqueAccountCodes.length > 0) {
-                const numericCodes = uniqueAccountCodes.map(c => parseInt(c, 10)).filter(n => !isNaN(n));
-                const { data, error: articulosError } = await supabase
-                    .from('Articulos')
-                    .select('ItemCode, Dscription, TaxCode, AcctCode')
-                    .in('AcctCode', numericCodes);
+            let allCuentas: any[] = [];
+            
+            try {
+                const [articulosRes, cuentasRes] = await Promise.all([
+                    supabase.from('Articulos').select('ItemCode, Dscription, TaxCode, AcctCode'),
+                    supabase.from('cuentas').select('Título, id').not('Título', 'ilike', '0000%')
+                ]);
                 
-                if (articulosError) {
-                    console.error('Error fetching articles from Supabase:', articulosError);
-                } else {
-                    allArticulos = data || [];
-                }
+                allArticulos = articulosRes.data || [];
+                allCuentas = cuentasRes.data || [];
+            } catch (fetchErr) {
+                console.error('Error fetching articles/cuentas from Supabase:', fetchErr);
             }
 
             for (const dist of distribuciones) {
                 const rawAccount = dist.cuenta || '';
-                const accountCode = rawAccount.split(' ')[0].trim();
+                let accountCode = rawAccount.split(' ')[0].trim();
                 
                 const rawCC = String(dist.centroCostos || dist.centroCosto || '').trim();
                 let costCenter = "";
@@ -260,20 +255,59 @@ export async function createSapDraft(payload: SapDraftPayload) {
                     costCenter = costCenter.replace(/\s+/g, '');
                 }
 
-                // Find mapped article from bulk result
-                // Compare as strings since AcctCode comes from a BIGINT DB column
-                const mappedArticulo = allArticulos.find(a => String(a.AcctCode) === String(accountCode));
-                console.log(`SAP Draft: Mapping dist account ${accountCode} -> found item: ${mappedArticulo?.ItemCode}`);
+                // 1. Búsqueda directa por código de cuenta
+                let mappedArticulo = allArticulos.find(a => String(a.AcctCode) === String(accountCode));
+
+                // 2. Si viene con 0000 o no se encuentra por código, resolver por descripción
+                if (!mappedArticulo && (accountCode === '0000' || !accountCode || isNaN(Number(accountCode)) || accountCode.length < 6)) {
+                    const descPart = rawAccount.replace(/^[\d\s-]+/, '').trim().toLowerCase();
+                    
+                    // Reglas específicas para servicios de materia prima (740105xx)
+                    if (descPart.includes('materia prima') && descPart.includes('transporte')) {
+                        accountCode = '74010515';
+                    } else if (descPart.includes('materia prima') && descPart.includes('arrendamiento')) {
+                        accountCode = '74010510';
+                    } else if (descPart.includes('materia prima')) {
+                        accountCode = '74010505';
+                    } else {
+                        // Buscar en catálogo de cuentas activas por coincidencia de descripción
+                        const matchedCuenta = allCuentas.find(c => {
+                            const cDesc = (c.Título || '').replace(/^[\d\s-]+/, '').trim().toLowerCase();
+                            return cDesc === descPart || (cDesc.length > 6 && descPart.includes(cDesc));
+                        });
+                        
+                        if (matchedCuenta) {
+                            accountCode = matchedCuenta.Título.split(' ')[0].trim();
+                        }
+                    }
+
+                    // Reintentar mapeo con el código resuelto
+                    mappedArticulo = allArticulos.find(a => String(a.AcctCode) === String(accountCode));
+                    
+                    // Si aún no está por código, intentar mapeo directo por descripción en Articulos
+                    if (!mappedArticulo) {
+                        mappedArticulo = allArticulos.find(a => {
+                            const artDesc = (a.Dscription || '').toLowerCase();
+                            return artDesc === descPart || (artDesc.length > 6 && descPart.includes(artDesc));
+                        });
+                        if (mappedArticulo && mappedArticulo.AcctCode) {
+                            accountCode = String(mappedArticulo.AcctCode);
+                        }
+                    }
+                }
+
+                console.log(`SAP Draft: Mapping dist account "${rawAccount}" -> Resolved Account: ${accountCode} -> found item: ${mappedArticulo?.ItemCode}`);
                 
                 const itemCode = mappedArticulo?.ItemCode || "";
                 const itemDescription = mappedArticulo?.Dscription || `${docTypeDesc} ${nroFactura}`;
                 const taxCode = mappedArticulo?.TaxCode || "IVADC3";
+                const finalAccountCode = mappedArticulo?.AcctCode ? String(mappedArticulo.AcctCode) : String(accountCode);
                 const numericValor = Number(dist.valor) || 0;
 
                 documentLines.push({
                     ItemCode: itemCode ? String(itemCode).substring(0, 50) : undefined,
                     ItemDescription: String(itemDescription).substring(0, 100),
-                    AccountCode: String(accountCode).substring(0, 50),
+                    AccountCode: String(finalAccountCode).substring(0, 50),
                     ...(costCenter ? { 
                         CostingCode: String(costCenter).substring(0, 8),
                         U_CentroCostos: String(costCenter).substring(0, 30)
