@@ -540,7 +540,7 @@ export default function PublicCreateInvoicePage() {
                                 <input
                                     required
                                     type="file"
-                                    accept=".pdf,.zip,.rar,.7z,application/zip,application/x-zip-compressed,application/octet-stream,application/x-rar-compressed"
+                                    accept=".pdf,.zip,.rar,.7z,.xlsx,.xls,.csv,.xlsm,.xlsb,application/zip,application/x-zip-compressed,application/octet-stream,application/x-rar-compressed,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
                                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                 />
@@ -552,7 +552,7 @@ export default function PublicCreateInvoicePage() {
                                         <p className="text-base font-bold text-blue-700 truncate w-full px-4">{file.name}</p>
                                         <p className="text-xs text-blue-500/80 font-semibold mt-1">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                                         <div className="mt-4 px-4 py-2 bg-white rounded-xl shadow-sm border border-blue-100 text-xs font-bold text-blue-600 flex items-center gap-2 pointer-events-none">
-                                            <Check className="h-3 w-3" /> PDF Seleccionado
+                                            <Check className="h-3 w-3" /> Archivo Seleccionado
                                         </div>
                                     </div>
                                 ) : (
@@ -561,8 +561,8 @@ export default function PublicCreateInvoicePage() {
                                             <Upload className="h-7 w-7 text-gray-400" />
                                         </div>
                                         <div>
-                                            <p className="text-base font-bold text-[#254153]">Haz clic o arrastra el PDF aquí</p>
-                                            <p className="text-sm text-gray-500 font-medium mt-1">Tamaño máximo recomendado: 10MB</p>
+                                            <p className="text-base font-bold text-[#254153]">Haz clic o arrastra el archivo aquí</p>
+                                            <p className="text-sm text-gray-500 font-medium mt-1">PDF, Excel, ZIP, RAR (Máx: 10MB)</p>
                                         </div>
                                     </>
                                 )}

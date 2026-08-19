@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Upload, Loader2, CheckCircle2, AlertCircle, FileText, User, Search, ChevronDown, DollarSign } from "lucide-react";
+import { X, Upload, Loader2, CheckCircle2, AlertCircle, FileText, FileSpreadsheet, User, Search, ChevronDown, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 interface CreateSupportDocumentModalProps {
@@ -111,7 +111,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (files.length === 0) {
-            setError("Debes adjuntar al menos un archivo (PDF, ZIP, RAR, etc.) del documento soporte.");
+            setError("Debes adjuntar al menos un archivo (PDF, Excel, ZIP, RAR, etc.) del documento soporte.");
             return;
         }
 
@@ -486,7 +486,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                     {files.length === 0 && (
                                         <input
                                             type="file"
-                                            accept=".pdf,.zip,.rar,.7z,image/*,video/*"
+                                            accept=".pdf,.zip,.rar,.7z,.xlsx,.xls,.csv,.xlsm,.xlsb,image/*,video/*,application/pdf,application/zip,application/x-zip-compressed,application/octet-stream,application/x-rar-compressed,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
                                             multiple
                                             onChange={(e) => {
                                                 if (e.target.files) {
@@ -499,35 +499,53 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                     )}
                                     {files.length > 0 ? (
                                         <div className="flex flex-col gap-2 w-full px-2 max-h-40 overflow-y-auto custom-scrollbar">
-                                            {files.map((f, idx) => (
-                                                <div key={idx} className="flex items-center gap-3 w-full p-2 bg-white rounded-xl border border-blue-100 shadow-sm relative group">
-                                                    <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-                                                        <FileText className="h-4 w-4 text-blue-600" />
-                                                    </div>
-                                                    <div className="text-left overflow-hidden flex-1">
-                                                        <p className="text-xs font-bold text-blue-600 truncate pr-6">{f.name}</p>
-                                                        <p className="text-[10px] text-blue-400">{(f.size / 1024 / 1024).toFixed(2)} MB</p>
-                                                    </div>
-                                                    <button 
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            setFiles(prev => prev.filter((_, i) => i !== idx));
-                                                        }}
-                                                        className="absolute right-2 p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                            {files.map((f, idx) => {
+                                                const isExcel = /\.(xlsx|xls|csv|xlsm|xlsb)$/i.test(f.name);
+                                                return (
+                                                    <div 
+                                                        key={idx} 
+                                                        className={`flex items-center gap-3 w-full p-2 bg-white rounded-xl border shadow-sm relative group ${
+                                                            isExcel ? "border-emerald-100" : "border-blue-100"
+                                                        }`}
                                                     >
-                                                        <X className="h-4 w-4" />
-                                                    </button>
-                                                </div>
-                                            ))}
+                                                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                                            isExcel ? "bg-emerald-100 text-emerald-600" : "bg-blue-100 text-blue-600"
+                                                        }`}>
+                                                            {isExcel ? (
+                                                                <FileSpreadsheet className="h-4 w-4" />
+                                                            ) : (
+                                                                <FileText className="h-4 w-4" />
+                                                            )}
+                                                        </div>
+                                                        <div className="text-left overflow-hidden flex-1">
+                                                            <p className={`text-xs font-bold truncate pr-6 ${
+                                                                isExcel ? "text-emerald-700" : "text-blue-600"
+                                                            }`}>{f.name}</p>
+                                                            <p className={`text-[10px] ${
+                                                                isExcel ? "text-emerald-500" : "text-blue-400"
+                                                            }`}>{(f.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                        </div>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                setFiles(prev => prev.filter((_, i) => i !== idx));
+                                                            }}
+                                                            className="absolute right-2 p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                                        >
+                                                            <X className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
                                             <div className="pt-2 flex justify-center">
                                                 <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors border border-blue-100 shadow-sm">
                                                     <Upload className="h-3.5 w-3.5" />
                                                     Agregar más archivos
                                                     <input
                                                         type="file"
-                                                        accept=".pdf,.zip,.rar,.7z,image/*,video/*"
+                                                        accept=".pdf,.zip,.rar,.7z,.xlsx,.xls,.csv,.xlsm,.xlsb,image/*,video/*,application/pdf,application/zip,application/x-zip-compressed,application/octet-stream,application/x-rar-compressed,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
                                                         multiple
                                                         onChange={(e) => {
                                                             if (e.target.files) {
@@ -547,7 +565,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                             </div>
                                             <div>
                                                 <p className="text-xs font-bold text-[#254153]">Arrastra los archivos aquí</p>
-                                                <p className="text-[9px] text-gray-400">PDF, ZIP, RAR, Imágenes, Videos</p>
+                                                <p className="text-[9px] text-gray-400">PDF, Excel, ZIP, RAR, Imágenes, Videos</p>
                                             </div>
                                         </>
                                     )}
