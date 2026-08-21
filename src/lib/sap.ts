@@ -176,9 +176,17 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         const nitFilter = `(FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}' or CardCode eq 'AC${baseNit}' or CardCode eq 'PN${baseNit}' or CardCode eq 'PE${baseNit}' or CardCode eq 'AC${baseNit}-01' or CardCode eq 'PN${baseNit}-01' or CardCode eq 'PE${baseNit}-01')`;
-        // Removed vendorCodeFilter from API call to fetch all matches and see their CardCode in case of error
-        const bpUrl = `${baseUrl}/BusinessPartners?$filter=${nitFilter}&$select=CardCode,CardName,FederalTaxID,CardType`;
-        const bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
+        
+        // 1. Intentar buscar directamente como Proveedor (CardType eq 'S') para evitar que la paginación
+        // de SAP (20 registros máx) devuelva solo clientes (cCustomer) cuando un mismo NIT tiene decenas de sucursales de venta (ej: Sodimac).
+        let bpUrl = `${baseUrl}/BusinessPartners?$filter=(${nitFilter}) and CardType eq 'S'&$select=CardCode,CardName,FederalTaxID,CardType`;
+        let bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
+
+        if (bpRes.status !== 200 || !bpRes.data.value || bpRes.data.value.length === 0) {
+            // Fallback: consultar sin filtro de tipo para obtener candidatos o error descriptivo
+            bpUrl = `${baseUrl}/BusinessPartners?$filter=${nitFilter}&$select=CardCode,CardName,FederalTaxID,CardType`;
+            bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
+        }
 
         if (bpRes.status !== 200) {
             throw new Error(`Failed to find Business Partner in SAP: ${JSON.stringify(bpRes.data)}`);
