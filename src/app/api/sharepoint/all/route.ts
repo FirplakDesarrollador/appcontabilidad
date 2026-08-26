@@ -14,6 +14,61 @@ const PENDING_CACHE_TTL_MS = 3 * 60 * 1000;
 let lastPendingSync: number = 0;
 let pendingSyncInProgress = false;
 
+// Caché en memoria para contadores (30s) para evitar 3 escaneos completos de tabla en cada request
+interface CachedCounts {
+    pendingCount: number;
+    processedCount: number;
+    toProcessCount: number;
+    timestamp: number;
+}
+let cachedCounts: CachedCounts | null = null;
+const COUNTS_CACHE_TTL_MS = 30 * 1000;
+
+async function getInvoiceCounts(forceRefresh: boolean = false): Promise<{ pendingCount: number; processedCount: number; toProcessCount: number }> {
+    if (!forceRefresh && cachedCounts && (Date.now() - cachedCounts.timestamp) < COUNTS_CACHE_TTL_MS) {
+        return {
+            pendingCount: cachedCounts.pendingCount,
+            processedCount: cachedCounts.processedCount,
+            toProcessCount: cachedCounts.toProcessCount
+        };
+    }
+
+    try {
+        const [pendingCountRes, processedCountRes, toProcessCountRes] = await Promise.all([
+            supabase
+                .from('Registro_Facturas')
+                .select('ID', { count: 'exact', head: true })
+                .eq('Aprobacion_Doliente', 'Por Aprobar'),
+            supabase
+                .from('Registro_Facturas')
+                .select('ID', { count: 'exact', head: true })
+                .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado,FechaProcesado.not.is.null'),
+            supabase
+                .from('Registro_Facturas')
+                .select('ID', { count: 'exact', head: true })
+                .eq('Aprobacion_Doliente', 'Aprobado')
+                .ilike('Gestion_Contabilidad', '%POR PROCESAR%')
+                .is('FechaProcesado', null)
+        ]);
+
+        const counts = {
+            pendingCount: pendingCountRes.count || 0,
+            processedCount: processedCountRes.count || 0,
+            toProcessCount: toProcessCountRes.count || 0,
+            timestamp: Date.now()
+        };
+        cachedCounts = counts;
+        return counts;
+    } catch (e) {
+        console.error('[API] Error getting invoice counts:', e);
+        return {
+            pendingCount: cachedCounts?.pendingCount || 0,
+            processedCount: cachedCounts?.processedCount || 0,
+            toProcessCount: cachedCounts?.toProcessCount || 0
+        };
+    }
+}
+
 function mapSharePointInvoiceToSupabase(item: any) {
     const hasAttachmentsFlag = item.Attachments === true || Number(item.Datos_adjuntos) > 0 || !!item.fp || !!item.documentos;
 
@@ -95,7 +150,6 @@ export async function GET(req: Request) {
             const cacheAge = Date.now() - lastPendingSync;
             const cacheStale = cacheAge > PENDING_CACHE_TTL_MS;
 
-            // Contar pendientes en Supabase (rápido)
             // Si refresh explícito, esperar la sincronización antes de responder
             if (refresh) {
                 console.log('[API] Explicit refresh requested — syncing from SharePoint...');
@@ -106,61 +160,29 @@ export async function GET(req: Request) {
                 syncPendingFromSharePointInBackground(req.url); // fire-and-forget
             }
 
-            // Servir desde Supabase (siempre rápido)
+            // Servir desde Supabase (rápido en 1 sola consulta)
             const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
             const fetchLimit = limit > 0 ? limit : 1000;
 
-            let allData: any[] = [];
-            let currentOffset = offset;
-            let fetchError = null;
-
-            while (allData.length < fetchLimit) {
-                const chunkLimit = Math.min(1000, fetchLimit - allData.length);
-                const { data, error } = await supabase
+            const [dataRes, counts] = await Promise.all([
+                supabase
                     .from('Registro_Facturas')
                     .select(columns)
                     .eq('Aprobacion_Doliente', 'Por Aprobar')
                     .order('ID', { ascending: false })
-                    .range(currentOffset, currentOffset + chunkLimit - 1);
-
-                if (error) {
-                    fetchError = error;
-                    break;
-                }
-                if (!data || data.length === 0) break;
-
-                allData = [...allData, ...data];
-                currentOffset += data.length;
-
-                if (data.length < chunkLimit) break;
-            }
-
-            const data = allData;
-
-            const [pendingCountRes, processedCountRes, toProcessCountRes] = await Promise.all([
-                supabase
-                    .from('Registro_Facturas')
-                    .select('ID', { count: 'exact', head: true })
-                    .eq('Aprobacion_Doliente', 'Por Aprobar'),
-                supabase
-                    .from('Registro_Facturas')
-                    .select('ID', { count: 'exact', head: true })
-                    .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado,FechaProcesado.not.is.null'),
-                supabase
-                    .from('Registro_Facturas')
-                    .select('ID', { count: 'exact', head: true })
-                    .eq('Aprobacion_Doliente', 'Aprobado')
-                    .ilike('Gestion_Contabilidad', '%POR PROCESAR%')
-                    .is('FechaProcesado', null)
+                    .range(offset, offset + fetchLimit - 1),
+                getInvoiceCounts(refresh)
             ]);
+
+            const data = dataRes.data || [];
 
             return NextResponse.json({
                 success: true,
-                total: data?.length || 0,
-                pendingCount: pendingCountRes.count || 0,
-                processedCount: processedCountRes.count || 0,
-                toProcessCount: toProcessCountRes.count || 0,
-                items: data || [],
+                total: data.length,
+                pendingCount: counts.pendingCount,
+                processedCount: counts.processedCount,
+                toProcessCount: counts.toProcessCount,
+                items: data,
                 source: 'cache',
                 syncStatus: refresh ? 'synced' : (cacheStale ? 'syncing' : 'fresh'),
                 lastSync: lastPendingSync,
@@ -171,53 +193,29 @@ export async function GET(req: Request) {
         // PROCESADOS / HISTÓRICO → caché de Supabase (rápido, paginado)
         // ─────────────────────────────────────────────────────────────────────
         if (processed || history) {
-            const [pendingCountRes, processedCountRes, toProcessCountRes] = await Promise.all([
-                supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Por Aprobar'),
-                supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado,FechaProcesado.not.is.null'),
-                supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Aprobado').ilike('Gestion_Contabilidad', '%POR PROCESAR%').is('FechaProcesado', null)
-            ]);
-            const pendingCount = pendingCountRes.count || 0;
-            const processedCount = processedCountRes.count || 0;
-            const toProcessCount = toProcessCountRes.count || 0;
+            const counts = await getInvoiceCounts(refresh);
+            const { pendingCount, processedCount, toProcessCount } = counts;
 
             if (!refresh) {
                 console.log(`[API] Fetching PROCESSED from Supabase cache (offset=${offset}, limit=${limit})...`);
                 const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
                 const fetchLimit = limit > 0 ? limit : 1000;
 
-                let allData: any[] = [];
-                let currentOffset = offset;
-                let fetchError = null;
+                const { data, error } = await supabase
+                    .from('Registro_Facturas')
+                    .select(columns)
+                    .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado')
+                    .order('ID', { ascending: false })
+                    .range(offset, offset + fetchLimit - 1);
 
-                while (allData.length < fetchLimit) {
-                    const chunkLimit = Math.min(1000, fetchLimit - allData.length);
-                    const { data, error } = await supabase
-                        .from('Registro_Facturas')
-                        .select(columns)
-                        .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado')
-                        .order('ID', { ascending: false })
-                        .range(currentOffset, currentOffset + chunkLimit - 1);
-
-                    if (error) {
-                        fetchError = error;
-                        break;
-                    }
-                    if (!data || data.length === 0) break;
-
-                    allData = [...allData, ...data];
-                    currentOffset += data.length;
-
-                    if (data.length < chunkLimit) break;
-                }
-
-                if (!fetchError && allData && allData.length > 0) {
+                if (!error && data && data.length > 0) {
                     return NextResponse.json({
                         success: true,
-                        total: allData.length,
+                        total: data.length,
                         pendingCount,
                         processedCount,
                         toProcessCount,
-                        items: allData,
+                        items: data,
                         source: 'cache'
                     });
                 }

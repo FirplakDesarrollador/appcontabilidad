@@ -270,28 +270,16 @@ export default function InvoicesPage() {
         } else {
             setPreviewUrl(null);
             setPreviewError(null);
+            setPreviewLoading(false);
         }
     }, [selectedInvoice]);
 
-    const handlePreview = async (invoice: any) => {
-        try {
-            setPreviewError(null);
-            setPreviewLoading(true);
-
-            const fileName = invoice?.documentInfo?.fileName || 'Factura';
-            const apiUrl = `/api/externo/factura/${invoice.id}/download?file=${encodeURIComponent(fileName)}`;
-            const res = await fetch(apiUrl);
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || "No se ha encontrado factura en PDF");
-            }
-            setPreviewUrl(apiUrl);
-        } catch (err: any) {
-            console.error('Preview error:', err);
-            setPreviewError(err.message || "No se pudo cargar la vista previa");
-        } finally {
-            setPreviewLoading(false);
-        }
+    const handlePreview = (invoice: any) => {
+        setPreviewError(null);
+        setPreviewLoading(true);
+        const fileName = invoice?.documentInfo?.fileName || 'Factura.pdf';
+        const apiUrl = `/api/externo/factura/${invoice.id}/download?file=${encodeURIComponent(fileName)}`;
+        setPreviewUrl(apiUrl);
     };
 
     const handleUploadManualAttachments = async () => {
@@ -2208,7 +2196,11 @@ export default function InvoicesPage() {
                                                         <iframe 
                                                             src={`${previewUrl}#toolbar=0&navpanes=0`} 
                                                             className="w-full h-full border-none pointer-events-none" 
-                                                            onError={(e) => console.log('Error loading preview iframe')}
+                                                            onLoad={() => setPreviewLoading(false)}
+                                                            onError={(e) => {
+                                                                console.log('Error loading preview iframe', e);
+                                                                setPreviewLoading(false);
+                                                            }}
                                                         />
                                                     </>
                                                 ) : (
