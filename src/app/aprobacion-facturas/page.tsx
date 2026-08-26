@@ -1055,11 +1055,6 @@ export default function InvoicesPage() {
         { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
         { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
         { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Por Procesar"}</div> },
-        { headerName: 'Fecha de Procesado', field: 'FechaProcesado', width: 170, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin procesar"}</div> },
-        { headerName: 'Procesado Por', field: 'DigitadoPor', width: 180, cellRenderer: (p: any) => {
-            const val = p.value || p.data?.ProcesadoPor;
-            return <div className="text-xs font-semibold text-gray-700 h-full flex items-center">{val ? getProcesadoPorName(val) : "Sin asignar"}</div>;
-        } },
         { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || "Sin observaciones"}</div> },
         { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || ""}</div> },
         { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
@@ -1090,7 +1085,12 @@ export default function InvoicesPage() {
                 </div>
             );
         } },
-        { headerName: 'Anticipo / Tarjeta', field: 'tiene_anticipo', width: 150, cellRenderer: (p: any) => <div className="h-full flex items-center">{renderAnticipoBadge(p.value)}</div> }
+        { headerName: 'Anticipo / Tarjeta', field: 'tiene_anticipo', width: 150, cellRenderer: (p: any) => <div className="h-full flex items-center">{renderAnticipoBadge(p.value)}</div> },
+        { headerName: 'Fecha de Procesado', field: 'FechaProcesado', width: 170, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin procesar"}</div> },
+        { headerName: 'Procesado Por', field: 'DigitadoPor', width: 180, cellRenderer: (p: any) => {
+            const val = p.value || p.data?.ProcesadoPor;
+            return <div className="text-xs font-semibold text-gray-700 h-full flex items-center">{val ? getProcesadoPorName(val) : "Sin asignar"}</div>;
+        } }
     ], [syncingId]);
 
     const handleExportExcel = () => {
