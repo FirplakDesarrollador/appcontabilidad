@@ -784,7 +784,12 @@ export default function InvoicesPage() {
             const res = await fetch("/api/sap/manual-draft", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ invoiceId: inv.id })
+                body: JSON.stringify({ 
+                    invoiceId: inv.id,
+                    source: "Registro_de_Facturas",
+                    centro_costos: inv.centro_costos,
+                    tablaCostos: inv.tablaCostos
+                })
             });
 
             const data = await res.json();

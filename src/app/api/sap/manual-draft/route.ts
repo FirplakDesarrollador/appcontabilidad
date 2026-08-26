@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { createClient } from '@supabase/supabase-js';
 import { getSharePointInvoiceById, getSharePointItemById } from '@/lib/sharepoint';
 import { createSapDraft } from '@/lib/sap';
 
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    (serviceKey && serviceKey !== 'REEMPLAZAR_CON_TU_SERVICE_ROLE_KEY') ? serviceKey : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
 export async function POST(req: NextRequest) {
     try {
-        const { invoiceId, source = "Registro_de_Facturas" } = await req.json();
+        const body = await req.json();
+        const { invoiceId, source = "Registro_de_Facturas", centro_costos: passedCC, tablaCostos: passedTC, distribuciones: passedDist } = body;
 
         if (!invoiceId) {
             return NextResponse.json({ success: false, error: 'Missing invoiceId' }, { status: 400 });
@@ -38,7 +45,7 @@ export async function POST(req: NextRequest) {
                     Nit: String(nitValue),
                     Responsable_de_Autorizar: supaDoc.responsable_de_autorizar || supaDoc.Responsable_de_Autorizar,
                     Observaciones: supaDoc.observaciones || supaDoc.Observaciones || 'Sincronización manual desde portal de aprobación',
-                    centro_costos: supaDoc.centro_costos || supaDoc.tablaCostos || "[]",
+                    centro_costos: supaDoc.centro_costos || supaDoc.tablaCostos || passedCC || "[]",
                     "Valor total": String(supaDoc.monto || supaDoc.valor_total || supaDoc.Monto || 0),
                     tiene_anticipo: supaDoc.tiene_anticipo === true || supaDoc.tiene_anticipo === 'true' || supaDoc.tiene_anticipo === 't',
                     Consecutivo: supaDoc.consecutivo || supaDoc.Consecutivo || String(invoiceId)
@@ -66,45 +73,75 @@ export async function POST(req: NextRequest) {
                     Nit: String(nitValue),
                     Responsable_de_Autorizar: supaDoc.Responsable_de_Autorizar,
                     Observaciones: supaDoc.Observaciones || 'Sincronización manual desde portal de aprobación',
-                    centro_costos: supaDoc.centro_costos || "[]",
+                    centro_costos: supaDoc.centro_costos || passedCC || "[]",
                     "Valor total": String(supaDoc.Monto || 0),
                     tiene_anticipo: false,
                     Consecutivo: supaDoc.Consecutivo || String(invoiceId)
                 };
                 console.log(`[Manual SAP Draft] Supabase Radicado de Importación ${invoiceId} loaded successfully.`);
             } else {
-                console.log(`[Manual SAP Draft] Fetching from SharePoint...`);
-                const spItem = await getSharePointItemById(String(invoiceId), source);
-                if (!spItem) {
-                    throw new Error(`Invoice ${invoiceId} not found in SharePoint`);
-                }
+                // Try Supabase FIRST for fast & reliable metadata
+                console.log(`[Manual SAP Draft] Fetching from Supabase Registro_Facturas...`);
+                const { data: supaInvoice } = await supabase
+                    .from('Registro_Facturas')
+                    .select('*')
+                    .or(`ID.eq.${isNaN(Number(invoiceId)) ? 0 : invoiceId},sharepoint_id.eq.${invoiceId}`)
+                    .maybeSingle();
 
-                let nitValue = spItem.Nit || spItem.Nit_x0020_ || spItem["Nit "] || spItem.Title || "N/A";
-                nitValue = String(nitValue).replace(/[.\s]/g, '').trim();
-                const montoValue = spItem.Valortotal ?? spItem.Valor_x0020_total ?? spItem["Valor total"] ?? spItem.Monto ?? 0;
-                const nroFactura = spItem.Nro_Factura || spItem.Nro_x002e__x0020_Factura || spItem.Nro_Factura_x0020_ || "S/N";
-                
-                invoice = {
-                    id: spItem.id,
-                    Nro_Factura: nroFactura,
-                    Proveedor: spItem.Proveedor || spItem.tsic || spItem.Nombre_proveedor || spItem.Razon_social || "Proveedor en SharePoint",
-                    Nit: String(nitValue),
-                    Responsable_de_Autorizar: spItem.Responsable_de_Autorizar,
-                    Observaciones: spItem.Observaciones || 'Sincronización manual desde portal de aprobación',
-                    centro_costos: (typeof spItem.centro_costos === 'string' && spItem.centro_costos)
-                        || (typeof spItem.Centro_x0020_de_x0020_costos === 'string' && spItem.Centro_x0020_de_x0020_costos)
-                        || (typeof spItem.tablaCostos === 'string' && spItem.tablaCostos)
-                        || "[]",
-                    "Valor total": String(montoValue),
-                    tiene_anticipo: spItem.tiene_anticipo === 't' || spItem.tiene_anticipo === true || spItem.tiene_anticipo === 'true' || spItem.Tiene_x0020_anticipo === 't',
-                    Consecutivo: spItem.Consecutivo || String(invoiceId)
-                };
-                console.log(`[Manual SAP Draft] SharePoint Item ${invoiceId} loaded successfully.`);
+                if (supaInvoice) {
+                    let nitValue = supaInvoice.Nit || supaInvoice.Title || "N/A";
+                    nitValue = String(nitValue).replace(/[.\s]/g, '').trim();
+                    const montoValue = supaInvoice.Valor_total ?? supaInvoice["Valor total"] ?? supaInvoice.Valortotal ?? supaInvoice.Monto ?? 0;
+                    const nroFactura = supaInvoice.Nro_Factura || "S/N";
+
+                    invoice = {
+                        id: supaInvoice.ID || supaInvoice.sharepoint_id || invoiceId,
+                        Nro_Factura: nroFactura,
+                        Proveedor: supaInvoice.Proveedor || "Proveedor en Supabase",
+                        Nit: String(nitValue),
+                        Responsable_de_Autorizar: supaInvoice.Responsable_de_Autorizar,
+                        Observaciones: supaInvoice.Observaciones || 'Sincronización manual desde portal de aprobación',
+                        centro_costos: supaInvoice.centro_costos || supaInvoice.tablaCostos || passedCC || "[]",
+                        "Valor total": String(montoValue),
+                        tiene_anticipo: supaInvoice.tiene_anticipo === 't' || supaInvoice.tiene_anticipo === true || supaInvoice.tiene_anticipo === 'true',
+                        Consecutivo: supaInvoice.Consecutivo || String(invoiceId)
+                    };
+                    console.log(`[Manual SAP Draft] Supabase Registro_Facturas Item ${invoiceId} loaded successfully.`);
+                } else {
+                    console.log(`[Manual SAP Draft] Falling back to SharePoint...`);
+                    const spItem = await getSharePointItemById(String(invoiceId), source);
+                    if (!spItem) {
+                        throw new Error(`Invoice ${invoiceId} not found in SharePoint or Supabase`);
+                    }
+
+                    let nitValue = spItem.Nit || spItem.Nit_x0020_ || spItem["Nit "] || spItem.Title || "N/A";
+                    nitValue = String(nitValue).replace(/[.\s]/g, '').trim();
+                    const montoValue = spItem.Valortotal ?? spItem.Valor_x0020_total ?? spItem["Valor total"] ?? spItem.Monto ?? 0;
+                    const nroFactura = spItem.Nro_Factura || spItem.Nro_x002e__x0020_Factura || spItem.Nro_Factura_x0020_ || "S/N";
+                    
+                    invoice = {
+                        id: spItem.id,
+                        Nro_Factura: nroFactura,
+                        Proveedor: spItem.Proveedor || spItem.tsic || spItem.Nombre_proveedor || spItem.Razon_social || "Proveedor en SharePoint",
+                        Nit: String(nitValue),
+                        Responsable_de_Autorizar: spItem.Responsable_de_Autorizar,
+                        Observaciones: spItem.Observaciones || 'Sincronización manual desde portal de aprobación',
+                        centro_costos: (typeof spItem.centro_costos === 'string' && spItem.centro_costos)
+                            || (typeof spItem.Centro_x0020_de_x0020_costos === 'string' && spItem.Centro_x0020_de_x0020_costos)
+                            || (typeof spItem.tablaCostos === 'string' && spItem.tablaCostos)
+                            || passedCC
+                            || "[]",
+                        "Valor total": String(montoValue),
+                        tiene_anticipo: spItem.tiene_anticipo === 't' || spItem.tiene_anticipo === true || spItem.tiene_anticipo === 'true' || spItem.Tiene_x0020_anticipo === 't',
+                        Consecutivo: spItem.Consecutivo || String(invoiceId)
+                    };
+                    console.log(`[Manual SAP Draft] SharePoint Item ${invoiceId} loaded successfully.`);
+                }
             }
 
         } catch (spErr: any) {
-            console.error(`[Manual SAP Draft] SharePoint fetch error:`, spErr.message);
-            throw new Error(`Failed to retrieve invoice from SharePoint: ${spErr.message}`);
+            console.error(`[Manual SAP Draft] Invoice fetch error:`, spErr.message);
+            throw new Error(`Failed to retrieve invoice: ${spErr.message}`);
         }
 
         // 2. Prepare distribution lines
@@ -121,9 +158,16 @@ export async function POST(req: NextRequest) {
                 valor: Number(invoice["Valor total"]) || 0
             }];
             console.log(`[Manual SAP Draft] Hardcoded distribution for Radicados_de_importacion.`);
+        } else if (Array.isArray(passedDist) && passedDist.length > 0) {
+            distribuciones = passedDist.map((d: any) => ({
+                centroCostos: d.centroCostos || d.centroCosto || d.centro_costos || d.CentroCostos || '',
+                cuenta: d.cuenta || d.Cuenta || '',
+                valor: d.valor || d.Valor || d.monto || 0
+            }));
+            console.log(`[Manual SAP Draft] Using ${distribuciones.length} distributions passed in request.`);
         } else {
             try {
-                let raw = invoice.centro_costos;
+                let raw = invoice.centro_costos || passedCC;
                 
                 // Parse if it's a string
                 if (typeof raw === 'string') {
@@ -149,9 +193,9 @@ export async function POST(req: NextRequest) {
                     valor: d.valor || d.Valor || d.monto || 0
                 }));
                 
-                console.log(`[Manual SAP Draft] Normalized ${distribuciones.length} distribution lines from SharePoint.`);
+                console.log(`[Manual SAP Draft] Normalized ${distribuciones.length} distribution lines.`);
             } catch (e) {
-                console.error("[Manual SAP Draft] Error parsing centro_costos from SharePoint:", e);
+                console.error("[Manual SAP Draft] Error parsing centro_costos:", e);
             }
         }
 
@@ -159,22 +203,26 @@ export async function POST(req: NextRequest) {
         if (distribuciones.length === 0) {
             try {
                 console.log(`[Manual SAP Draft] Trying Supabase fallback for invoice ${invoiceId}...`);
-                const queryCol = (source === 'Documento_Soporte' || source === 'Radicados_de_importacion') ? 'id' : 'sharepoint_id';
                 const table = source === 'Documento_Soporte' ? 'Documento_Soporte' : (source === 'Radicados_de_importacion' ? 'Radicados_de_importacion' : 'Registro_Facturas');
-                const { data: supaRecord } = await supabase
-                    .from(table)
-                    .select('distribuciones, centro_costos')
-                    .eq(queryCol, invoiceId)
-                    .single();
+                const idCol = (source === 'Documento_Soporte' || source === 'Radicados_de_importacion') ? 'id' : 'ID';
+                
+                let supaQuery = supabase.from(table).select('*');
+                if (table === 'Registro_Facturas') {
+                    supaQuery = supaQuery.or(`ID.eq.${isNaN(Number(invoiceId)) ? 0 : invoiceId},sharepoint_id.eq.${invoiceId}`);
+                } else {
+                    supaQuery = supaQuery.eq(idCol, Number(invoiceId));
+                }
+                
+                const { data: supaRecord } = await supaQuery.maybeSingle();
                 
                 if (supaRecord) {
-                    let rawSupa = supaRecord.distribuciones || supaRecord.centro_costos;
+                    let rawSupa = supaRecord.distribuciones || supaRecord.centro_costos || supaRecord.tablaCostos;
                     if (typeof rawSupa === 'string') rawSupa = JSON.parse(rawSupa);
                     if (typeof rawSupa === 'string') rawSupa = JSON.parse(rawSupa);
                     if (!Array.isArray(rawSupa)) rawSupa = rawSupa ? [rawSupa] : [];
                     
                     distribuciones = rawSupa.map((d: any) => ({
-                        centroCostos: d.centroCostos || d.centroCosto || d.centro_costos || '',
+                        centroCostos: d.centroCostos || d.centroCosto || d.centro_costos || d.CentroCostos || '',
                         cuenta: d.cuenta || d.Cuenta || '',
                         valor: d.valor || d.Valor || d.monto || 0
                     }));
