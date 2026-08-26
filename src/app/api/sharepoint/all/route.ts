@@ -106,6 +106,7 @@ function mapSharePointInvoiceToSupabase(item: any) {
 
 /**
  * Sincroniza en segundo plano los ítems "Por Aprobar" entre SharePoint y Supabase.
+ * Solo trae pendientes de SharePoint → Supabase (lectura ligera, sin patch ni cron pesado).
  * Se dispara sin bloquear la respuesta HTTP → el usuario recibe los datos de Supabase
  * inmediatamente, y la próxima carga ya tendrá el estado actualizado.
  */
@@ -113,25 +114,39 @@ async function syncPendingFromSharePointInBackground(reqUrl: string) {
     if (pendingSyncInProgress) return;
     pendingSyncInProgress = true;
     try {
-        console.log('[BG Sync] Triggering background delta sync...');
-        const baseUrl = new URL(reqUrl).origin;
-        const secret = process.env.CRON_SECRET || '';
-        const syncUrl = `${baseUrl}/api/cron/sync-sharepoint?secret=${secret}`;
+        console.log('[BG Sync] Lightweight pending-only sync starting...');
+        const { fetchAllSharePointItems } = await import('@/lib/sharepoint');
+        const pendingFilter = "fields/Aprobacion_Doliente eq 'Por Aprobar'";
+        const spItems = await fetchAllSharePointItems('Registro_de_Facturas', 500, pendingFilter);
         
-        const response = await fetch(syncUrl, { method: 'GET' });
-        if (!response.ok) {
-            console.error('[BG Sync] Failed to execute background delta sync:', response.statusText);
+        if (spItems.length > 0) {
+            // Bulk upsert to Supabase in chunks of 200
+            const mapped = spItems.map((item: any) => mapSharePointInvoiceToSupabase(item));
+            for (let i = 0; i < mapped.length; i += 200) {
+                const chunk = mapped.slice(i, i + 200);
+                const cleanChunk = chunk.map((row: any) => {
+                    const clean = { ...row };
+                    // Don't overwrite fields that only Supabase owns
+                    if (clean.Responsable_de_Autorizar === null) delete clean.Responsable_de_Autorizar;
+                    if (clean.FechaProcesado === null) delete clean.FechaProcesado;
+                    if (!clean.DigitadoPor) delete clean.DigitadoPor;
+                    return clean;
+                });
+                await supabase.from('Registro_Facturas').upsert(cleanChunk, { onConflict: 'ID' });
+            }
+            console.log(`[BG Sync] Upserted ${spItems.length} pending items to Supabase.`);
         } else {
-            console.log('[BG Sync] Background delta sync completed successfully.');
+            console.log('[BG Sync] No pending items found in SharePoint.');
         }
 
         lastPendingSync = Date.now();
     } catch (err) {
-        console.error('[BG Sync] Error during background pending sync:', err);
+        console.error('[BG Sync] Error during lightweight pending sync:', err);
     } finally {
         pendingSyncInProgress = false;
     }
 }
+
 
 export async function GET(req: Request) {
     try {

@@ -142,10 +142,11 @@ export default function InvoicesPage() {
     };
 
     const invoices = useMemo(() => {
+        const idSet = new Set(pendingInvoices.map(c => c.id));
         const combined = [...pendingInvoices];
-        processedInvoices.forEach(item => {
-            if (!combined.some(c => c.id === item.id)) combined.push(item);
-        });
+        for (const item of processedInvoices) {
+            if (!idSet.has(item.id)) combined.push(item);
+        }
         return combined.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
     }, [pendingInvoices, processedInvoices]);
 
@@ -960,34 +961,46 @@ export default function InvoicesPage() {
         return state.includes("aprobado") || state.includes("rechazado") || contabilidad.includes("procesado") || !!inv.FechaProcesado;
     };
 
-    const filteredInvoices = invoices.filter(inv => {
-        const matchesSearch = !searchTerm ||
-            inv.Nro_Factura?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            inv.Proveedor?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            inv.Nit?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            inv.Consecutivo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            inv.Observaciones?.toLowerCase().includes(searchTerm.toLowerCase());
+    const filteredInvoices = useMemo(() => {
+        const lowerSearch = searchTerm ? searchTerm.toLowerCase() : '';
+        const lowerColInvoice = columnFilters.invoice ? columnFilters.invoice.toLowerCase() : '';
+        const lowerColProvider = columnFilters.provider ? columnFilters.provider.toLowerCase() : '';
+        const lowerColResponsible = columnFilters.responsible ? columnFilters.responsible.toLowerCase() : '';
+        const lowerColStatus = columnFilters.status ? columnFilters.status.toLowerCase() : '';
+        const lowerColContabilidad = columnFilters.contabilidad ? columnFilters.contabilidad.toLowerCase() : '';
+        const lowerColNit = columnFilters.nit ? columnFilters.nit.toLowerCase() : '';
+        const lowerColConsecutivo = columnFilters.consecutivo ? columnFilters.consecutivo.toLowerCase() : '';
+        const lowerColObservaciones = columnFilters.observaciones ? columnFilters.observaciones.toLowerCase() : '';
 
-        const matchesTab = activeTab === 'pending' ? isPending(inv) : activeTab === 'to_process' ? isToProcess(inv) : isProcessed(inv);
-        const matchesResponsable = selectedResponsable === "all" || inv.Responsable_de_Autorizar === selectedResponsable;
+        return invoices.filter(inv => {
+            const matchesSearch = !lowerSearch ||
+                inv.Nro_Factura?.toLowerCase().includes(lowerSearch) ||
+                inv.Proveedor?.toLowerCase().includes(lowerSearch) ||
+                inv.Nit?.toLowerCase().includes(lowerSearch) ||
+                inv.Consecutivo?.toLowerCase().includes(lowerSearch) ||
+                inv.Observaciones?.toLowerCase().includes(lowerSearch);
 
-        // Filtros por columna (Excel-style)
-        const matchesColInvoice = !columnFilters.invoice || inv.Nro_Factura?.toLowerCase().includes(columnFilters.invoice.toLowerCase());
-        const matchesColProvider = !columnFilters.provider || 
-            inv.Proveedor?.toLowerCase().includes(columnFilters.provider.toLowerCase());
-        const matchesColAmount = !columnFilters.amount || String(inv.Monto).includes(columnFilters.amount);
-        const matchesColResponsible = !columnFilters.responsible || inv.Responsable_de_Autorizar?.toLowerCase().includes(columnFilters.responsible.toLowerCase());
-        const matchesColStatus = !columnFilters.status || (inv.Aprobacion_Doliente || "Pendiente").toLowerCase().includes(columnFilters.status.toLowerCase());
-        const matchesColContabilidad = !columnFilters.contabilidad || (inv.Gestion_Contabilidad || "Pendiente").toLowerCase().includes(columnFilters.contabilidad.toLowerCase());
-        const matchesColNit = !columnFilters.nit || (inv.Nit || "").toLowerCase().includes(columnFilters.nit.toLowerCase());
-        const matchesColConsecutivo = !columnFilters.consecutivo || (inv.Consecutivo || "").toLowerCase().includes(columnFilters.consecutivo.toLowerCase());
-        const matchesColObservaciones = !columnFilters.observaciones || (inv.Observaciones || "").toLowerCase().includes(columnFilters.observaciones.toLowerCase());
+            if (!matchesSearch) return false;
 
-        return matchesSearch && matchesTab && matchesResponsable && 
-                matchesColInvoice && matchesColProvider && matchesColAmount && 
-               matchesColResponsible && matchesColStatus && matchesColContabilidad &&
-               matchesColNit && matchesColConsecutivo && matchesColObservaciones;
-    });
+            const matchesTab = activeTab === 'pending' ? isPending(inv) : activeTab === 'to_process' ? isToProcess(inv) : isProcessed(inv);
+            if (!matchesTab) return false;
+
+            if (selectedResponsable !== "all" && inv.Responsable_de_Autorizar !== selectedResponsable) return false;
+
+            // Filtros por columna (Excel-style) — short-circuit rápido
+            if (lowerColInvoice && !inv.Nro_Factura?.toLowerCase().includes(lowerColInvoice)) return false;
+            if (lowerColProvider && !inv.Proveedor?.toLowerCase().includes(lowerColProvider)) return false;
+            if (columnFilters.amount && !String(inv.Monto).includes(columnFilters.amount)) return false;
+            if (lowerColResponsible && !inv.Responsable_de_Autorizar?.toLowerCase().includes(lowerColResponsible)) return false;
+            if (lowerColStatus && !(inv.Aprobacion_Doliente || "Pendiente").toLowerCase().includes(lowerColStatus)) return false;
+            if (lowerColContabilidad && !(inv.Gestion_Contabilidad || "Pendiente").toLowerCase().includes(lowerColContabilidad)) return false;
+            if (lowerColNit && !(inv.Nit || "").toLowerCase().includes(lowerColNit)) return false;
+            if (lowerColConsecutivo && !(inv.Consecutivo || "").toLowerCase().includes(lowerColConsecutivo)) return false;
+            if (lowerColObservaciones && !(inv.Observaciones || "").toLowerCase().includes(lowerColObservaciones)) return false;
+
+            return true;
+        });
+    }, [invoices, searchTerm, activeTab, selectedResponsable, columnFilters]);
 
     const sortedInvoices = useMemo(() => {
         if (!sortOrder) return filteredInvoices;
