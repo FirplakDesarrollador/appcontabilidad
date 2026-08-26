@@ -810,13 +810,21 @@ export default function InvoicesPage() {
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     return (
                         <div className="flex flex-col gap-1.5 py-1">
-                            {parsed.map((p, i) => (
-                                <div key={i} className="whitespace-normal break-words leading-tight bg-gray-50/50 rounded p-1">
-                                    <span className="text-[#254153] font-extrabold">{p.centroCosto?.split(' - ')[0] || ''}</span>
-                                    <span className="text-gray-300 mx-1.5">|</span>
-                                    <span className="text-gray-600">{p.cuenta || ''}</span>
-                                </div>
-                            ))}
+                            {parsed.map((p, i) => {
+                                const ccName = p.centroCostos || p.centroCosto || p.centro_costos || p.CentroCosto || p.Centro_Costos || '';
+                                const cuentaName = p.cuenta || p.Cuenta || '';
+                                return (
+                                    <div key={i} className="whitespace-normal break-words leading-tight bg-gray-50/50 rounded p-1">
+                                        <span className="text-[#254153] font-extrabold">{ccName.split(' - ')[0] || ccName}</span>
+                                        {cuentaName && (
+                                            <>
+                                                <span className="text-gray-300 mx-1.5">|</span>
+                                                <span className="text-gray-600">{cuentaName}</span>
+                                            </>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     );
                 }
@@ -845,22 +853,27 @@ export default function InvoicesPage() {
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     costCenterContent = (
                         <div className="flex flex-col gap-2">
-                            {parsed.map((p: any, i: number) => (
-                                <div key={i} className="flex flex-col bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                    <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Centro de Costo</div>
-                                    <div className="text-sm font-black text-[#254153] mb-2 cursor-text select-text">{p.centroCosto || 'N/A'}</div>
-                                    <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Cuenta</div>
-                                    <div className="text-sm font-black text-[#254153] mb-2 cursor-text select-text">{p.cuenta || 'N/A'}</div>
-                                    {p.valor !== undefined && p.valor !== "" && (
-                                        <>
-                                            <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Valor Asignado</div>
-                                            <div className="text-sm font-black text-[#254153] cursor-text select-text">
-                                                {!isNaN(Number(p.valor)) ? new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(Number(p.valor)) : p.valor}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            ))}
+                            {parsed.map((p: any, i: number) => {
+                                const ccName = p.centroCostos || p.centroCosto || p.centro_costos || p.CentroCosto || p.Centro_Costos || 'N/A';
+                                const cuentaName = p.cuenta || p.Cuenta || 'N/A';
+                                const valorName = p.valor ?? p.Valor;
+                                return (
+                                    <div key={i} className="flex flex-col bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                        <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Centro de Costo</div>
+                                        <div className="text-sm font-black text-[#254153] mb-2 cursor-text select-text">{ccName}</div>
+                                        <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Cuenta</div>
+                                        <div className="text-sm font-black text-[#254153] mb-2 cursor-text select-text">{cuentaName}</div>
+                                        {valorName !== undefined && valorName !== "" && (
+                                            <>
+                                                <div className="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Valor Asignado</div>
+                                                <div className="text-sm font-black text-[#254153] cursor-text select-text">
+                                                    {!isNaN(Number(valorName)) ? new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(Number(valorName)) : valorName}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     );
                 }
