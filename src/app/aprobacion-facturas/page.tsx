@@ -2181,12 +2181,7 @@ export default function InvoicesPage() {
                                                  </div>
                                              </div>
                                              <div className="flex-1 relative rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm flex items-center justify-center">
-                                                {previewLoading ? (
-                                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-10 transition-all">
-                                                        <Loader2 className="h-8 w-8 text-[#254153] animate-spin mb-3" />
-                                                        <p className="text-[10px] font-black text-[#254153] uppercase tracking-[2px]">Cargando vista previa...</p>
-                                                    </div>
-                                                ) : previewError ? (
+                                                {previewError ? (
                                                     <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center bg-red-50/50">
                                                         <div className="bg-white p-3 rounded-full shadow-sm mb-3">
                                                             <AlertCircle className="h-6 w-6 text-red-500" />
@@ -2201,10 +2196,17 @@ export default function InvoicesPage() {
                                                     </div>
                                                 ) : previewUrl ? (
                                                     <>
+                                                        {previewLoading && (
+                                                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-10 transition-all">
+                                                                <Loader2 className="h-8 w-8 text-[#254153] animate-spin mb-3" />
+                                                                <p className="text-[10px] font-black text-[#254153] uppercase tracking-[2px]">Cargando vista previa...</p>
+                                                            </div>
+                                                        )}
                                                         <div 
                                                             className="absolute inset-0 z-10 cursor-pointer bg-transparent" 
                                                             onClick={() => setExpandedPdfUrl(previewUrl)} 
-                                                            title="Hacer clic para ampliar" 
+                                                            title="Hacer clic para ampliar"
+                                                            style={{ display: previewLoading ? 'none' : 'block' }}
                                                         />
                                                         <iframe 
                                                             src={`${previewUrl}#toolbar=0&navpanes=0`} 

@@ -97,15 +97,27 @@ export async function GET(
         // 3. Try ITPowerApps / Graph API if not already fetched
         if (!fileBuffer && nroFactura && nitValue !== 'N/A') {
             console.log(`[Direct Download] Searching for ${nroFactura} in ITPowerApps...`);
-            const client = await getGraphClient();
             const externalDoc = await findExternalInvoiceDocument(nitValue, nroFactura, "");
             
             if (externalDoc) {
                 console.log(`[Direct Download] Found external doc: ${externalDoc.fileName}. Fetching content...`);
                 try {
-                    const response = await client.api(`/drives/${externalDoc.driveId}/items/${externalDoc.id}/content`).get();
-                    if (response) {
-                        fileBuffer = response;
+                    // Prefer the direct download URL (avoids extra Graph API round-trip)
+                    if (externalDoc.downloadUrl) {
+                        const dlRes = await fetch(externalDoc.downloadUrl);
+                        if (dlRes.ok) {
+                            fileBuffer = await dlRes.arrayBuffer();
+                        }
+                    }
+                    // Fallback to Graph API content endpoint
+                    if (!fileBuffer) {
+                        const client = await getGraphClient();
+                        const response = await client.api(`/drives/${externalDoc.driveId}/items/${externalDoc.id}/content`).get();
+                        if (response) {
+                            fileBuffer = response;
+                        }
+                    }
+                    if (fileBuffer) {
                         console.log(`[Direct Download] Successfully fetched ${externalDoc.fileName} from ITPowerApps, outputting as ${finalFileName}`);
                     }
                 } catch (extErr) {
