@@ -176,7 +176,7 @@ export async function GET(req: Request) {
             }
 
             // Servir desde Supabase (rápido en 1 sola consulta)
-            const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
+            const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, DigitadoPor, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
             const fetchLimit = limit > 0 ? limit : 1000;
 
             const [dataRes, counts] = await Promise.all([
@@ -213,7 +213,7 @@ export async function GET(req: Request) {
 
             if (!refresh) {
                 console.log(`[API] Fetching PROCESSED from Supabase cache (offset=${offset}, limit=${limit})...`);
-                const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
+                const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, DigitadoPor, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
                 const fetchLimit = limit > 0 ? limit : 1000;
 
                 const { data, error } = await supabase

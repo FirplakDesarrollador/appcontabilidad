@@ -78,6 +78,9 @@ interface SharePointInvoice {
     Created?: string;
     Documento_x0020_PDF?: string;
     FechaAprobacion?: string;
+    FechaProcesado?: string | null;
+    DigitadoPor?: string | null;
+    ProcesadoPor?: string | null;
     adjuntos_url?: ManualAttachment[] | string | null;
     tiene_anticipo?: string | boolean | null;
     [key: string]: any;
@@ -259,6 +262,9 @@ export default function InvoicesPage() {
             Proveedor: item.Proveedor || "N/A",
             Responsable_de_Autorizar: item.Responsable_de_Autorizar || "Sin asignar",
             FechaAprobacion: item.FechaAprobacion || null,
+            FechaProcesado: item.FechaProcesado || null,
+            DigitadoPor: item.DigitadoPor || item.ProcesadoPor || null,
+            ProcesadoPor: item.ProcesadoPor || item.DigitadoPor || null,
             adjuntos_url: normalizeManualAttachments(item.adjuntos_url),
             documentInfo,
             Attachments: item.Attachments || !!item.documentos || !!item.fp
@@ -731,7 +737,10 @@ export default function InvoicesPage() {
                         updated.Gestion_Contabilidad = action;
                         if (action === 'Procesado') {
                             updated.FechaProcesado = nowIso;
-                            if (procesadoPor) updated.ProcesadoPor = procesadoPor;
+                            if (procesadoPor) {
+                                updated.ProcesadoPor = procesadoPor;
+                                updated.DigitadoPor = procesadoPor;
+                            }
                         }
                     } else {
                         updated.Aprobacion_Doliente = action;
@@ -1046,6 +1055,11 @@ export default function InvoicesPage() {
         { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || "Sin asignar"}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ""}</div></div> },
         { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || "Pendiente"}</span></div> },
         { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Por Procesar"}</div> },
+        { headerName: 'Fecha de Procesado', field: 'FechaProcesado', width: 170, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin procesar"}</div> },
+        { headerName: 'Procesado Por', field: 'DigitadoPor', width: 180, cellRenderer: (p: any) => {
+            const val = p.value || p.data?.ProcesadoPor;
+            return <div className="text-xs font-semibold text-gray-700 h-full flex items-center">{val ? getProcesadoPorName(val) : "Sin asignar"}</div>;
+        } },
         { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || "Sin observaciones"}</div> },
         { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || ""}</div> },
         { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
@@ -1098,6 +1112,8 @@ export default function InvoicesPage() {
                     "Responsable": inv.Responsable_de_Autorizar || "Sin asignar",
                     "Estado": inv.Aprobacion_Doliente || "Pendiente",
                     "Gestión Contabilidad": inv.Gestion_Contabilidad || "Pendiente",
+                    "Fecha de Procesado": inv.FechaProcesado ? new Date(inv.FechaProcesado).toLocaleString() : "Sin fecha",
+                    "Procesado Por": inv.DigitadoPor ? getProcesadoPorName(inv.DigitadoPor) : (inv.ProcesadoPor ? getProcesadoPorName(inv.ProcesadoPor) : "Sin asignar"),
                     "Consecutivo": inv.Consecutivo || "N/A",
                     "Fecha Creación": (inv.Creado || inv.Created) ? new Date(inv.Creado || inv.Created).toLocaleString() : "Sin fecha",
                     "Observaciones": inv.Observaciones || "Sin observaciones",
@@ -2106,6 +2122,18 @@ export default function InvoicesPage() {
                                                         <option value="Procesado">Procesado</option>
                                                     </select>
                                                 </div>
+                                                {selectedInvoice.FechaProcesado && (
+                                                    <div>
+                                                        <p className="text-[11px] font-bold text-gray-400 uppercase mb-0.5">Fecha de Procesado</p>
+                                                        <p className="text-xs font-bold text-gray-600">{new Date(selectedInvoice.FechaProcesado).toLocaleString()}</p>
+                                                    </div>
+                                                )}
+                                                {(selectedInvoice.DigitadoPor || selectedInvoice.ProcesadoPor) && (
+                                                    <div>
+                                                        <p className="text-[11px] font-bold text-gray-400 uppercase mb-0.5">Procesado Por</p>
+                                                        <p className="text-xs font-bold text-gray-700">{getProcesadoPorName(selectedInvoice.DigitadoPor || selectedInvoice.ProcesadoPor)}</p>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
 
