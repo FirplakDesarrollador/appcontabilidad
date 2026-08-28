@@ -376,6 +376,7 @@ export default function DocumentoSoporteExternoPage() {
                                         required
                                         type="number"
                                         min="0"
+                                        step="any"
                                         value={formData.valor}
                                         onChange={(e) => setFormData({ ...formData, valor: e.target.value })}
                                         className="w-full h-14 pl-12 pr-4 bg-white border border-gray-200 rounded-2xl text-lg focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153] transition-all font-bold text-[#254153]"

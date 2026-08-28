@@ -467,6 +467,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                             required
                                             type="number"
                                             min="0"
+                                            step="any"
                                             value={formData.valor}
                                             onChange={(e) => setFormData({ ...formData, valor: e.target.value })}
                                             className="w-full pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-bold text-[#254153]"
