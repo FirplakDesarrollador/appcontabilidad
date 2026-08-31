@@ -125,58 +125,80 @@ export async function POST(req: NextRequest) {
             throw new Error('No se pudo actualizar el responsable en ningún campo conocido de SharePoint usando el ID del usuario.');
         }
 
-        // Sync responsible to Supabase cache immediately
+        // Sync responsible to Supabase cache immediately and auto-register/update in Proveedores_con_Responsable
         try {
+            let itemNit = null;
+            let itemProveedor = providerName;
+
             if (listName === 'Documento_Soporte') {
-                await supabase
+                const { data: supaDoc } = await supabaseAdmin
                     .from('Documento_Soporte')
                     .update({
                         responsable_id: userEmail,
                         responsable_nombre: userName,
                         updated_at: new Date().toISOString()
                     })
-                    .eq('id', Number(itemId));
+                    .eq('id', Number(itemId))
+                    .select('nit, proveedor')
+                    .maybeSingle();
+
+                if (supaDoc) {
+                    itemNit = supaDoc.nit;
+                    itemProveedor = supaDoc.proveedor || itemProveedor;
+                }
                 console.log(`Supabase Documento_Soporte responsible updated for item ${itemId}`);
             } else {
-                await supabase
+                const { data: itemData } = await supabaseAdmin
                     .from('Registro_Facturas')
                     .update({
                         Responsable_de_Autorizar: userName,
                         updated_at: new Date().toISOString()
                     })
-                    .eq('ID', Number(itemId));
+                    .eq('ID', Number(itemId))
+                    .select('Nit, Proveedor')
+                    .maybeSingle();
+
+                if (itemData) {
+                    itemNit = itemData.Nit;
+                    itemProveedor = itemData.Proveedor || itemProveedor;
+                }
                 console.log(`Supabase Registro_Facturas responsible updated for item ${itemId}`);
-                
-                // Auto-registrar proveedor si no existe
+            }
+
+            // Auto-registrar o actualizar proveedor en Proveedores_con_Responsable
+            if (itemNit && userName) {
                 try {
-                    const { data: itemData } = await supabaseAdmin
-                        .from('Registro_Facturas')
-                        .select('nit, proveedor')
-                        .eq('ID', Number(itemId))
-                        .single();
+                    const baseNit = itemNit.includes('-') ? itemNit.split('-')[0] : itemNit;
+                    const { data: existingProvider, error: lookupError } = await supabaseAdmin
+                        .from("Proveedores_con_Responsable")
+                        .select('"Nit", "Responsable"')
+                        .or(`Nit.ilike.${baseNit}%,Nit.ilike.${itemNit}%`)
+                        .limit(1);
 
-                    if (itemData && itemData.nit) {
-                        const baseNit = itemData.nit.includes('-') ? itemData.nit.split('-')[0] : itemData.nit;
-                        const { data: existingProvider, error: lookupError } = await supabaseAdmin
+                    if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
+                        await supabaseAdmin.from("Proveedores_con_Responsable").insert({
+                            "Nit": itemNit,
+                            "Nombre de socio de negocios": itemProveedor || "Proveedor Desconocido",
+                            "Responsable": userName,
+                            "Autorizador": userName,
+                            "Correo": userEmail,
+                            "Creado": new Date().toISOString()
+                        });
+                        console.log(`[Supabase] Auto-registrado nuevo proveedor con responsable: ${itemNit} - ${userName}`);
+                    } else if (existingProvider && existingProvider.length > 0) {
+                        await supabaseAdmin
                             .from("Proveedores_con_Responsable")
-                            .select('"Nit"')
-                            .like("Nit", `${baseNit}%`)
-                            .limit(1);
-
-                        if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
-                            await supabaseAdmin.from("Proveedores_con_Responsable").insert({
-                                "Nit": itemData.nit,
-                                "Nombre de socio de negocios": itemData.proveedor || providerName || "Proveedor Desconocido",
+                            .update({
                                 "Responsable": userName,
                                 "Autorizador": userName,
                                 "Correo": userEmail,
-                                "Creado": new Date().toISOString()
-                            });
-                            console.log(`[Supabase] Auto-registrado nuevo proveedor con responsable: ${itemData.nit} - ${userName}`);
-                        }
+                                "Modificado": new Date().toISOString()
+                            })
+                            .eq("Nit", existingProvider[0].Nit);
+                        console.log(`[Supabase] Actualizado responsable de proveedor existente: ${existingProvider[0].Nit} -> ${userName}`);
                     }
                 } catch (providerErr) {
-                    console.error("[Supabase] Error registrando Proveedor_con_Responsable automáticamente:", providerErr);
+                    console.error("[Supabase] Error registrando/actualizando Proveedor_con_Responsable:", providerErr);
                 }
             }
         } catch (supaErr) {

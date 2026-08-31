@@ -204,14 +204,14 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, error: 'Error al guardar el documento' }, { status: 500 });
         }
 
-        // Auto-registrar proveedor si no existe
-        if (responsableEmail && responsableNombreRecibido) {
+        // Auto-registrar proveedor en Proveedores_con_Responsable si no existe o actualizar si no tiene responsable
+        if (responsableNombreRecibido && responsableNombreRecibido !== 'Sin asignar') {
             try {
                 const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
                 const { data: existingProvider, error: lookupError } = await supabaseAdmin
                     .from("Proveedores_con_Responsable")
-                    .select('"Nit"')
-                    .like("Nit", `${baseNit}%`)
+                    .select('"Nit", "Responsable"')
+                    .or(`Nit.ilike.${baseNit}%,Nit.ilike.${nit}%`)
                     .limit(1);
 
                 if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
@@ -220,10 +220,20 @@ export async function POST(req: NextRequest) {
                         "Nombre de socio de negocios": proveedor,
                         "Responsable": responsableNombreRecibido,
                         "Autorizador": responsableNombreRecibido,
-                        "Correo": responsableEmail,
+                        "Correo": responsableEmail || null,
                         "Creado": new Date().toISOString()
                     });
-                    console.log(`[Supabase] Registrado nuevo proveedor con responsable (Doc Soporte): ${nit} - ${responsableNombreRecibido}`);
+                    console.log(`[Supabase] Auto-registrado nuevo proveedor con responsable (Doc Soporte): ${nit} - ${responsableNombreRecibido}`);
+                } else if (existingProvider && existingProvider.length > 0 && !existingProvider[0].Responsable) {
+                    await supabaseAdmin
+                        .from("Proveedores_con_Responsable")
+                        .update({
+                            "Responsable": responsableNombreRecibido,
+                            "Autorizador": responsableNombreRecibido,
+                            "Correo": responsableEmail || null,
+                        })
+                        .eq("Nit", existingProvider[0].Nit);
+                    console.log(`[Supabase] Actualizado responsable en Proveedores_con_Responsable (Doc Soporte): ${existingProvider[0].Nit} - ${responsableNombreRecibido}`);
                 }
             } catch (providerErr) {
                 console.error("[Supabase] Error registrando Proveedor_con_Responsable (Doc Soporte):", providerErr);
