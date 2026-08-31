@@ -148,6 +148,30 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Si falta responsableNombre o responsableEmail, intentar resolver desde Proveedores_con_Responsable
+        if (!responsableNombreRecibido || !responsableEmail) {
+            try {
+                const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
+                const { data: provResp } = await supabaseAdmin
+                    .from('Proveedores_con_Responsable')
+                    .select('"Responsable", "Autorizador", "Correo"')
+                    .like('Nit', `${baseNit}%`)
+                    .limit(1)
+                    .maybeSingle();
+
+                if (provResp) {
+                    if (!responsableNombreRecibido) {
+                        responsableNombreRecibido = provResp.Responsable || provResp.Autorizador;
+                    }
+                    if (!responsableEmail) {
+                        responsableEmail = provResp.Correo;
+                    }
+                }
+            } catch (err) {
+                console.error('[Doc Soporte] Error resolving fallback responsable:', err);
+            }
+        }
+
         const docData: any = {
             id: Number(newItemId),
             sharepoint_id: String(newItemId),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     CheckCircle2,
@@ -28,6 +28,7 @@ export default function DocumentoSoporteExternoPage() {
         nit: "",
         proveedor: "",
         responsableEmail: "",
+        responsableNombre: "",
         valor: ""
     });
 
@@ -36,6 +37,12 @@ export default function DocumentoSoporteExternoPage() {
     const [isLookingUp, setIsLookingUp] = useState(false);
     const [autoFilled, setAutoFilled] = useState(false);
 
+    // Estados para búsqueda de Responsable
+    const [userSearch, setUserSearch] = useState("");
+    const [userResults, setUserResults] = useState<any[]>([]);
+    const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+    const userDropdownRef = useRef<HTMLDivElement>(null);
+
     // Estados para búsqueda de Proveedor
     const [providerSearch, setProviderSearch] = useState("");
     const [providerResults, setProviderResults] = useState<any[]>([]);
@@ -43,6 +50,42 @@ export default function DocumentoSoporteExternoPage() {
     const [showProviderResults, setShowProviderResults] = useState(false);
     const [providerPage, setProviderPage] = useState(0);
     const [hasMoreProviders, setHasMoreProviders] = useState(true);
+    const providerDropdownRef = useRef<HTMLDivElement>(null);
+
+    // Cerrar dropdowns al hacer click fuera
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (providerDropdownRef.current && !providerDropdownRef.current.contains(event.target as Node)) {
+                setShowProviderResults(false);
+            }
+            if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
+                setUserResults([]);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    // Búsqueda de usuarios para responsable
+    useEffect(() => {
+        const timer = setTimeout(async () => {
+            if (userSearch && userSearch.length >= 3 && !autoFilled) {
+                setIsSearchingUsers(true);
+                try {
+                    const res = await fetch(`/api/users/search?q=${encodeURIComponent(userSearch)}`);
+                    const data = await res.json();
+                    setUserResults(data.users || []);
+                } catch (e) {
+                    console.error("Error searching users:", e);
+                } finally {
+                    setIsSearchingUsers(false);
+                }
+            } else {
+                setUserResults([]);
+            }
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [userSearch, autoFilled]);
 
     // Búsqueda de proveedores
     const searchProviders = useCallback(async (query: string, page: number = 0, append: boolean = false) => {
@@ -88,57 +131,71 @@ export default function DocumentoSoporteExternoPage() {
                 // Fix encoding issues like replacement char mapping to ñ
                 let cleanName = data.responsable.replace(/\uFFFD/g, 'ñ');
                 
-                if (data.correo) {
-                    setFormData(prev => ({ ...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: data.correo }));
-                    setAutoFilled(true);
-                } else {
-                    // Función auxiliar para buscar usuario
-                    const searchUser = async (nameToSearch: string) => {
-                        let cleanSearchName = nameToSearch.replace(/\uFFFD/g, 'ñ');
-                        const parts = cleanSearchName.split(' ').filter(p => p.trim() !== '');
-                        const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanSearchName;
-                        
-                        const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
-                        const userData = await userRes.json();
-                        const users = userData.users || [];
-                        
-                        if (users.length > 0) {
-                            const exact = users.find((u: any) => u.name.toLowerCase() === cleanSearchName.toLowerCase());
-                            if (exact) return exact;
+                    if (data.correo) {
+                        setFormData(prev => ({ 
+                            ...prev, 
+                            proveedor: p.razon_social, 
+                            nit: p.numero_identificacion, 
+                            responsableEmail: data.correo,
+                            responsableNombre: cleanName 
+                        }));
+                        setUserSearch(cleanName);
+                        setAutoFilled(true);
+                    } else {
+                        // Función auxiliar para buscar usuario
+                        const searchUser = async (nameToSearch: string) => {
+                            let cleanSearchName = nameToSearch.replace(/\uFFFD/g, 'ñ');
+                            const parts = cleanSearchName.split(' ').filter(p => p.trim() !== '');
+                            const searchQuery = parts.length > 1 ? `${parts[0]} ${parts[1]}` : cleanSearchName;
+                            
+                            const userRes = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
+                            const userData = await userRes.json();
+                            const users = userData.users || [];
+                            
+                            if (users.length > 0) {
+                                const exact = users.find((u: any) => u.name.toLowerCase() === cleanSearchName.toLowerCase());
+                                if (exact) return exact;
 
-                            let bestMatch = users[0];
-                            let bestScore = -1;
+                                let bestMatch = users[0];
+                                let bestScore = -1;
 
-                            for (const user of users) {
-                                const userNameLower = user.name.toLowerCase();
-                                let score = 0;
-                                for (const part of parts) {
-                                    if (userNameLower.includes(part.toLowerCase())) {
-                                        score++;
+                                for (const user of users) {
+                                    const userNameLower = user.name.toLowerCase();
+                                    let score = 0;
+                                    for (const part of parts) {
+                                        if (userNameLower.includes(part.toLowerCase())) {
+                                            score++;
+                                        }
+                                    }
+                                    if (score > bestScore) {
+                                        bestScore = score;
+                                        bestMatch = user;
                                     }
                                 }
-                                if (score > bestScore) {
-                                    bestScore = score;
-                                    bestMatch = user;
-                                }
+                                return bestMatch;
                             }
-                            return bestMatch;
+                            return null;
+                        };
+
+                        let exactMatch = await searchUser(data.responsable);
+                        
+                        // Si no lo encuentra por responsable y hay un autorizador distinto, intentamos con el autorizador
+                        if (!exactMatch && data.autorizador && data.autorizador !== data.responsable) {
+                            exactMatch = await searchUser(data.autorizador);
                         }
-                        return null;
-                    };
 
-                    let exactMatch = await searchUser(data.responsable);
-                    
-                    // Si no lo encuentra por responsable y hay un autorizador distinto, intentamos con el autorizador
-                    if (!exactMatch && data.autorizador && data.autorizador !== data.responsable) {
-                        exactMatch = await searchUser(data.autorizador);
+                        if (exactMatch) {
+                            setFormData(prev => ({ 
+                                ...prev, 
+                                proveedor: p.razon_social, 
+                                nit: p.numero_identificacion, 
+                                responsableEmail: exactMatch.email, 
+                                responsableNombre: exactMatch.name 
+                            }));
+                            setUserSearch(exactMatch.name);
+                            setAutoFilled(true);
+                        }
                     }
-
-                    if (exactMatch) {
-                        setFormData(prev => ({ ...prev, proveedor: p.razon_social, nit: p.numero_identificacion, responsableEmail: exactMatch.email, responsableNombre: exactMatch.name }));
-                        setAutoFilled(true);
-                    }
-                }
             }
         } catch (e) {
             console.error('Error looking up responsable:', e);
@@ -169,8 +226,9 @@ export default function DocumentoSoporteExternoPage() {
             if (formData.responsableEmail) {
                 data.append("responsableEmail", formData.responsableEmail);
             }
-            if ((formData as any).responsableNombre) {
-                data.append("responsableNombre", (formData as any).responsableNombre);
+            const finalRespName = formData.responsableNombre || userSearch;
+            if (finalRespName) {
+                data.append("responsableNombre", finalRespName);
             }
             if (formData.valor) {
                 data.append("valorTotal", formData.valor);
@@ -224,10 +282,13 @@ export default function DocumentoSoporteExternoPage() {
                     <Button
                         onClick={() => {
                             setSuccess(false);
-                            setFormData({ nit: "", proveedor: "", responsableEmail: "", valor: "" });
+                            setFormData({ nit: "", proveedor: "", responsableEmail: "", responsableNombre: "", valor: "" });
+                            setUserSearch("");
+                            setUserResults([]);
                             setFile(null);
                             setAttachments([]);
                             setAutoFilled(false);
+                            setProviderSearch("");
                         }}
                         className="w-full h-12 rounded-xl bg-[#254153] hover:bg-[#1a2f3d] text-white font-bold"
                     >
@@ -275,7 +336,7 @@ export default function DocumentoSoporteExternoPage() {
 
                         <div className="space-y-4">
                             {/* Proveedor (Searchable) */}
-                            <div className="space-y-1.5 relative">
+                            <div className="space-y-1.5 relative" ref={providerDropdownRef}>
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Proveedor (Razón Social o NIT)</label>
                                 <div className="relative group">
                                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 group-focus-within:text-[#254153] transition-colors" />
@@ -365,6 +426,79 @@ export default function DocumentoSoporteExternoPage() {
                                         </div>
                                     )}
                                 </div>
+                            </div>
+
+                            {/* Responsable de Autorizar */}
+                            <div className="space-y-1.5 pt-2 relative" ref={userDropdownRef}>
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 flex items-center justify-between">
+                                    <span>Responsable de Autorizar</span>
+                                    {autoFilled && (
+                                        <span className="text-[10px] text-emerald-600 bg-emerald-100/50 px-2.5 py-0.5 rounded-full font-black border border-emerald-200">✓ Asignado automáticamente</span>
+                                    )}
+                                </label>
+                                <div className="relative group">
+                                    <User className={`absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 transition-colors ${autoFilled ? 'text-emerald-500' : 'text-gray-400 group-focus-within:text-[#254153]'}`} />
+                                    <input
+                                        required
+                                        type="text"
+                                        value={userSearch}
+                                        onChange={(e) => {
+                                            setUserSearch(e.target.value);
+                                            setAutoFilled(false);
+                                            setFormData(prev => ({ ...prev, responsableEmail: "", responsableNombre: e.target.value }));
+                                        }}
+                                        className={`w-full h-14 pl-12 pr-10 border rounded-2xl text-base focus:outline-none focus:ring-4 transition-all font-bold text-[#254153] ${
+                                            autoFilled ? 'bg-emerald-50/50 border-emerald-200 focus:ring-emerald-500/20 focus:border-emerald-500' : 'bg-gray-50 border-gray-200 focus:ring-[#254153]/10 focus:border-[#254153]'
+                                        }`}
+                                        placeholder="Buscar responsable por nombre o correo..."
+                                    />
+                                    {(isSearchingUsers || isLookingUp) && (
+                                        <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                            <Loader2 className="h-5 w-5 animate-spin text-[#254153]" />
+                                        </div>
+                                    )}
+                                </div>
+                                {formData.responsableEmail && (
+                                    <p className="text-[12px] text-emerald-600 font-medium ml-1 mt-1">
+                                        Se notificará a: <span className="font-bold">{formData.responsableEmail}</span>
+                                    </p>
+                                )}
+
+                                {!autoFilled && userSearch && !formData.responsableEmail && !isSearchingUsers && (
+                                    <p className="text-[10px] text-amber-600 font-bold ml-1 mt-1 flex items-start gap-1">
+                                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                                        Debes seleccionar una opción de la lista desplegable. Si no aparece, busca por otro nombre o correo.
+                                    </p>
+                                )}
+
+                                <AnimatePresence>
+                                    {userResults.length > 0 && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 5 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: 5 }}
+                                            className="absolute z-[110] w-full mt-1 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden max-h-56 overflow-y-auto custom-scrollbar"
+                                        >
+                                            {userResults.map((user) => (
+                                                <button
+                                                    key={user.email}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setFormData(prev => ({ ...prev, responsableEmail: user.email, responsableNombre: user.name }));
+                                                        setUserSearch(user.name);
+                                                        setUserResults([]);
+                                                    }}
+                                                    className="w-full px-5 py-3 text-left hover:bg-gray-50 flex items-center justify-between border-b border-gray-50 last:border-0 transition-colors"
+                                                >
+                                                    <div>
+                                                        <p className="text-sm font-bold text-[#254153]">{user.name}</p>
+                                                        <p className="text-xs text-gray-500">{user.email}</p>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
 
                             {/* Valor Total */}
