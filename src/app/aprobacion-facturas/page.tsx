@@ -728,6 +728,7 @@ export default function InvoicesPage() {
             });
 
             if (res.ok) {
+                const responseData = await res.json();
                 const nowIso = new Date().toISOString();
                 
                 const updateInvoiceState = (inv: any) => {
@@ -755,7 +756,13 @@ export default function InvoicesPage() {
                 setPendingInvoices(prev => prev.map(updateInvoiceState));
                 setProcessedInvoices(prev => prev.map(updateInvoiceState));
                 setSelectedInvoice(prev => prev ? updateInvoiceState(prev) : null);
-                alert(`Factura ${action.toLowerCase()} correctamente`);
+
+                // Mostrar resultado con info de SAP si aplica
+                if (action === 'Aprobado' && responseData.sapDraft) {
+                    alert(`✅ Factura aprobada y cargada a SAP automáticamente\nDocEntry: ${responseData.sapDraft.draftId || 'OK'}`);
+                } else {
+                    alert(`Factura ${action.toLowerCase()} correctamente`);
+                }
 
                 // Al pasar de Por Procesar a Procesado, refrescamos contra el
                 // servidor (no solo el parche optimista local) para que las

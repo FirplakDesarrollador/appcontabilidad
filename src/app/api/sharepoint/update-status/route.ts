@@ -129,10 +129,6 @@ export async function POST(req: NextRequest) {
 
             if (supaErr) {
                 console.error(`[update-status] Supabase update FAILED for ${supaTable} ID ${itemId}:`, supaErr.message);
-                // SharePoint ya se actualizo (paso 3), pero el cache de Supabase que
-                // lee la app no quedo al dia. Antes esto se tragaba en silencio y la
-                // API respondia {success:true} igual, asi que el usuario nunca se
-                // enteraba de que la factura no quedaba guardada como Procesado.
                 return NextResponse.json({
                     error: `Se actualizo en SharePoint pero fallo el guardado en la base de datos: ${supaErr.message}`
                 }, { status: 500 });
@@ -146,7 +142,119 @@ export async function POST(req: NextRequest) {
             }, { status: 500 });
         }
 
-        return NextResponse.json({ success: true });
+        // 5. Auto-crear draft en SAP cuando se aprueba manualmente
+        let sapAutoResult: any = null;
+        if (field === 'Aprobacion_Doliente' && status === 'Aprobado') {
+            try {
+                const supaTable = listName === 'Radicados de importación'
+                    ? 'Radicados_de_importacion'
+                    : listName === 'Registro_de_Facturas'
+                        ? 'Registro_Facturas'
+                        : listName;
+                const idCol = listName === 'Registro_de_Facturas' ? 'ID' : 'id';
+
+                const { data: invoiceData } = await supabaseAdmin
+                    .from(supaTable)
+                    .select('*')
+                    .eq(idCol, Number(itemId))
+                    .single();
+
+                if (invoiceData) {
+                    // Extraer datos según el tipo de lista
+                    let nit: string, total: string, proveedor: string, nroFactura: string,
+                        consecutivo: string, observaciones: string, tieneAnticipo: boolean,
+                        centroCostosRaw: any;
+
+                    if (supaTable === 'Radicados_de_importacion') {
+                        nit = String(invoiceData.Nit || '').replace(/[\.\s]/g, '').trim();
+                        total = String(invoiceData.Monto || 0);
+                        proveedor = invoiceData.Proveedor || 'Proveedor Desconocido';
+                        nroFactura = invoiceData.Nro_Factura || 'S/N';
+                        consecutivo = invoiceData.Consecutivo || String(itemId);
+                        observaciones = invoiceData.Observaciones || 'Aprobado manualmente';
+                        tieneAnticipo = false;
+                        centroCostosRaw = invoiceData.centro_costos;
+                    } else {
+                        nit = String(invoiceData.Nit || invoiceData.Title || '').replace(/[\.\s]/g, '').trim();
+                        total = String(invoiceData.Valor_total ?? invoiceData['Valor total'] ?? invoiceData.Monto ?? 0);
+                        proveedor = invoiceData.Proveedor || 'Proveedor Desconocido';
+                        nroFactura = invoiceData.Nro_Factura || 'S/N';
+                        consecutivo = invoiceData.Consecutivo || String(itemId);
+                        observaciones = invoiceData.Observaciones || 'Aprobado manualmente';
+                        tieneAnticipo = invoiceData.tiene_anticipo === 't' || invoiceData.tiene_anticipo === true || invoiceData.tiene_anticipo === 'true';
+                        centroCostosRaw = invoiceData.centro_costos || invoiceData.tablaCostos;
+                    }
+
+                    // Parsear distribuciones del centro de costos
+                    let distribuciones: any[] = [];
+
+                    if (supaTable === 'Radicados_de_importacion' && (!centroCostosRaw || centroCostosRaw === '[]')) {
+                        distribuciones = [{
+                            cuenta: '14650505',
+                            centroCostos: '',
+                            valor: Number(total) || 0
+                        }];
+                    } else if (centroCostosRaw) {
+                        try {
+                            let parsed = typeof centroCostosRaw === 'string' ? JSON.parse(centroCostosRaw) : centroCostosRaw;
+                            if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+                            if (!Array.isArray(parsed)) parsed = parsed ? [parsed] : [];
+                            distribuciones = parsed.map((d: any) => ({
+                                centroCostos: d.centroCostos || d.centroCosto || d.centro_costos || '',
+                                cuenta: d.cuenta || d.Cuenta || '',
+                                valor: d.valor || d.Valor || d.monto || 0
+                            }));
+                        } catch (parseErr) {
+                            console.error('[update-status] Error parsing centro_costos for SAP:', parseErr);
+                        }
+                    }
+
+                    if (distribuciones.length > 0) {
+                        const { createSapDraft } = await import('@/lib/sap');
+                        const isImport = supaTable === 'Radicados_de_importacion';
+                        const docCurrency = isImport ? 'USD' : undefined;
+                        const docTypeDesc = isImport ? 'RADICADO IMPORTACION' : 'FACTURA';
+
+                        sapAutoResult = await createSapDraft({
+                            nit,
+                            total,
+                            distribuciones,
+                            anticipo: tieneAnticipo ? 't' : 'f',
+                            observations: observaciones,
+                            nroFactura,
+                            docTypeDesc,
+                            itemId: String(itemId),
+                            consecutivo,
+                            proveedorName: proveedor,
+                            docCurrency
+                        });
+
+                        console.log(`[update-status] ✅ SAP draft auto-creado al aprobar factura ${itemId} — DocEntry: ${sapAutoResult?.draftId}`);
+                    } else {
+                        console.warn(`[update-status] Factura ${itemId} aprobada pero sin centro de costos — SAP no se creó automáticamente`);
+                    }
+                }
+            } catch (sapErr: any) {
+                console.error(`[update-status] Error auto-creando draft SAP al aprobar factura ${itemId}:`, sapErr.message);
+                // Registrar en log de errores pero NO fallar la aprobación
+                try {
+                    await supabaseAdmin.from('log_errores_sap').insert({
+                        factura_id: Number(itemId),
+                        nro_factura: String(itemId),
+                        proveedor: 'N/A',
+                        error_mensaje: `Auto-SAP al aprobar: ${sapErr.message}`,
+                        detalles: sapErr
+                    });
+                } catch (logErr) {
+                    console.error('[update-status] Error logging SAP error:', logErr);
+                }
+            }
+        }
+
+        return NextResponse.json({ 
+            success: true,
+            ...(sapAutoResult ? { sapDraft: sapAutoResult } : {})
+        });
     } catch (error: any) {
         console.error('Error updating status:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
