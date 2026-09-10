@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
         
         const nit = formData.get('nit') as string;
         const proveedor = formData.get('proveedor') as string;
-        const responsableEmail = formData.get('responsableEmail') as string | null;
+        let responsableEmail = formData.get('responsableEmail') as string | null;
         let responsableNombreRecibido = formData.get('responsableNombre') as string | null;
         const valorTotal = formData.get('valorTotal') as string | null;
         

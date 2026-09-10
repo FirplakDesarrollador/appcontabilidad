@@ -157,7 +157,7 @@ function DateDropdownFloatingFilter(props: CustomFloatingFilterProps & { invoice
         return Array.from(datesMap.values()).sort((a, b) => b.key.localeCompare(a.key));
     }, [props.invoices, colId, field]);
 
-    const selectedKey = props.model?.value || '';
+    const selectedKey = (props.model as any)?.filter || props.model?.value || '';
 
     useEffect(() => {
         if (selectedKey && dates.length > 0 && !dates.some(d => d.key === selectedKey)) {
@@ -171,7 +171,15 @@ function DateDropdownFloatingFilter(props: CustomFloatingFilterProps & { invoice
                 value={selectedKey}
                 onChange={(e) => {
                     const val = e.target.value;
-                    props.onModelChange(val ? { value: val } : null);
+                    if (val) {
+                        props.onModelChange({
+                            filterType: 'text',
+                            type: 'equals',
+                            filter: val
+                        });
+                    } else {
+                        props.onModelChange(null);
+                    }
                 }}
                 className="w-full h-8 text-[11px] font-bold bg-white border border-gray-200 hover:border-gray-400 focus:border-[#254153] focus:ring-1 focus:ring-[#254153] rounded-lg px-1.5 text-gray-700 cursor-pointer shadow-sm truncate transition-colors outline-none"
                 title="Filtrar por fecha"
@@ -1219,7 +1227,12 @@ export default function InvoicesPage() {
             headerName: 'Fecha Aprobación',
             field: 'FechaAprobacion',
             width: 170,
-            filter: DateDropdownFilterComp,
+            cellDataType: false,
+            filter: 'agTextColumnFilter',
+            filterValueGetter: (params: any) => {
+                const parsed = parseLocalDateKey(params.data?.FechaAprobacion);
+                return parsed ? parsed.key : '';
+            },
             floatingFilter: true,
             floatingFilterComponent: DateDropdownFloatingFilter,
             floatingFilterComponentParams: { invoices: sortedInvoices, suppressFilterButton: true },
@@ -1236,7 +1249,12 @@ export default function InvoicesPage() {
             headerName: 'Fecha Creación',
             field: 'Creado',
             width: 170,
-            filter: DateDropdownFilterComp,
+            cellDataType: false,
+            filter: 'agTextColumnFilter',
+            filterValueGetter: (params: any) => {
+                const parsed = parseLocalDateKey(params.data?.Creado || params.data?.Created);
+                return parsed ? parsed.key : '';
+            },
             floatingFilter: true,
             floatingFilterComponent: DateDropdownFloatingFilter,
             floatingFilterComponentParams: { invoices: sortedInvoices, suppressFilterButton: true },
@@ -1280,7 +1298,12 @@ export default function InvoicesPage() {
             headerName: 'Fecha de Procesado',
             field: 'FechaProcesado',
             width: 180,
-            filter: DateDropdownFilterComp,
+            cellDataType: false,
+            filter: 'agTextColumnFilter',
+            filterValueGetter: (params: any) => {
+                const parsed = parseLocalDateKey(params.data?.FechaProcesado);
+                return parsed ? parsed.key : '';
+            },
             floatingFilter: true,
             floatingFilterComponent: DateDropdownFloatingFilter,
             floatingFilterComponentParams: { invoices: sortedInvoices, suppressFilterButton: true },
@@ -1557,9 +1580,11 @@ export default function InvoicesPage() {
                                 localeText={AG_GRID_LOCALE_ES}
                                 rowData={sortedInvoices}
                                 columnDefs={colDefs}
+                                components={{ DateDropdownFloatingFilter }}
                                 onModelUpdated={(e) => setDisplayedRowCount(e.api.getDisplayedRowCount())}
                                 defaultColDef={{
                                     sortable: true,
+                                    cellDataType: false,
                                     filter: true,
                                     filterParams: {
                                         filterOptions: ['contains'],
