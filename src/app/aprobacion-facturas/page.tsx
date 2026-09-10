@@ -14,7 +14,9 @@ import { useAuth } from "@/context/AuthContext";
 import { Menu, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { AgGridReact } from 'ag-grid-react';
+import type { CustomFloatingFilterProps } from 'ag-grid-react';
 import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
+import type { IFilterComp, IFilterParams, IDoesFilterPassParams } from 'ag-grid-community';
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 
 // Configure AG Grid v35+ Modules
@@ -53,6 +55,137 @@ const AG_GRID_LOCALE_ES = {
     loadingOoo: 'Cargando...',
 };
 
+function parseLocalDateKey(val: any): { key: string; label: string } | null {
+    if (!val) return null;
+    try {
+        let d: Date;
+        if (val instanceof Date) {
+            d = val;
+        } else if (typeof val === 'number') {
+            d = new Date(val);
+        } else if (typeof val === 'string') {
+            const trimmed = val.trim();
+            if (!trimmed || trimmed.toLowerCase().includes('sin fecha') || trimmed.toLowerCase().includes('sin procesar')) {
+                return null;
+            }
+            d = new Date(trimmed);
+        } else {
+            return null;
+        }
+
+        if (isNaN(d.getTime())) return null;
+
+        const year = d.getFullYear();
+        if (year < 2000 || year > 2100) return null;
+
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+
+        return {
+            key: `${year}-${month}-${day}`,
+            label: `${day}/${month}/${year}`
+        };
+    } catch {
+        return null;
+    }
+}
+
+class DateDropdownFilterComp implements IFilterComp {
+    private params: IFilterParams | null = null;
+    private selectedDate: string | null = null;
+    private gui: HTMLDivElement | null = null;
+
+    init(params: IFilterParams) {
+        this.params = params;
+        this.gui = document.createElement('div');
+    }
+
+    getGui() {
+        return this.gui!;
+    }
+
+    doesFilterPass(params: IDoesFilterPassParams): boolean {
+        if (!this.selectedDate) return true;
+        const colId = this.params?.column.getColId();
+        const field = (this.params as any)?.colDef?.field || (this.params?.column as any)?.getColDef?.()?.field;
+        const rawVal = colId === 'Creado'
+            ? (params.data?.Creado || params.data?.Created)
+            : params.data?.[field || colId || ''];
+        const parsed = parseLocalDateKey(rawVal);
+        return parsed?.key === this.selectedDate;
+    }
+
+    isFilterActive(): boolean {
+        return Boolean(this.selectedDate);
+    }
+
+    getModel() {
+        return this.selectedDate ? { value: this.selectedDate } : null;
+    }
+
+    setModel(model: any) {
+        this.selectedDate = model?.value || null;
+    }
+
+    onFloatingFilterChanged(type: string | null, value: any) {
+        this.setModel(value ? { value } : null);
+        this.params?.filterChangedCallback();
+    }
+
+    destroy() {
+        this.gui = null;
+        this.params = null;
+    }
+}
+
+function DateDropdownFloatingFilter(props: CustomFloatingFilterProps & { invoices?: any[] }) {
+    const colId = props.column.getColId();
+    const field = (props as any).colDef?.field || (props.column as any)?.getColDef?.()?.field;
+
+    const dates = useMemo(() => {
+        const datesMap = new Map<string, { key: string; label: string; count: number }>();
+        const list = props.invoices || [];
+        list.forEach((inv: any) => {
+            const rawVal = colId === 'Creado' ? (inv.Creado || inv.Created) : inv[field || colId];
+            const parsed = parseLocalDateKey(rawVal);
+            if (parsed) {
+                const curr = datesMap.get(parsed.key);
+                if (curr) curr.count++;
+                else datesMap.set(parsed.key, { ...parsed, count: 1 });
+            }
+        });
+        return Array.from(datesMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+    }, [props.invoices, colId, field]);
+
+    const selectedKey = props.model?.value || '';
+
+    useEffect(() => {
+        if (selectedKey && dates.length > 0 && !dates.some(d => d.key === selectedKey)) {
+            props.onModelChange(null);
+        }
+    }, [dates, selectedKey, props]);
+
+    return (
+        <div className="w-full h-full flex items-center px-1">
+            <select
+                value={selectedKey}
+                onChange={(e) => {
+                    const val = e.target.value;
+                    props.onModelChange(val ? { value: val } : null);
+                }}
+                className="w-full h-8 text-[11px] font-bold bg-white border border-gray-200 hover:border-gray-400 focus:border-[#254153] focus:ring-1 focus:ring-[#254153] rounded-lg px-1.5 text-gray-700 cursor-pointer shadow-sm truncate transition-colors outline-none"
+                title="Filtrar por fecha"
+            >
+                <option value="">Todas las fechas</option>
+                {dates.map(d => (
+                    <option key={d.key} value={d.key}>
+                        {d.label} ({d.count})
+                    </option>
+                ))}
+            </select>
+        </div>
+    );
+}
 
 interface ManualAttachment {
     name: string;
@@ -1050,7 +1183,7 @@ export default function InvoicesPage() {
             headerName: 'Acciones',
             field: 'id',
             width: 160,
-            pinned: 'left',
+            pinned: 'left' as const,
             filter: false,
             sortable: false,
             cellRenderer: (params: any) => {
@@ -1082,9 +1215,41 @@ export default function InvoicesPage() {
         { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || "Por Procesar"}</div> },
         { headerName: 'Observaciones', field: 'Observaciones', width: 300, cellRenderer: (p: any) => <div className="w-full text-xs font-medium text-gray-500 h-full flex items-center truncate" title={p.value}>{p.value || "Sin observaciones"}</div> },
         { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || ""}</div> },
-        { headerName: 'Fecha Aprobación', field: 'FechaAprobacion', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div> },
+        {
+            headerName: 'Fecha Aprobación',
+            field: 'FechaAprobacion',
+            width: 170,
+            filter: DateDropdownFilterComp,
+            floatingFilter: true,
+            floatingFilterComponent: DateDropdownFloatingFilter,
+            floatingFilterComponentParams: { invoices: sortedInvoices, suppressFilterButton: true },
+            suppressHeaderMenuButton: true,
+            comparator: (a: any, b: any) => {
+                const tA = a ? new Date(a).getTime() : 0;
+                const tB = b ? new Date(b).getTime() : 0;
+                return tA - tB;
+            },
+            cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin fecha"}</div>
+        },
         { headerName: 'C. Costos / Cuenta', field: 'centro_costos', width: 250, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 w-full h-full flex items-center">{formatCostCenter(p.value, p.data?.tablaCostos)}</div> },
-        { headerName: 'Fecha Creación', field: 'Creado', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{(p.value || p.data?.Created) ? new Date(p.value || p.data?.Created).toLocaleString() : "Sin fecha"}</div> },
+        {
+            headerName: 'Fecha Creación',
+            field: 'Creado',
+            width: 170,
+            filter: DateDropdownFilterComp,
+            floatingFilter: true,
+            floatingFilterComponent: DateDropdownFloatingFilter,
+            floatingFilterComponentParams: { invoices: sortedInvoices, suppressFilterButton: true },
+            suppressHeaderMenuButton: true,
+            comparator: (a: any, b: any, nodeA: any, nodeB: any) => {
+                const valA = a || nodeA.data?.Created;
+                const valB = b || nodeB.data?.Created;
+                const tA = valA ? new Date(valA).getTime() : 0;
+                const tB = valB ? new Date(valB).getTime() : 0;
+                return tA - tB;
+            },
+            cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{(p.value || p.data?.Created) ? new Date(p.value || p.data?.Created).toLocaleString() : "Sin fecha"}</div>
+        },
         { headerName: 'Datos adjuntos', field: 'adjuntos_url', width: 220, filter: false, sortable: false, cellRenderer: (p: any) => {
             const hasMain = (p.data?.documentInfo || p.data?.Attachments);
             const manuals = normalizeManualAttachments(p.value || p.data?.adjuntos_url);
@@ -1111,12 +1276,27 @@ export default function InvoicesPage() {
             );
         } },
         { headerName: 'Anticipo / Tarjeta', field: 'tiene_anticipo', width: 150, cellRenderer: (p: any) => <div className="h-full flex items-center">{renderAnticipoBadge(p.value)}</div> },
-        { headerName: 'Fecha de Procesado', field: 'FechaProcesado', width: 170, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin procesar"}</div> },
+        {
+            headerName: 'Fecha de Procesado',
+            field: 'FechaProcesado',
+            width: 180,
+            filter: DateDropdownFilterComp,
+            floatingFilter: true,
+            floatingFilterComponent: DateDropdownFloatingFilter,
+            floatingFilterComponentParams: { invoices: sortedInvoices, suppressFilterButton: true },
+            suppressHeaderMenuButton: true,
+            comparator: (a: any, b: any) => {
+                const tA = a ? new Date(a).getTime() : 0;
+                const tB = b ? new Date(b).getTime() : 0;
+                return tA - tB;
+            },
+            cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : "Sin procesar"}</div>
+        },
         { headerName: 'Procesado Por', field: 'DigitadoPor', width: 180, cellRenderer: (p: any) => {
             const val = p.value || p.data?.ProcesadoPor;
             return <div className="text-xs font-semibold text-gray-700 h-full flex items-center">{val ? getProcesadoPorName(val) : "Sin asignar"}</div>;
         } }
-    ], [syncingId]);
+    ], [syncingId, sortedInvoices]);
 
     const handleExportExcel = () => {
         if (!gridRef.current || !gridRef.current.api) {
@@ -1916,7 +2096,7 @@ export default function InvoicesPage() {
                                                 {selectedInvoice.Observaciones && (
                                                     <button
                                                         onClick={() => {
-                                                            navigator.clipboard.writeText(selectedInvoice.Observaciones);
+                                                            navigator.clipboard.writeText(selectedInvoice.Observaciones || "");
                                                             alert("Observaciones copiadas al portapapeles");
                                                         }}
                                                         className="h-7 px-3 flex items-center gap-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors font-bold text-[10px] uppercase"
@@ -2156,7 +2336,7 @@ export default function InvoicesPage() {
                                                 {(selectedInvoice.DigitadoPor || selectedInvoice.ProcesadoPor) && (
                                                     <div>
                                                         <p className="text-[11px] font-bold text-gray-400 uppercase mb-0.5">Procesado Por</p>
-                                                        <p className="text-xs font-bold text-gray-700">{getProcesadoPorName(selectedInvoice.DigitadoPor || selectedInvoice.ProcesadoPor)}</p>
+                                                        <p className="text-xs font-bold text-gray-700">{getProcesadoPorName(selectedInvoice.DigitadoPor || selectedInvoice.ProcesadoPor || undefined)}</p>
                                                     </div>
                                                 )}
                                             </div>
