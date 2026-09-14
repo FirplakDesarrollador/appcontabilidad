@@ -16,7 +16,6 @@ import * as XLSX from "xlsx";
 import { AgGridReact } from 'ag-grid-react';
 import type { CustomFloatingFilterProps } from 'ag-grid-react';
 import { ModuleRegistry, AllCommunityModule, themeQuartz } from 'ag-grid-community';
-import type { IFilterComp, IFilterParams, IDoesFilterPassParams } from 'ag-grid-community';
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 
 // Configure AG Grid v35+ Modules
@@ -90,54 +89,6 @@ function parseLocalDateKey(val: any): { key: string; label: string } | null {
     }
 }
 
-class DateDropdownFilterComp implements IFilterComp {
-    private params: IFilterParams | null = null;
-    private selectedDate: string | null = null;
-    private gui: HTMLDivElement | null = null;
-
-    init(params: IFilterParams) {
-        this.params = params;
-        this.gui = document.createElement('div');
-    }
-
-    getGui() {
-        return this.gui!;
-    }
-
-    doesFilterPass(params: IDoesFilterPassParams): boolean {
-        if (!this.selectedDate) return true;
-        const colId = this.params?.column.getColId();
-        const field = (this.params as any)?.colDef?.field || (this.params?.column as any)?.getColDef?.()?.field;
-        const rawVal = colId === 'Creado'
-            ? (params.data?.Creado || params.data?.Created)
-            : params.data?.[field || colId || ''];
-        const parsed = parseLocalDateKey(rawVal);
-        return parsed?.key === this.selectedDate;
-    }
-
-    isFilterActive(): boolean {
-        return Boolean(this.selectedDate);
-    }
-
-    getModel() {
-        return this.selectedDate ? { value: this.selectedDate } : null;
-    }
-
-    setModel(model: any) {
-        this.selectedDate = model?.value || null;
-    }
-
-    onFloatingFilterChanged(type: string | null, value: any) {
-        this.setModel(value ? { value } : null);
-        this.params?.filterChangedCallback();
-    }
-
-    destroy() {
-        this.gui = null;
-        this.params = null;
-    }
-}
-
 function DateDropdownFloatingFilter(props: CustomFloatingFilterProps & { invoices?: any[] }) {
     const colId = props.column.getColId();
     const field = (props as any).colDef?.field || (props.column as any)?.getColDef?.()?.field;
@@ -158,12 +109,13 @@ function DateDropdownFloatingFilter(props: CustomFloatingFilterProps & { invoice
     }, [props.invoices, colId, field]);
 
     const selectedKey = (props.model as any)?.filter || props.model?.value || '';
+    const onModelChange = props.onModelChange;
 
     useEffect(() => {
         if (selectedKey && dates.length > 0 && !dates.some(d => d.key === selectedKey)) {
-            props.onModelChange(null);
+            onModelChange(null);
         }
-    }, [dates, selectedKey, props]);
+    }, [dates, selectedKey, onModelChange]);
 
     return (
         <div className="w-full h-full flex items-center px-1">
@@ -1229,6 +1181,11 @@ export default function InvoicesPage() {
             width: 170,
             cellDataType: false,
             filter: 'agTextColumnFilter',
+            filterParams: {
+                filterOptions: ['equals', 'contains'],
+                defaultOption: 'equals',
+                maxNumConditions: 1,
+            },
             filterValueGetter: (params: any) => {
                 const parsed = parseLocalDateKey(params.data?.FechaAprobacion);
                 return parsed ? parsed.key : '';
@@ -1251,6 +1208,11 @@ export default function InvoicesPage() {
             width: 170,
             cellDataType: false,
             filter: 'agTextColumnFilter',
+            filterParams: {
+                filterOptions: ['equals', 'contains'],
+                defaultOption: 'equals',
+                maxNumConditions: 1,
+            },
             filterValueGetter: (params: any) => {
                 const parsed = parseLocalDateKey(params.data?.Creado || params.data?.Created);
                 return parsed ? parsed.key : '';
@@ -1300,6 +1262,11 @@ export default function InvoicesPage() {
             width: 180,
             cellDataType: false,
             filter: 'agTextColumnFilter',
+            filterParams: {
+                filterOptions: ['equals', 'contains'],
+                defaultOption: 'equals',
+                maxNumConditions: 1,
+            },
             filterValueGetter: (params: any) => {
                 const parsed = parseLocalDateKey(params.data?.FechaProcesado);
                 return parsed ? parsed.key : '';
@@ -1587,7 +1554,7 @@ export default function InvoicesPage() {
                                     cellDataType: false,
                                     filter: true,
                                     filterParams: {
-                                        filterOptions: ['contains'],
+                                        filterOptions: ['contains', 'equals'],
                                         suppressAndOrCondition: true,
                                         maxNumConditions: 1,
                                     },
