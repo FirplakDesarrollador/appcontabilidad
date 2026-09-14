@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle, Plus, Trash2 } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, ChevronDown, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle, Plus, Trash2 } from "lucide-react";
 import { ProviderRuleManager } from '@/components/ProviderRuleManager';
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
@@ -92,6 +93,11 @@ function parseLocalDateKey(val: any): { key: string; label: string } | null {
 function DateDropdownFloatingFilter(props: CustomFloatingFilterProps & { invoices?: any[] }) {
     const colId = props.column.getColId();
     const field = (props as any).colDef?.field || (props.column as any)?.getColDef?.()?.field;
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const popoverRef = useRef<HTMLDivElement>(null);
+    const [isOpen, setIsOpen] = useState(false);
+    const [popoverPos, setPopoverPos] = useState<{ top: number; left: number; width: number } | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const dates = useMemo(() => {
         const datesMap = new Map<string, { key: string; label: string; count: number }>();
@@ -108,41 +114,265 @@ function DateDropdownFloatingFilter(props: CustomFloatingFilterProps & { invoice
         return Array.from(datesMap.values()).sort((a, b) => b.key.localeCompare(a.key));
     }, [props.invoices, colId, field]);
 
-    const selectedKey = (props.model as any)?.filter || props.model?.value || '';
+    const selectedFilter = (props.model as any)?.filter || props.model?.value || '';
+    const selectedKeys = useMemo(() => {
+        if (!selectedFilter) return [];
+        return selectedFilter.split(',').filter(Boolean);
+    }, [selectedFilter]);
+
     const onModelChange = props.onModelChange;
 
     useEffect(() => {
-        if (selectedKey && dates.length > 0 && !dates.some(d => d.key === selectedKey)) {
-            onModelChange(null);
+        if (selectedKeys.length > 0 && dates.length > 0) {
+            const validKeys = selectedKeys.filter(key => dates.some(d => d.key === key));
+            if (validKeys.length !== selectedKeys.length) {
+                if (validKeys.length === 0) {
+                    onModelChange(null);
+                } else {
+                    onModelChange({
+                        filterType: 'text',
+                        type: 'equals',
+                        filter: validKeys.join(',')
+                    });
+                }
+            }
         }
-    }, [dates, selectedKey, onModelChange]);
+    }, [dates, selectedKeys, onModelChange]);
+
+    const handleToggleDate = (key: string) => {
+        const next = selectedKeys.includes(key)
+            ? selectedKeys.filter(k => k !== key)
+            : [...selectedKeys, key];
+
+        if (next.length === 0) {
+            onModelChange(null);
+        } else {
+            onModelChange({
+                filterType: 'text',
+                type: 'equals',
+                filter: next.join(',')
+            });
+        }
+    };
+
+    const handleSelectAll = () => {
+        onModelChange({
+            filterType: 'text',
+            type: 'equals',
+            filter: dates.map(d => d.key).join(',')
+        });
+    };
+
+    const handleClear = (e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        onModelChange(null);
+    };
+
+    const toggleOpen = () => {
+        if (isOpen) {
+            setIsOpen(false);
+            return;
+        }
+        if (buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            const popoverWidth = Math.max(rect.width, 240);
+            let left = rect.left;
+            if (left + popoverWidth > window.innerWidth - 16) {
+                left = window.innerWidth - popoverWidth - 16;
+            }
+            setPopoverPos({
+                top: rect.bottom + 4,
+                left: Math.max(8, left),
+                width: popoverWidth
+            });
+            setSearchQuery('');
+            setIsOpen(true);
+        }
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleDown = (e: MouseEvent) => {
+            if (
+                popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
+                buttonRef.current && !buttonRef.current.contains(e.target as Node)
+            ) {
+                setIsOpen(false);
+            }
+        };
+        const handleScrollOrResize = () => {
+            setIsOpen(false);
+        };
+        document.addEventListener('mousedown', handleDown);
+        window.addEventListener('resize', handleScrollOrResize);
+        window.addEventListener('scroll', handleScrollOrResize, true);
+        return () => {
+            document.removeEventListener('mousedown', handleDown);
+            window.removeEventListener('resize', handleScrollOrResize);
+            window.removeEventListener('scroll', handleScrollOrResize, true);
+        };
+    }, [isOpen]);
+
+    const filteredDates = useMemo(() => {
+        if (!searchQuery.trim()) return dates;
+        const q = searchQuery.toLowerCase();
+        return dates.filter(d => d.label.toLowerCase().includes(q) || d.key.includes(q));
+    }, [dates, searchQuery]);
+
+    const triggerLabel = useMemo(() => {
+        if (selectedKeys.length === 0) return 'Todas las fechas';
+        if (selectedKeys.length === 1) {
+            const found = dates.find(d => d.key === selectedKeys[0]);
+            return found ? found.label : selectedKeys[0];
+        }
+        if (selectedKeys.length === dates.length && dates.length > 0) {
+            return `Todas (${dates.length})`;
+        }
+        return `${selectedKeys.length} fechas`;
+    }, [selectedKeys, dates]);
 
     return (
-        <div className="w-full h-full flex items-center px-1">
-            <select
-                value={selectedKey}
-                onChange={(e) => {
-                    const val = e.target.value;
-                    if (val) {
-                        props.onModelChange({
-                            filterType: 'text',
-                            type: 'equals',
-                            filter: val
-                        });
-                    } else {
-                        props.onModelChange(null);
-                    }
-                }}
-                className="w-full h-8 text-[11px] font-bold bg-white border border-gray-200 hover:border-gray-400 focus:border-[#254153] focus:ring-1 focus:ring-[#254153] rounded-lg px-1.5 text-gray-700 cursor-pointer shadow-sm truncate transition-colors outline-none"
-                title="Filtrar por fecha"
+        <div className="w-full h-full flex items-center px-1 relative">
+            <button
+                ref={buttonRef}
+                type="button"
+                onClick={toggleOpen}
+                className={`w-full h-8 text-[11px] font-bold rounded-lg px-2 flex items-center justify-between gap-1 shadow-sm transition-all border outline-none cursor-pointer ${
+                    selectedKeys.length > 0
+                        ? 'bg-blue-50/70 border-blue-200 text-[#254153] hover:border-blue-400'
+                        : 'bg-white border-gray-200 text-gray-700 hover:border-gray-400'
+                }`}
+                title="Filtrar por una o varias fechas"
             >
-                <option value="">Todas las fechas</option>
-                {dates.map(d => (
-                    <option key={d.key} value={d.key}>
-                        {d.label} ({d.count})
-                    </option>
-                ))}
-            </select>
+                <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+                    {selectedKeys.length > 1 && (
+                        <span className="bg-[#254153] text-white text-[9px] px-1.5 py-0.2 rounded-full font-black flex-shrink-0">
+                            {selectedKeys.length}
+                        </span>
+                    )}
+                    <span className="truncate">{triggerLabel}</span>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                    {selectedKeys.length > 0 && (
+                        <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={handleClear}
+                            className="p-0.5 rounded-md hover:bg-black/10 text-gray-400 hover:text-gray-700 cursor-pointer"
+                            title="Limpiar filtro de fecha"
+                        >
+                            <X className="h-3 w-3" />
+                        </span>
+                    )}
+                    <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-180 text-[#254153]' : ''}`} />
+                </div>
+            </button>
+
+            {isOpen && popoverPos && typeof document !== 'undefined' && createPortal(
+                <div
+                    ref={popoverRef}
+                    style={{
+                        position: 'fixed',
+                        top: popoverPos.top,
+                        left: popoverPos.left,
+                        minWidth: 230,
+                        maxWidth: 290,
+                        zIndex: 9999
+                    }}
+                    className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-2.5 flex flex-col gap-2 select-none animate-in fade-in duration-100"
+                >
+                    {/* Header & Acciones rápidas */}
+                    <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
+                        <div className="flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-[#254153]" />
+                            <span className="text-[11px] font-extrabold text-[#254153] tracking-tight">
+                                Fechas ({selectedKeys.length}/{dates.length})
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                            <button
+                                type="button"
+                                onClick={handleSelectAll}
+                                className="text-blue-600 hover:text-blue-800 font-bold px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors"
+                            >
+                                Todas
+                            </button>
+                            <span className="text-gray-300">|</span>
+                            <button
+                                type="button"
+                                onClick={() => handleClear()}
+                                className="text-gray-500 hover:text-red-600 font-bold px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors"
+                            >
+                                Limpiar
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Buscador si hay más de 5 fechas */}
+                    {dates.length > 5 && (
+                        <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="Buscar fecha..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full h-7 pl-7 pr-2 text-[11px] font-medium bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:border-[#254153] focus:bg-white transition-colors"
+                            />
+                        </div>
+                    )}
+
+                    {/* Lista con checkboxes */}
+                    <div className="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 py-0.5">
+                        {filteredDates.length === 0 ? (
+                            <div className="text-[11px] text-gray-400 py-3 text-center italic">No hay fechas coincidentes</div>
+                        ) : (
+                            filteredDates.map(d => {
+                                const isChecked = selectedKeys.includes(d.key);
+                                return (
+                                    <label
+                                        key={d.key}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className={`flex items-center justify-between p-1.5 rounded-lg cursor-pointer transition-colors ${
+                                            isChecked
+                                                ? 'bg-blue-50/80 font-bold text-[#254153]'
+                                                : 'hover:bg-gray-50 text-gray-700 font-medium'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                onChange={() => handleToggleDate(d.key)}
+                                                className="h-3.5 w-3.5 rounded border-gray-300 text-[#254153] focus:ring-[#254153] cursor-pointer"
+                                            />
+                                            <span className="text-[11px] truncate">{d.label}</span>
+                                        </div>
+                                        <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded-full bg-gray-100 text-gray-500">
+                                            {d.count}
+                                        </span>
+                                    </label>
+                                );
+                            })
+                        )}
+                    </div>
+
+                    {/* Footer con botón Listo */}
+                    <div className="pt-1.5 border-t border-gray-100 flex items-center justify-between">
+                        <span className="text-[10px] text-gray-400 italic">
+                            {selectedKeys.length === 0 ? 'Sin filtro activo' : `${selectedKeys.length} seleccionada(s)`}
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => setIsOpen(false)}
+                            className="px-3 py-1 bg-[#254153] text-white rounded-lg text-[11px] font-bold hover:bg-[#1a2e3b] transition-colors shadow-sm"
+                        >
+                            Listo
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 }
@@ -1185,6 +1415,12 @@ export default function InvoicesPage() {
                 filterOptions: ['equals', 'contains'],
                 defaultOption: 'equals',
                 maxNumConditions: 1,
+                textMatcher: ({ value, filterText }: any) => {
+                    if (!filterText) return true;
+                    const keys = filterText.split(',').filter(Boolean);
+                    if (keys.length === 0) return true;
+                    return keys.includes(value);
+                },
             },
             filterValueGetter: (params: any) => {
                 const parsed = parseLocalDateKey(params.data?.FechaAprobacion);
@@ -1212,6 +1448,12 @@ export default function InvoicesPage() {
                 filterOptions: ['equals', 'contains'],
                 defaultOption: 'equals',
                 maxNumConditions: 1,
+                textMatcher: ({ value, filterText }: any) => {
+                    if (!filterText) return true;
+                    const keys = filterText.split(',').filter(Boolean);
+                    if (keys.length === 0) return true;
+                    return keys.includes(value);
+                },
             },
             filterValueGetter: (params: any) => {
                 const parsed = parseLocalDateKey(params.data?.Creado || params.data?.Created);
@@ -1266,6 +1508,12 @@ export default function InvoicesPage() {
                 filterOptions: ['equals', 'contains'],
                 defaultOption: 'equals',
                 maxNumConditions: 1,
+                textMatcher: ({ value, filterText }: any) => {
+                    if (!filterText) return true;
+                    const keys = filterText.split(',').filter(Boolean);
+                    if (keys.length === 0) return true;
+                    return keys.includes(value);
+                },
             },
             filterValueGetter: (params: any) => {
                 const parsed = parseLocalDateKey(params.data?.FechaProcesado);
