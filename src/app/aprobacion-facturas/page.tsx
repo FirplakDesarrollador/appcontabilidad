@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, ChevronDown, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle, Plus, Trash2 } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, ChevronDown, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle, Plus, Trash2, RotateCcw } from "lucide-react";
 import { ProviderRuleManager } from '@/components/ProviderRuleManager';
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
@@ -429,6 +429,60 @@ export default function InvoicesPage() {
     const { toggleSidebar } = useSidebar();
     const { role, user } = useAuth();
     const [colWidths, setColWidths] = useState<Record<string, number>>({ 'C. Costos / Cuenta': 100 });
+
+    // --- Persistencia de orden y dimensiones de columnas por usuario ---
+    const getColumnStorageKey = () => {
+        const userIdentifier = user?.email || user?.id || 'default_user';
+        return `ag_grid_col_state_${userIdentifier}_aprobacion_facturas`;
+    };
+
+    const saveColumnState = () => {
+        try {
+            if (!gridRef.current || !gridRef.current.api) return;
+            const state = gridRef.current.api.getColumnState();
+            if (state && state.length > 0) {
+                localStorage.setItem(getColumnStorageKey(), JSON.stringify(state));
+            }
+        } catch (err) {
+            console.error("Error guardando estado de columnas:", err);
+        }
+    };
+
+    const restoreColumnState = (apiInstance?: any) => {
+        try {
+            const api = apiInstance || gridRef.current?.api;
+            if (!api) return;
+            const saved = localStorage.getItem(getColumnStorageKey());
+            if (saved) {
+                const state = JSON.parse(saved);
+                if (Array.isArray(state) && state.length > 0) {
+                    api.applyColumnState({
+                        state,
+                        applyOrder: true,
+                    });
+                }
+            }
+        } catch (err) {
+            console.error("Error restaurando estado de columnas:", err);
+        }
+    };
+
+    const handleResetColumns = () => {
+        try {
+            if (!gridRef.current || !gridRef.current.api) return;
+            localStorage.removeItem(getColumnStorageKey());
+            gridRef.current.api.resetColumnState();
+        } catch (err) {
+            console.error("Error restableciendo columnas:", err);
+        }
+    };
+
+    // Restaurar el orden personalizado cuando el usuario esté autenticado
+    useEffect(() => {
+        if (user && gridRef.current?.api) {
+            restoreColumnState();
+        }
+    }, [user]);
 
     const handleResize = (e: React.MouseEvent, col: string) => {
         e.preventDefault();
@@ -1740,49 +1794,60 @@ export default function InvoicesPage() {
                         ))}
                     </div>
 
-                    {/* Tabs de Vistas */}
-                    <div className="flex items-center gap-2 bg-gray-100/50 p-1.5 rounded-2xl w-fit border border-gray-100">
+                    {/* Tabs de Vistas y Acciones de Grid */}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 bg-gray-100/50 p-1.5 rounded-2xl w-fit border border-gray-100">
+                            <button
+                                onClick={() => setActiveTab('pending')}
+                                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'pending'
+                                    ? "bg-[#254153] text-white shadow-lg shadow-blue-900/10"
+                                    : "text-gray-500 hover:text-gray-700 hover:bg-white/50"}`}
+                            >
+                                <RefreshCw className={`h-4 w-4 ${activeTab === 'pending' ? 'animate-spin-slow' : ''}`} />
+                                Por Aprobar
+                                {pendingCount > 0 && (
+                                    <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'pending' ? "bg-white/20" : "bg-gray-200"}`}>
+                                        {pendingCount}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('to_process')}
+                                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'to_process'
+                                    ? "bg-[#254153] text-white shadow-lg shadow-blue-900/10"
+                                    : "text-gray-500 hover:text-gray-700 hover:bg-white/50"}`}
+                            >
+                                <Loader2 className={`h-4 w-4 ${activeTab === 'to_process' ? 'animate-spin-slow' : ''}`} />
+                                Por Procesar
+                                {toProcessCount > 0 && (
+                                    <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'to_process' ? "bg-white/20" : "bg-gray-200"}`}>
+                                        {toProcessCount}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('processed')}
+                                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'processed'
+                                    ? "bg-[#254153] text-white shadow-lg shadow-blue-900/10"
+                                    : "text-gray-500 hover:text-gray-700 hover:bg-white/50"}`}
+                            >
+                                <Bell className="h-4 w-4" />
+                                Histórico
+                                {processedCount > 0 && (
+                                    <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'processed' ? "bg-white/20" : "bg-gray-200"}`}>
+                                        {processedCount}
+                                    </span>
+                                )}
+                            </button>
+                        </div>
+
                         <button
-                            onClick={() => setActiveTab('pending')}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'pending'
-                                ? "bg-[#254153] text-white shadow-lg shadow-blue-900/10"
-                                : "text-gray-500 hover:text-gray-700 hover:bg-white/50"}`}
+                            onClick={handleResetColumns}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-gray-500 hover:text-[#254153] bg-white hover:bg-gray-50 border border-gray-200 shadow-sm transition-all"
+                            title="Restablecer el orden y ancho predeterminado de las columnas"
                         >
-                            <RefreshCw className={`h-4 w-4 ${activeTab === 'pending' ? 'animate-spin-slow' : ''}`} />
-                            Por Aprobar
-                            {pendingCount > 0 && (
-                                <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'pending' ? "bg-white/20" : "bg-gray-200"}`}>
-                                    {pendingCount}
-                                </span>
-                            )}
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('to_process')}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'to_process'
-                                ? "bg-[#254153] text-white shadow-lg shadow-blue-900/10"
-                                : "text-gray-500 hover:text-gray-700 hover:bg-white/50"}`}
-                        >
-                            <Loader2 className={`h-4 w-4 ${activeTab === 'to_process' ? 'animate-spin-slow' : ''}`} />
-                            Por Procesar
-                            {toProcessCount > 0 && (
-                                <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'to_process' ? "bg-white/20" : "bg-gray-200"}`}>
-                                    {toProcessCount}
-                                </span>
-                            )}
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('processed')}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'processed'
-                                ? "bg-[#254153] text-white shadow-lg shadow-blue-900/10"
-                                : "text-gray-500 hover:text-gray-700 hover:bg-white/50"}`}
-                        >
-                            <Bell className="h-4 w-4" />
-                            Histórico
-                            {processedCount > 0 && (
-                                <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'processed' ? "bg-white/20" : "bg-gray-200"}`}>
-                                    {processedCount}
-                                </span>
-                            )}
+                            <RotateCcw className="h-3.5 w-3.5 text-gray-400" />
+                            <span>Restablecer Columnas</span>
                         </button>
                     </div>
 
@@ -1795,6 +1860,26 @@ export default function InvoicesPage() {
                                 localeText={AG_GRID_LOCALE_ES}
                                 rowData={sortedInvoices}
                                 columnDefs={colDefs}
+                                maintainColumnOrder={true}
+                                onGridReady={(params) => {
+                                    restoreColumnState(params.api);
+                                }}
+                                onColumnMoved={(e) => {
+                                    if (e.finished) {
+                                        saveColumnState();
+                                    }
+                                }}
+                                onColumnResized={(e) => {
+                                    if (e.finished) {
+                                        saveColumnState();
+                                    }
+                                }}
+                                onColumnPinned={() => {
+                                    saveColumnState();
+                                }}
+                                onColumnVisible={() => {
+                                    saveColumnState();
+                                }}
                                 components={{ DateDropdownFloatingFilter }}
                                 onModelUpdated={(e) => setDisplayedRowCount(e.api.getDisplayedRowCount())}
                                 defaultColDef={{
