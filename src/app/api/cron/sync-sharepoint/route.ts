@@ -250,7 +250,8 @@ export async function GET(req: Request) {
                                 await graphClient.api(`/sites/${siteId}/lists/${listId}/items/${spItemId}/fields`).patch({
                                     Aprobacion_Doliente: 'Aprobado',
                                     Observaciones: 'Aprobado automáticamente',
-                                    centro_costos: checkData.centro_costos
+                                    centro_costos: checkData.centro_costos,
+                                    FechaAprobacion: new Date().toISOString()
                                 });
                             } catch (spPatchErr: any) {
                                 console.error('[CRON-SYNC][Auto-Approve] Error patching SharePoint:', spPatchErr.message);

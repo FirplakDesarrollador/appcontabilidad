@@ -193,6 +193,7 @@ export async function POST(req: NextRequest) {
 
         if (finalCentroCostos) docData.centro_costos = finalCentroCostos;
         if (finalObservaciones) docData.observaciones = finalObservaciones;
+        if (isAutoApproved) docData.fecha_aprobacion = new Date().toISOString();
 
         console.log('[Supabase] Inserting Documento_Soporte into DB:', docData);
         const { error: supabaseError } = await supabaseAdmin

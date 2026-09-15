@@ -1,4 +1,4 @@
-﻿-- ==============================================================================
+-- ==============================================================================
 -- ACTUALIZACIÓN DE FUNCIÓN TRIGGER: trg_auto_aprobar_factura
 -- v2 — Amplía las condiciones de disparo para cubrir upserts del sync-engine:
 --   * INSERT con estado evaluable
@@ -83,6 +83,7 @@ BEGIN
 
                         IF valor_factura >= min_valor AND valor_factura <= max_valor THEN
                             NEW."Aprobacion_Doliente" := 'Aprobado';
+                            NEW."FechaAprobacion" := CURRENT_TIMESTAMP;
 
                             -- Generar o asignar el centro de costos
                             IF regla.centro_costos IS NOT NULL AND regla.centro_costos != '' THEN
@@ -113,6 +114,7 @@ BEGIN
                         IF NOT EXISTS (SELECT 1 FROM public.proveedor_aprobacion_reglas WHERE proveedor_id = proveedor_id_uuid) THEN
                             -- Aprobación a ciegas
                             NEW."Aprobacion_Doliente" := 'Aprobado';
+                            NEW."FechaAprobacion" := CURRENT_TIMESTAMP;
 
                             -- Estrategia 1: Búsqueda por Valor Exacto
                             SELECT centro_costos INTO historical_cc

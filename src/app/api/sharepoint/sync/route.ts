@@ -235,7 +235,8 @@ export async function POST(req: Request) {
                             await client.api(`/sites/${siteId}/lists/${listId}/items/${spItemId}/fields`).patch({
                                 Aprobacion_Doliente: 'Aprobado',
                                 Observaciones: 'Aprobado automáticamente',
-                                centro_costos: checkData.centro_costos
+                                centro_costos: checkData.centro_costos,
+                                FechaAprobacion: new Date().toISOString()
                             });
                         } catch(spErr) {
                             console.error('[Auto-Approve] Error patching SharePoint:', spErr);

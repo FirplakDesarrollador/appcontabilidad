@@ -234,7 +234,8 @@ export async function POST(req: NextRequest) {
                                 await client.api(`/sites/${siteIdFPK}/lists/${listId}/items/${newItemId}/fields`).patch({
                                     Aprobacion_Doliente: 'Aprobado',
                                     Observaciones: 'Aprobado automáticamente',
-                                    centro_costos: checkData.centro_costos
+                                    centro_costos: checkData.centro_costos,
+                                    FechaAprobacion: new Date().toISOString()
                                 });
                             }
                         } catch(spErr: any) {
