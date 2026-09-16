@@ -1044,6 +1044,7 @@ export default function SupportDocumentsPage() {
                                 localeText={AG_GRID_LOCALE_ES}
                                 rowData={sortedDocuments}
                                 columnDefs={colDefs}
+                                maintainColumnOrder={true}
                                 onGridReady={(params) => {
                                     restoreColumnState(params.api);
                                 }}
