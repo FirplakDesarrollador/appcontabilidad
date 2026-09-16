@@ -1043,6 +1043,7 @@ export default function SupportDocumentsPage() {
                                 theme={themeQuartz}
                                 localeText={AG_GRID_LOCALE_ES}
                                 rowData={sortedDocuments}
+                                getRowId={(params) => String(params.data.id || params.data.Nit + params.data.Nro_Factura)}
                                 columnDefs={colDefs}
                                 maintainColumnOrder={true}
                                 onGridReady={(params) => {

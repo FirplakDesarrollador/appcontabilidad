@@ -1859,10 +1859,14 @@ export default function InvoicesPage() {
                                 theme={themeQuartz}
                                 localeText={AG_GRID_LOCALE_ES}
                                 rowData={sortedInvoices}
+                                getRowId={(params) => String(params.data.id || params.data.Nit + params.data.Nro_Factura)}
                                 columnDefs={colDefs}
                                 maintainColumnOrder={true}
                                 onGridReady={(params) => {
                                     restoreColumnState(params.api);
+                                }}
+                                onSortChanged={() => {
+                                    saveColumnState();
                                 }}
                                 onColumnMoved={(e) => {
                                     if (e.finished) {
