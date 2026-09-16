@@ -724,6 +724,59 @@ export default function SupportDocumentsPage() {
     const gridRef = useRef<AgGridReact>(null);
     const [displayedRowCount, setDisplayedRowCount] = useState<number>(0);
 
+    // --- Persistencia de orden y dimensiones de columnas por usuario ---
+    const getColumnStorageKey = () => {
+        const userIdentifier = user?.email || user?.id || 'default_user';
+        return `ag_grid_col_state_${userIdentifier}_aprobacion_documentos`;
+    };
+
+    const saveColumnState = () => {
+        try {
+            if (!gridRef.current || !gridRef.current.api) return;
+            const state = gridRef.current.api.getColumnState();
+            if (state && state.length > 0) {
+                localStorage.setItem(getColumnStorageKey(), JSON.stringify(state));
+            }
+        } catch (err) {
+            console.error("Error guardando estado de columnas:", err);
+        }
+    };
+
+    const restoreColumnState = (apiInstance?: any) => {
+        try {
+            const api = apiInstance || gridRef.current?.api;
+            if (!api) return;
+            const saved = localStorage.getItem(getColumnStorageKey());
+            if (saved) {
+                const state = JSON.parse(saved);
+                if (Array.isArray(state) && state.length > 0) {
+                    api.applyColumnState({
+                        state,
+                        applyOrder: true,
+                    });
+                }
+            }
+        } catch (err) {
+            console.error("Error restaurando estado de columnas:", err);
+        }
+    };
+
+    const handleResetColumns = () => {
+        try {
+            if (!gridRef.current || !gridRef.current.api) return;
+            localStorage.removeItem(getColumnStorageKey());
+            gridRef.current.api.resetColumnState();
+        } catch (err) {
+            console.error("Error restableciendo columnas:", err);
+        }
+    };
+
+    useEffect(() => {
+        if (user && gridRef.current?.api) {
+            restoreColumnState();
+        }
+    }, [user]);
+
     const handleExportExcel = () => {
         if (!gridRef.current || !gridRef.current.api) return;
         const rowData: any[] = [];
@@ -918,6 +971,15 @@ export default function SupportDocumentsPage() {
                             </Button>
                             <Button
                                 variant="outline"
+                                onClick={handleResetColumns}
+                                className="border-[#254153]/20 text-[#254153] hover:bg-gray-100 hover:text-gray-800 rounded-xl h-11 px-4 font-bold transition-all shadow-sm flex items-center gap-2"
+                                title="Restablecer orden y tamaño de las columnas"
+                            >
+                                <RefreshCw className="h-4 w-4" />
+                                <span className="hidden lg:inline">Restablecer Columnas</span>
+                            </Button>
+                            <Button
+                                variant="outline"
                                 onClick={handleExportExcel}
                                 className="border-[#254153]/20 text-[#254153] hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 rounded-xl h-11 px-4 font-bold transition-all shadow-sm flex items-center gap-2"
                             >
@@ -982,6 +1044,28 @@ export default function SupportDocumentsPage() {
                                 localeText={AG_GRID_LOCALE_ES}
                                 rowData={sortedDocuments}
                                 columnDefs={colDefs}
+                                onGridReady={(params) => {
+                                    restoreColumnState(params.api);
+                                }}
+                                onColumnMoved={(e) => {
+                                    if (e.finished) {
+                                        saveColumnState();
+                                    }
+                                }}
+                                onColumnResized={(e) => {
+                                    if (e.finished) {
+                                        saveColumnState();
+                                    }
+                                }}
+                                onColumnPinned={() => {
+                                    saveColumnState();
+                                }}
+                                onColumnVisible={() => {
+                                    saveColumnState();
+                                }}
+                                onSortChanged={() => {
+                                    saveColumnState();
+                                }}
                                 onModelUpdated={(e) => setDisplayedRowCount(e.api.getDisplayedRowCount())}
                                 defaultColDef={{
                                     sortable: true,
