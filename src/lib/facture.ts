@@ -292,57 +292,60 @@ export async function triggerFactureEventForInvoice(
     // 2. Obtener Token JWT
     const token = await getFactureAuthToken();
 
-    // 3. Buscar la factura en el Inbox de Facture para extraer su LDF oficial
+    // 3. Buscar la factura en el Inbox de Facture por NÚMERO DE FACTURA (con paginado automático)
     let ldfString = "";
     try {
       const now = new Date();
-      const sixtyDaysAgo = new Date();
-      sixtyDaysAgo.setDate(now.getDate() - 60);
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(now.getDate() - 90);
       const formatDate = (d: Date) => d.toISOString().split('T')[0] + "T00:00:00.00";
 
-      const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/PRINCIPAL/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`);
-      inboxUrl.searchParams.append("receiverStartingDate", formatDate(sixtyDaysAgo));
-      inboxUrl.searchParams.append("receiverEndingDate", formatDate(now));
-      inboxUrl.searchParams.append("pageIndex", "1");
-      inboxUrl.searchParams.append("pageSize", "100");
+      for (let page = 1; page <= 10; page++) {
+        const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/PRINCIPAL/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`);
+        inboxUrl.searchParams.append("receiverStartingDate", formatDate(ninetyDaysAgo));
+        inboxUrl.searchParams.append("receiverEndingDate", formatDate(now));
+        inboxUrl.searchParams.append("pageIndex", String(page));
+        inboxUrl.searchParams.append("pageSize", "100");
 
-      const inboxRes = await fetch(inboxUrl.toString(), {
-        method: "GET",
-        headers: { "Authorization": `Bearer ${token}` }
-      });
+        const inboxRes = await fetch(inboxUrl.toString(), {
+          method: "GET",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
 
-      if (inboxRes.ok) {
+        if (!inboxRes.ok) break;
         const inboxData = await inboxRes.json();
         const items: any[] = inboxData?.items || inboxData || [];
+        if (!items.length) break;
+
         const match = items.find(i => {
           const num = (i.number || i.documentCode || i.ldf || "").toUpperCase();
           const targetClean = cleanNroFactura.toUpperCase();
           const targetRaw = rawNroFactura.toUpperCase();
           return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num);
         });
+
         if (match && match.ldf) {
           ldfString = match.ldf;
-          console.log(`[Facture] LDF oficial encontrado en Inbox para ${nroFactura}: ${ldfString}`);
+          console.log(`[Facture] ✅ LDF oficial encontrado por número de factura (Página ${page}) para ${nroFactura}: ${ldfString}`);
+          break;
         }
       }
     } catch (inboxErr) {
-      console.warn("[Facture] No se pudo consultar Inbox para LDF, se construirá candidato:", inboxErr);
+      console.warn("[Facture] Error buscando en Inbox:", inboxErr);
     }
 
-    // Fallback Inteligente: construir LDF estándar y probar fechas de emisión hacia atrás si no se halló en Inbox
+    // Fallback por verificación si no se encontró en las páginas del Inbox
     if (!ldfString) {
       const fechaBaseObj = (invoice as any).Fecha_Factura || (invoice as any).Fecha_Recepcion || invoice.Creado;
       const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date();
       
-      // Probar fecha base y hasta 10 días hacia atrás por si la fecha de emisión en DIAN es anterior a la fecha de creación del registro
       let validLdf = "";
-      for (let offset = 0; offset <= 10; offset++) {
+      for (let offset = 0; offset <= 15; offset++) {
         const candidateDate = new Date(baseDate);
         candidateDate.setDate(baseDate.getDate() - offset);
         const dateStr = candidateDate.toISOString().split('T')[0];
         const candidateLdf = `FACTURA-UBL(${cleanNit};${nroFactura};${dateStr};PRINCIPAL;PRINCIPAL)`;
         
-        // Verificar si la fecha de emisión funciona en Facture
         try {
           const testToken = Buffer.from(candidateLdf).toString('base64');
           const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`;
@@ -369,72 +372,29 @@ export async function triggerFactureEventForInvoice(
           const testJson = await testRes.json().catch(() => null);
           const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || "";
 
-          // Si el documento existe en Facture (éxito o ya fue recibido), esta fecha es la correcta!
           if (testRes.ok || errDesc.includes("recibido") || errDesc.includes("aceptado") || errDesc.includes("reclamar")) {
             validLdf = candidateLdf;
-            console.log(`[Facture] ✅ LDF válido identificado con fecha de emisión (${dateStr}): ${validLdf}`);
+            console.log(`[Facture] ✅ LDF verificado con éxito por número de factura y fecha (${dateStr}): ${validLdf}`);
             break;
           }
-        } catch (tErr) {
-          // Continuar probando
-        }
+        } catch (tErr) {}
       }
 
       ldfString = validLdf || `FACTURA-UBL(${cleanNit};${nroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`;
-      console.log(`[Facture] LDF final seleccionado: ${ldfString}`);
+      console.log(`[Facture] LDF final determinado: ${ldfString}`);
     }
 
     const documentTokenBase64 = Buffer.from(ldfString).toString('base64');
 
-    // SI LA ACCIÓN ES RECHAZADO:
-    if (action === 'Rechazado') {
-      const obsReason = extraDetails?.observaciones || invoice.Observaciones || "Documento rechazado por el autorizador";
-      console.log(`[Facture] Enviando Recibo de Bienes previo a Rechazo para factura ${nroFactura} (ID ${invoiceId})...`);
-
-      const receivePreReject = await sendReceiveGoods(documentTokenBase64, {
-        motive: "Otro",
-        sourceDelivery: "INBOX",
-        canal: "INBOX",
-        medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com",
-        receiverDocumentType: "CC",
-        receiverDocumentNumber: "123456789",
-        receiverName: "Rechazo",
-        receiverLastName: "Contabilidad",
-        receiverJobTitle: "Responsable de Autorizar",
-        receiverOrganizationDepartment: "Contabilidad",
-        receiveDateTime: new Date().toISOString()
-      }, token);
-
-      // Esperar 2 segundos para sincronización con DIAN antes de emitir el Reclamo/Rechazo
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      console.log(`[Facture] Enviando Rechazo (REJECT/V2) para factura ${nroFactura} (ID ${invoiceId}) con motivo: "${obsReason}"...`);
-      const rejectResult = await sendRejectDocument(documentTokenBase64, {
-        motive: "Documento con inconsistencias",
-        observation: obsReason,
-        comments: obsReason,
-        sourceDelivery: "INBOX",
-        canal: "INBOX",
-        medio: process.env.FACTURE_MEDIO_EMAIL || "890927404@factureinbox.co",
-        codigoMotivo: "01"
-      }, token);
-
-      if (rejectResult.success) {
-        console.log(`[Facture] ✅ Rechazo (REJECT/V2) enviado con éxito para factura ${nroFactura} (ID ${invoiceId})`);
-      } else {
-        console.warn(`[Facture] ⚠️ Aviso/Respuesta en Rechazo para factura ${nroFactura}:`, rejectResult.error);
-      }
-
-      return rejectResult;
-    }
-
-    // SI LA ACCIÓN ES APROBADO:
     const fullResponsableName = extraDetails?.responsableName || invoice.Responsable_de_Autorizar || "Responsable Autorizador";
     const nameParts = fullResponsableName.trim().split(' ');
     const firstName = nameParts[0] || "Aprobador";
     const lastName = nameParts.slice(1).join(' ') || "Contabilidad";
 
-    // Paso 1: Enviar RECEIVEGOODS (Recibo de Bienes)
+    // -----------------------------------------------------------------------------------------
+    // REGLA DE LA DIAN: PRIMERO SE EMITE SIEMPRE EL RECIBO DE BIENES (032). NO EN SIMULTÁNEO.
+    // -----------------------------------------------------------------------------------------
+    console.log(`[Facture] 📦 PASO 1: Emitiendo Recibo de Bienes (RECEIVEGOODS - 032) para factura ${nroFactura} (ID ${invoiceId})...`);
     const receiveResult = await sendReceiveGoods(documentTokenBase64, {
       motive: "Otro",
       sourceDelivery: "INBOX",
@@ -450,34 +410,65 @@ export async function triggerFactureEventForInvoice(
     }, token);
 
     if (receiveResult.success) {
-      console.log(`[Facture] ✅ Recibo de Bienes (RECEIVEGOODS) enviado con éxito para factura ${nroFactura} (ID ${invoiceId})`);
+      console.log(`[Facture] ✅ PASO 1 Exitoso: Recibo de Bienes transmitido para ${nroFactura}`);
     } else {
-      console.warn(`[Facture] ⚠️ Aviso/Respuesta en Recibo de Bienes para factura ${nroFactura}:`, receiveResult.error);
+      console.warn(`[Facture] ⚠️ Respuesta PASO 1 (Recibo de Bienes) para ${nroFactura}:`, receiveResult.error);
     }
 
-    // Esperar 2 segundos para permitir que la DIAN sincronice el evento 032 (Recibo de Bienes) antes del 033 (Aceptación Expresa)
+    // PASO INTERMEDIO: Pausa obligatoria de 2 segundos para sincronización previa del Evento 032 en la DIAN
+    console.log(`[Facture] ⏳ Pausa de 2 segundos para sincronización obligatoria del Evento 032 en la DIAN...`);
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // Paso 2: Enviar ACCEPT/V2 (Aceptación Expresa del Documento)
-    console.log(`[Facture] Iniciando Paso 2: Aceptación Expresa (ACCEPT/V2) para factura ${nroFactura} (ID ${invoiceId})...`);
-    const acceptResult = await sendAcceptDocument(documentTokenBase64, {
-      motive: "Aceptación",
-      sourceDelivery: "INBOX",
-      canal: "INBOX",
-      medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com"
-    }, token);
+    // -----------------------------------------------------------------------------------------
+    // PASO 2: EMITIR ACEPTACIÓN EXPRESA (ACCEPT/V2) O RECHAZO (REJECT/V2) SEGÚN LA ACCIÓN
+    // -----------------------------------------------------------------------------------------
+    if (action === 'Rechazado') {
+      const obsReason = extraDetails?.observaciones || invoice.Observaciones || "Documento rechazado por el autorizador";
+      console.log(`[Facture] ❌ PASO 2: Emitiendo Rechazo (REJECT/V2 - 031) para factura ${nroFactura} (ID ${invoiceId}) con motivo: "${obsReason}"...`);
+      
+      const rejectResult = await sendRejectDocument(documentTokenBase64, {
+        motive: "Documento con inconsistencias",
+        observation: obsReason,
+        comments: obsReason,
+        sourceDelivery: "INBOX",
+        canal: "INBOX",
+        medio: process.env.FACTURE_MEDIO_EMAIL || "890927404@factureinbox.co",
+        codigoMotivo: "01"
+      }, token);
 
-    if (acceptResult.success) {
-      console.log(`[Facture] ✅ Aceptación Expresa (ACCEPT/V2) enviada con éxito para factura ${nroFactura} (ID ${invoiceId})`);
+      if (rejectResult.success) {
+        console.log(`[Facture] ✅ PASO 2 Exitoso: Rechazo (REJECT/V2) transmitido con éxito para ${nroFactura}`);
+      } else {
+        console.warn(`[Facture] ⚠️ Respuesta PASO 2 (Rechazo) para ${nroFactura}:`, rejectResult.error);
+      }
+
+      return {
+        success: receiveResult.success || rejectResult.success,
+        data: { receive: receiveResult.data, reject: rejectResult.data },
+        error: rejectResult.error || receiveResult.error
+      };
     } else {
-      console.warn(`[Facture] ⚠️ Aviso/Respuesta en Aceptación Expresa para factura ${nroFactura}:`, acceptResult.error);
-    }
+      console.log(`[Facture] ✔️ PASO 2: Emitiendo Aceptación Expresa (ACCEPT/V2 - 033) para factura ${nroFactura} (ID ${invoiceId})...`);
+      
+      const acceptResult = await sendAcceptDocument(documentTokenBase64, {
+        motive: "Aceptación",
+        sourceDelivery: "INBOX",
+        canal: "INBOX",
+        medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com"
+      }, token);
 
-    return {
-      success: receiveResult.success || acceptResult.success,
-      data: { receive: receiveResult.data, accept: acceptResult.data },
-      error: receiveResult.error || acceptResult.error
-    };
+      if (acceptResult.success) {
+        console.log(`[Facture] ✅ PASO 2 Exitoso: Aceptación Expresa (ACCEPT/V2) transmitida con éxito para ${nroFactura}`);
+      } else {
+        console.warn(`[Facture] ⚠️ Respuesta PASO 2 (Aceptación Expresa) para ${nroFactura}:`, acceptResult.error);
+      }
+
+      return {
+        success: receiveResult.success || acceptResult.success,
+        data: { receive: receiveResult.data, accept: acceptResult.data },
+        error: acceptResult.error || receiveResult.error
+      };
+    }
   } catch (error: any) {
     console.error(`[Facture] Excepción en flujo automático Facture (${invoiceId}):`, error);
     return { success: false, error: error?.message || "Error al procesar eventos en Facture" };
