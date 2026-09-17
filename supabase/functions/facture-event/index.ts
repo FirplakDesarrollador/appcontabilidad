@@ -33,7 +33,7 @@ Deno.serve(async (req: Request) => {
     // 1. Obtener datos de la factura en Registro_Facturas
     const { data: invoice, error: fetchErr } = await supabase
       .from('Registro_Facturas')
-      .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Observaciones, Creado, FechaAprobacion, Fecha_Recepcion, Fecha_Factura')
+      .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Observaciones, Creado, FechaAprobacion')
       .eq('ID', Number(invoiceId))
       .single()
 
@@ -137,7 +137,7 @@ Deno.serve(async (req: Request) => {
 
     // Fallback: construir LDF con verificación de múltiples fechas
     if (!ldfString) {
-      const fechaBaseObj = (invoice as any).Fecha_Factura || (invoice as any).Fecha_Recepcion || invoice.Creado
+      const fechaBaseObj = invoice.Creado
       const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date()
 
       let validLdf = ''

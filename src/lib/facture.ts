@@ -287,7 +287,7 @@ export async function triggerFactureEventForInvoice(
     // 1. Obtener la factura de Registro_Facturas (Fallback)
     const { data: invoice, error: fetchErr } = await supabase
       .from('Registro_Facturas')
-      .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Observaciones, Creado, FechaAprobacion, Fecha_Recepcion, Fecha_Factura')
+      .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Observaciones, Creado, FechaAprobacion')
       .eq('ID', Number(invoiceId))
       .single();
 
@@ -352,7 +352,7 @@ export async function triggerFactureEventForInvoice(
 
     // Fallback por verificación si no se encontró en las páginas del Inbox
     if (!ldfString) {
-      const fechaBaseObj = (invoice as any).Fecha_Factura || (invoice as any).Fecha_Recepcion || invoice.Creado;
+      const fechaBaseObj = invoice.Creado;
       const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date();
       
       let validLdf = "";
