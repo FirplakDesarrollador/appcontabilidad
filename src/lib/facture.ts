@@ -329,12 +329,59 @@ export async function triggerFactureEventForInvoice(
       console.warn("[Facture] No se pudo consultar Inbox para LDF, se construirá candidato:", inboxErr);
     }
 
-    // Fallback: construir LDF estándar si no se halló en Inbox
+    // Fallback Inteligente: construir LDF estándar y probar fechas de emisión hacia atrás si no se halló en Inbox
     if (!ldfString) {
-      const fechaBase = (invoice as any).Fecha_Factura || (invoice as any).Fecha_Recepcion || invoice.Creado;
-      const fechaStr = fechaBase ? new Date(fechaBase).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-      ldfString = `FACTURA-UBL(${cleanNit};${nroFactura};${fechaStr};PRINCIPAL;PRINCIPAL)`;
-      console.log(`[Facture] LDF construido por fallback: ${ldfString}`);
+      const fechaBaseObj = (invoice as any).Fecha_Factura || (invoice as any).Fecha_Recepcion || invoice.Creado;
+      const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date();
+      
+      // Probar fecha base y hasta 10 días hacia atrás por si la fecha de emisión en DIAN es anterior a la fecha de creación del registro
+      let validLdf = "";
+      for (let offset = 0; offset <= 10; offset++) {
+        const candidateDate = new Date(baseDate);
+        candidateDate.setDate(baseDate.getDate() - offset);
+        const dateStr = candidateDate.toISOString().split('T')[0];
+        const candidateLdf = `FACTURA-UBL(${cleanNit};${nroFactura};${dateStr};PRINCIPAL;PRINCIPAL)`;
+        
+        // Verificar si la fecha de emisión funciona en Facture
+        try {
+          const testToken = Buffer.from(candidateLdf).toString('base64');
+          const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`;
+          const testRes = await fetch(testUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "reception": "true",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              motive: "Otro",
+              sourceDelivery: "INBOX",
+              canal: "INBOX",
+              medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com",
+              receiverDocumentType: "CC",
+              receiverDocumentNumber: "123456789",
+              receiverName: "Verificación",
+              receiverLastName: "Contabilidad",
+              receiveDateTime: new Date().toISOString()
+            })
+          });
+
+          const testJson = await testRes.json().catch(() => null);
+          const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || "";
+
+          // Si el documento existe en Facture (éxito o ya fue recibido), esta fecha es la correcta!
+          if (testRes.ok || errDesc.includes("recibido") || errDesc.includes("aceptado") || errDesc.includes("reclamar")) {
+            validLdf = candidateLdf;
+            console.log(`[Facture] ✅ LDF válido identificado con fecha de emisión (${dateStr}): ${validLdf}`);
+            break;
+          }
+        } catch (tErr) {
+          // Continuar probando
+        }
+      }
+
+      ldfString = validLdf || `FACTURA-UBL(${cleanNit};${nroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`;
+      console.log(`[Facture] LDF final seleccionado: ${ldfString}`);
     }
 
     const documentTokenBase64 = Buffer.from(ldfString).toString('base64');
