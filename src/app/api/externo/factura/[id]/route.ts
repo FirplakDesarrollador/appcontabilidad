@@ -73,6 +73,41 @@ export async function GET(
             }
         }
 
+        // Fetch latest distribution for this provider from Supabase if not directly set on current invoice
+        let lastProviderDistribution = null;
+        if (!invoice.centro_costos && nitValue && nitValue !== 'N/A') {
+            try {
+                const cleanNit = nitValue.split('-')[0].trim().replace(/\D/g, '');
+                const proveedorName = (invoice.Proveedor || "").trim();
+
+                let query = supabase
+                    .from('Registro_Facturas')
+                    .select('centro_costos, tablaCostos')
+                    .eq('Aprobacion_Doliente', 'Aprobado')
+                    .not('centro_costos', 'is', null)
+                    .neq('centro_costos', '')
+                    .neq('centro_costos', '[]')
+                    .neq('ID', Number(itemId))
+                    .order('ID', { ascending: false })
+                    .limit(1);
+
+                if (cleanNit) {
+                    query = query.ilike('Nit', `%${cleanNit}%`);
+                } else if (proveedorName) {
+                    query = query.ilike('Proveedor', `%${proveedorName}%`);
+                }
+
+                const { data: previousInvoices, error: prevErr } = await query;
+                if (prevErr) console.error("Error querying last approved provider invoice:", prevErr);
+
+                if (previousInvoices && previousInvoices.length > 0 && previousInvoices[0].centro_costos) {
+                    lastProviderDistribution = previousInvoices[0].centro_costos;
+                }
+            } catch (err) {
+                console.warn('Could not fetch last invoice distribution for provider:', err);
+            }
+        }
+
         return NextResponse.json({
             id: invoice.id,
             proveedor: invoice.Proveedor || "N/A",
@@ -86,7 +121,7 @@ export async function GET(
             responsableActual: invoice.Responsable_de_Autorizar || "No asignado",
             documentInfo,
             adjuntosUrl: supabaseInvoice?.adjuntos_url || [],
-            distribuciones: invoice.centro_costos || null,
+            distribuciones: invoice.centro_costos || lastProviderDistribution || null,
             observaciones: invoice.Observaciones || "",
             anticipo: invoice.tiene_anticipo || "",
             documentos: supabaseInvoice?.documentos || supabaseInvoice?.fp || null

@@ -249,6 +249,18 @@ export async function POST(req: NextRequest) {
                     console.error('[update-status] Error logging SAP error:', logErr);
                 }
             }
+
+            // Trigger evento RECEIVEGOODS de Facture únicamente si es la lista Registro_de_Facturas
+            if (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') {
+                try {
+                    const { triggerReceiveGoodsForInvoice } = await import('@/lib/facture');
+                    triggerReceiveGoodsForInvoice(itemId).catch(err => 
+                        console.error('[update-status] Error background Facture RECEIVEGOODS:', err)
+                    );
+                } catch (factureErr) {
+                    console.error('[update-status] Error triggering Facture RECEIVEGOODS:', factureErr);
+                }
+            }
         }
 
         return NextResponse.json({ 

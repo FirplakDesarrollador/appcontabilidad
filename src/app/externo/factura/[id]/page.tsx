@@ -333,6 +333,24 @@ export default function PublicApprovalPage() {
                     if (normalized.length === 0 && data.valorTotal) {
                         setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
                     } else {
+                        const totalActual = parseSafeFloat(data.valorTotal);
+                        if (normalized.length === 1 && totalActual > 0) {
+                            normalized[0].valor = data.valorTotal;
+                        } else if (normalized.length > 1 && totalActual > 0) {
+                            // Calculate sum of previous amounts
+                            const sumPrev = normalized.reduce((acc: number, item: any) => acc + parseSafeFloat(item.valor), 0);
+                            if (sumPrev > 0) {
+                                // Scale each line proportionally
+                                normalized.forEach((item: any) => {
+                                    const ratio = parseSafeFloat(item.valor) / sumPrev;
+                                    item.valor = Math.round(totalActual * ratio).toString();
+                                });
+                            } else {
+                                // Equal split if previous values were 0
+                                const equalVal = (totalActual / normalized.length).toFixed(2);
+                                normalized.forEach((item: any) => { item.valor = equalVal; });
+                            }
+                        }
                         setDistribuciones(normalized);
                     }
                 } catch (e) {

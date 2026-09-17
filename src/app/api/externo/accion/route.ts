@@ -263,6 +263,19 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // 6. Enviar evento RECEIVEGOODS a Facture únicamente si es Registro_de_Facturas
+        if (action === 'Aprobado' && !isDocSoporte && (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas')) {
+            try {
+                const { triggerReceiveGoodsForInvoice } = await import('@/lib/facture');
+                triggerReceiveGoodsForInvoice(itemId, {
+                    responsableName: spItem.Responsable_de_Autorizar,
+                    observaciones
+                }).catch(err => console.error("Error background Facture RECEIVEGOODS:", err));
+            } catch (factureErr) {
+                console.error('Failed to trigger Facture RECEIVEGOODS:', factureErr);
+            }
+        }
+
         return NextResponse.json({ success: true, sap: sapResult });
     } catch (error: any) {
         console.error('Error in externo-accion API:', error);

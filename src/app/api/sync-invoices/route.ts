@@ -20,8 +20,8 @@ export async function POST() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                u: process.env.FACTURE_API_USER,
-                p: process.env.FACTURE_API_PASSWORD,
+                u: process.env.FACTURE_API_USER || "890927404",
+                p: process.env.FACTURE_API_PASSWORD || "|uLuG&W@SDUdQ26",
                 ft: "issuer|Receiver"
             })
         });
