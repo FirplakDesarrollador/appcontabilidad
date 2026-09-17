@@ -271,9 +271,9 @@ export async function POST(req: NextRequest) {
         // 6. Trigger evento Facture (Aprobado o Rechazado) — FUERA del bloque de SAP para que funcione con ambos estados
         if (field === 'Aprobacion_Doliente' && (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Rechazado')) {
             try {
-                // Pre-fetch data from SharePoint as fallback in case Supabase sync is delayed
                 let spItemData = null;
                 try {
+                    console.log(`[update-status] Pre-fetching SP item ${itemId} for fallback...`);
                     const spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}`).expand('fields').get();
                     const fields = spItem.fields;
                     spItemData = {
@@ -286,10 +286,12 @@ export async function POST(req: NextRequest) {
                         Creado: spItem.createdDateTime,
                         FechaAprobacion: updateData.FechaAprobacion || fields.FechaAprobacion
                     };
+                    console.log(`[update-status] ✅ SP item fetched successfully for fallback.`);
                 } catch (e) {
-                    console.warn('[update-status] Could not fetch SP item data for fallback:', e);
+                    console.warn(`[update-status] ⚠️ Could not fetch SP item data for fallback:`, e);
                 }
 
+                console.log(`[update-status] Calling triggerFactureEventForInvoice with spItemData:`, spItemData !== null);
                 const { triggerFactureEventForInvoice } = await import('@/lib/facture');
                 factureResult = await triggerFactureEventForInvoice(itemId, status, {
                     spItemData,

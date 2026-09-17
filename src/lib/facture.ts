@@ -259,7 +259,7 @@ export async function sendRejectDocument(
 export async function triggerFactureEventForInvoice(
   invoiceId: number | string,
   action: 'Aprobado' | 'Rechazado' | string = 'Aprobado',
-  extraDetails?: { responsableName?: string; observaciones?: string }
+  extraDetails?: { responsableName?: string; observaciones?: string; spItemData?: any }
 ): Promise<FactureResponse> {
   console.log(`[Facture] Iniciando flujo automático Facture (${action}) para factura ID ${invoiceId}...`);
 
