@@ -144,6 +144,7 @@ export async function POST(req: NextRequest) {
 
         // 5. Auto-crear draft en SAP cuando se aprueba manualmente
         let sapAutoResult: any = null;
+        let factureResult: any = null;
         if (field === 'Aprobacion_Doliente' && status === 'Aprobado') {
             try {
                 const supaTable = listName === 'Radicados de importación'
@@ -249,17 +250,16 @@ export async function POST(req: NextRequest) {
                     console.error('[update-status] Error logging SAP error:', logErr);
                 }
             }
+        }
 
-            // Trigger evento Facture (Aprobado o Rechazado) únicamente si es la lista Registro_de_Facturas
-            let factureResult: any = null;
-            if ((listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Rechazado')) {
-                try {
-                    const { triggerFactureEventForInvoice } = await import('@/lib/facture');
-                    factureResult = await triggerFactureEventForInvoice(itemId, status);
-                } catch (factureErr: any) {
-                    console.error('[update-status] Error triggering Facture event:', factureErr);
-                    factureResult = { success: false, error: factureErr?.message };
-                }
+        // 6. Trigger evento Facture (Aprobado o Rechazado) — FUERA del bloque de SAP para que funcione con ambos estados
+        if (field === 'Aprobacion_Doliente' && (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Rechazado')) {
+            try {
+                const { triggerFactureEventForInvoice } = await import('@/lib/facture');
+                factureResult = await triggerFactureEventForInvoice(itemId, status);
+            } catch (factureErr: any) {
+                console.error('[update-status] Error triggering Facture event:', factureErr);
+                factureResult = { success: false, error: factureErr?.message };
             }
         }
 
