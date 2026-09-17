@@ -83,7 +83,7 @@ export async function sendReceiveGoods(
       motive: payload.motive || "Otro",
       sourceDelivery: payload.sourceDelivery || "INBOX",
       canal: payload.canal || "INBOX",
-      medio: payload.medio || process.env.FACTURE_MEDIO_EMAIL || "tu_correo@factureinbox.co",
+      medio: payload.medio || process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com",
       receiverDocumentType: payload.receiverDocumentType || "CC",
       receiverDocumentNumber: payload.receiverDocumentNumber,
       receiverName: payload.receiverName,
@@ -148,7 +148,7 @@ export async function sendAcceptDocument(
       motive: payload?.motive || "Aceptación",
       sourceDelivery: payload?.sourceDelivery || "INBOX",
       canal: payload?.canal || "INBOX",
-      medio: payload?.medio || process.env.FACTURE_MEDIO_EMAIL || "tu_correo@factureinbox.co"
+      medio: payload?.medio || process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com"
     };
 
     const res = await fetch(url, {
@@ -279,7 +279,7 @@ export async function triggerReceiveGoodsForInvoice(
       motive: "Otro",
       sourceDelivery: "INBOX",
       canal: "INBOX",
-      medio: process.env.FACTURE_MEDIO_EMAIL || "tu_correo@factureinbox.co",
+      medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com",
       receiverDocumentType: "CC",
       receiverDocumentNumber: "123456789",
       receiverName: firstName,
@@ -301,7 +301,7 @@ export async function triggerReceiveGoodsForInvoice(
       motive: "Aceptación",
       sourceDelivery: "INBOX",
       canal: "INBOX",
-      medio: process.env.FACTURE_MEDIO_EMAIL || "tu_correo@factureinbox.co"
+      medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com"
     }, token);
 
     if (acceptResult.success) {
