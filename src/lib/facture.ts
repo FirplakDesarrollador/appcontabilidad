@@ -268,7 +268,23 @@ export async function triggerFactureEventForInvoice(
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpvaGR0a3NneGhiaGVhZnRnbXNpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcyMjk2MTE1MSwiZXhwIjoyMDM4NTM3MTUxfQ.Y-OdRzGTe0llD1VRPYxyUIo1man7MCeABlMrZVuAqus";
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 1. Obtener la factura de Registro_Facturas
+    // 0. Intentar procesar a través de la Supabase Edge Function 'facture-event'
+    try {
+      const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('facture-event', {
+        body: { invoiceId, action, extraDetails }
+      });
+      if (!edgeErr && edgeData && edgeData.success !== false) {
+        console.log(`[Facture] ✅ Evento Facture procesado mediante Supabase Edge Function 'facture-event':`, edgeData);
+        return { success: true, data: edgeData };
+      }
+      if (edgeErr) {
+        console.warn(`[Facture] Aviso en Edge Function (se ejecutará fallback directo):`, edgeErr.message);
+      }
+    } catch (invokeErr: any) {
+      console.warn(`[Facture] Invocación de Edge Function fallback:`, invokeErr.message);
+    }
+
+    // 1. Obtener la factura de Registro_Facturas (Fallback)
     const { data: invoice, error: fetchErr } = await supabase
       .from('Registro_Facturas')
       .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Observaciones, Creado, FechaAprobacion, Fecha_Recepcion, Fecha_Factura')
