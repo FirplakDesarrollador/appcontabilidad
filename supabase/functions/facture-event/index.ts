@@ -30,15 +30,27 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-    // 1. Obtener datos de la factura en Registro_Facturas
-    const { data: invoice, error: fetchErr } = await supabase
-      .from('Registro_Facturas')
-      .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Observaciones, Creado, FechaAprobacion')
-      .eq('ID', Number(invoiceId))
-      .single()
+    // 1. Obtener datos de la factura en Registro_Facturas (con reintentos por si hay delay de sincronización)
+    let invoice = null
+    let fetchErr = null
+    for (let attempts = 1; attempts <= 3; attempts++) {
+      const result = await supabase
+        .from('Registro_Facturas')
+        .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Observaciones, Creado, FechaAprobacion')
+        .eq('ID', Number(invoiceId))
+        .single()
+        
+      invoice = result.data
+      fetchErr = result.error
+
+      if (invoice) break
+      
+      console.warn(`[facture-event] Intento ${attempts}: Factura ID ${invoiceId} no encontrada, esperando 2s...`)
+      if (attempts < 3) await new Promise(resolve => setTimeout(resolve, 2000))
+    }
 
     if (fetchErr || !invoice) {
-      console.error(`[facture-event] Factura ID ${invoiceId} no encontrada:`, fetchErr?.message)
+      console.error(`[facture-event] Factura ID ${invoiceId} no encontrada definitivamente:`, fetchErr?.message || 'No rows returned')
       return new Response(
         JSON.stringify({ success: false, error: `Factura ID ${invoiceId} no encontrada en Registro_Facturas` }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

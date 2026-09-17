@@ -122,16 +122,32 @@ export async function POST(req: NextRequest) {
                     ? 'Registro_Facturas'
                     : listName;
 
-            const { error: supaErr, count } = await supabaseAdmin
-                .from(supaTable)
-                .update(supaUpdate)
-                .eq(listName === 'Registro_de_Facturas' ? 'ID' : 'id', Number(itemId));
+            let supaErr = null;
+            let updatedData = [];
+            for (let attempt = 1; attempt <= 5; attempt++) {
+                const result = await supabaseAdmin
+                    .from(supaTable)
+                    .update(supaUpdate)
+                    .eq(listName === 'Registro_de_Facturas' ? 'ID' : 'id', Number(itemId))
+                    .select();
+                
+                supaErr = result.error;
+                updatedData = result.data || [];
+
+                if (supaErr) break; // If there's an actual SQL error, stop retrying
+                if (updatedData.length > 0) break; // Successfully updated
+
+                console.warn(`[update-status] Intento ${attempt}: Registro ${itemId} no existe en Supabase aún. Esperando 2s...`);
+                if (attempt < 5) await new Promise(res => setTimeout(res, 2000));
+            }
 
             if (supaErr) {
                 console.error(`[update-status] Supabase update FAILED for ${supaTable} ID ${itemId}:`, supaErr.message);
                 return NextResponse.json({
                     error: `Se actualizo en SharePoint pero fallo el guardado en la base de datos: ${supaErr.message}`
                 }, { status: 500 });
+            } else if (updatedData.length === 0) {
+                console.warn(`[update-status] Supabase update FAILED for ${supaTable} ID ${itemId}: Registro no encontrado tras 5 intentos`);
             } else {
                 console.log(`[update-status] Supabase update OK for ${supaTable} ID ${itemId} — field=${field} status=${status}`);
             }
