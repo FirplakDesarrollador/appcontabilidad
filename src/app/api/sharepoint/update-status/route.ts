@@ -251,21 +251,22 @@ export async function POST(req: NextRequest) {
             }
 
             // Trigger evento Facture (Aprobado o Rechazado) únicamente si es la lista Registro_de_Facturas
-            if ((listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Procesado' || status === 'Rechazado')) {
+            let factureResult: any = null;
+            if ((listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Rechazado')) {
                 try {
                     const { triggerFactureEventForInvoice } = await import('@/lib/facture');
-                    triggerFactureEventForInvoice(itemId, status).catch(err => 
-                        console.error('[update-status] Error background Facture event:', err)
-                    );
-                } catch (factureErr) {
+                    factureResult = await triggerFactureEventForInvoice(itemId, status);
+                } catch (factureErr: any) {
                     console.error('[update-status] Error triggering Facture event:', factureErr);
+                    factureResult = { success: false, error: factureErr?.message };
                 }
             }
         }
 
         return NextResponse.json({ 
             success: true,
-            ...(sapAutoResult ? { sapDraft: sapAutoResult } : {})
+            ...(sapAutoResult ? { sapDraft: sapAutoResult } : {}),
+            ...(factureResult ? { facture: factureResult } : {})
         });
     } catch (error: any) {
         console.error('Error updating status:', error);

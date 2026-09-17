@@ -264,19 +264,21 @@ export async function POST(req: NextRequest) {
         }
 
         // 6. Enviar evento a Facture (Aprobado o Rechazado) únicamente si es Registro_de_Facturas
+        let factureResult: any = null;
         if (!isDocSoporte && (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas')) {
             try {
                 const { triggerFactureEventForInvoice } = await import('@/lib/facture');
-                triggerFactureEventForInvoice(itemId, action, {
+                factureResult = await triggerFactureEventForInvoice(itemId, action, {
                     responsableName: spItem.Responsable_de_Autorizar,
                     observaciones
-                }).catch(err => console.error("Error background Facture event:", err));
-            } catch (factureErr) {
+                });
+            } catch (factureErr: any) {
                 console.error('Failed to trigger Facture event:', factureErr);
+                factureResult = { success: false, error: factureErr?.message };
             }
         }
 
-        return NextResponse.json({ success: true, sap: sapResult });
+        return NextResponse.json({ success: true, sap: sapResult, facture: factureResult });
     } catch (error: any) {
         console.error('Error in externo-accion API:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });

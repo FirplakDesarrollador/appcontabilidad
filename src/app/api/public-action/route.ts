@@ -111,14 +111,14 @@ export async function POST(req: NextRequest) {
             }
 
             // 6. Enviar evento Facture (Aprobado o Rechazado) a Registro_Facturas
+            let factureResult: any = null;
             if (action === 'Aprobado' || action === 'Rechazado') {
                 try {
                     const { triggerFactureEventForInvoice } = await import('@/lib/facture');
-                    triggerFactureEventForInvoice(id, action).catch(err =>
-                        console.error('Error background Facture event:', err)
-                    );
-                } catch (factureErr) {
+                    factureResult = await triggerFactureEventForInvoice(id, action);
+                } catch (factureErr: any) {
                     console.error('Failed to trigger Facture event:', factureErr);
+                    factureResult = { success: false, error: factureErr?.message };
                 }
             }
             
@@ -134,7 +134,8 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ 
             success: true, 
-            sap: sapResult 
+            sap: sapResult,
+            facture: factureResult
         });
     } catch (error: any) {
         console.error('Public action API error:', error);
