@@ -271,7 +271,7 @@ export async function triggerFactureEventForInvoice(
     // 1. Obtener la factura de Registro_Facturas
     const { data: invoice, error: fetchErr } = await supabase
       .from('Registro_Facturas')
-      .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Observaciones, Creado, FechaAprobacion')
+      .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Observaciones, Creado, FechaAprobacion, Fecha_Recepcion, Fecha_Factura')
       .eq('ID', Number(invoiceId))
       .single();
 
@@ -280,10 +280,12 @@ export async function triggerFactureEventForInvoice(
       return { success: false, error: `Factura ID ${invoiceId} no encontrada` };
     }
 
-    const nroFactura = (invoice.Nro_Factura || "").trim();
+    const rawNroFactura = (invoice.Nro_Factura || "").trim();
+    const cleanNroFactura = rawNroFactura.replace(/^(FAC|FE)[-_]?/i, '').trim();
+    const nroFactura = cleanNroFactura || rawNroFactura;
     const cleanNit = (invoice.Nit || "").split('-')[0].trim().replace(/\D/g, '');
 
-    if (!nroFactura) {
+    if (!rawNroFactura) {
       return { success: false, error: "Nro_Factura no disponible" };
     }
 
@@ -313,8 +315,10 @@ export async function triggerFactureEventForInvoice(
         const inboxData = await inboxRes.json();
         const items: any[] = inboxData?.items || inboxData || [];
         const match = items.find(i => {
-          const num = i.number || i.documentCode || i.ldf || "";
-          return num.includes(nroFactura) || (cleanNit && i.supplierIdentification && i.supplierIdentification.includes(cleanNit));
+          const num = (i.number || i.documentCode || i.ldf || "").toUpperCase();
+          const targetClean = cleanNroFactura.toUpperCase();
+          const targetRaw = rawNroFactura.toUpperCase();
+          return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num);
         });
         if (match && match.ldf) {
           ldfString = match.ldf;
@@ -327,7 +331,8 @@ export async function triggerFactureEventForInvoice(
 
     // Fallback: construir LDF estándar si no se halló en Inbox
     if (!ldfString) {
-      const fechaStr = invoice.Creado ? new Date(invoice.Creado).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      const fechaBase = (invoice as any).Fecha_Factura || (invoice as any).Fecha_Recepcion || invoice.Creado;
+      const fechaStr = fechaBase ? new Date(fechaBase).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
       ldfString = `FACTURA-UBL(${cleanNit};${nroFactura};${fechaStr};PRINCIPAL;PRINCIPAL)`;
       console.log(`[Facture] LDF construido por fallback: ${ldfString}`);
     }
@@ -337,8 +342,26 @@ export async function triggerFactureEventForInvoice(
     // SI LA ACCIÓN ES RECHAZADO:
     if (action === 'Rechazado') {
       const obsReason = extraDetails?.observaciones || invoice.Observaciones || "Documento rechazado por el autorizador";
-      console.log(`[Facture] Enviando Rechazo (REJECT/V2) para factura ${nroFactura} (ID ${invoiceId}) con motivo: "${obsReason}"...`);
+      console.log(`[Facture] Enviando Recibo de Bienes previo a Rechazo para factura ${nroFactura} (ID ${invoiceId})...`);
 
+      const receivePreReject = await sendReceiveGoods(documentTokenBase64, {
+        motive: "Otro",
+        sourceDelivery: "INBOX",
+        canal: "INBOX",
+        medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com",
+        receiverDocumentType: "CC",
+        receiverDocumentNumber: "123456789",
+        receiverName: "Rechazo",
+        receiverLastName: "Contabilidad",
+        receiverJobTitle: "Responsable de Autorizar",
+        receiverOrganizationDepartment: "Contabilidad",
+        receiveDateTime: new Date().toISOString()
+      }, token);
+
+      // Esperar 2 segundos para sincronización con DIAN antes de emitir el Reclamo/Rechazo
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      console.log(`[Facture] Enviando Rechazo (REJECT/V2) para factura ${nroFactura} (ID ${invoiceId}) con motivo: "${obsReason}"...`);
       const rejectResult = await sendRejectDocument(documentTokenBase64, {
         motive: "Documento con inconsistencias",
         observation: obsReason,
@@ -384,6 +407,9 @@ export async function triggerFactureEventForInvoice(
     } else {
       console.warn(`[Facture] ⚠️ Aviso/Respuesta en Recibo de Bienes para factura ${nroFactura}:`, receiveResult.error);
     }
+
+    // Esperar 2 segundos para permitir que la DIAN sincronice el evento 032 (Recibo de Bienes) antes del 033 (Aceptación Expresa)
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Paso 2: Enviar ACCEPT/V2 (Aceptación Expresa del Documento)
     console.log(`[Facture] Iniciando Paso 2: Aceptación Expresa (ACCEPT/V2) para factura ${nroFactura} (ID ${invoiceId})...`);

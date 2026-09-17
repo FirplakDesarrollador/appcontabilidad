@@ -251,7 +251,7 @@ export async function POST(req: NextRequest) {
             }
 
             // Trigger evento Facture (Aprobado o Rechazado) únicamente si es la lista Registro_de_Facturas
-            if ((listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Rechazado')) {
+            if ((listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Procesado' || status === 'Rechazado')) {
                 try {
                     const { triggerFactureEventForInvoice } = await import('@/lib/facture');
                     triggerFactureEventForInvoice(itemId, status).catch(err => 
