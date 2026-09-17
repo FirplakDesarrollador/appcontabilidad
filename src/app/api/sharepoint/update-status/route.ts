@@ -271,8 +271,31 @@ export async function POST(req: NextRequest) {
         // 6. Trigger evento Facture (Aprobado o Rechazado) — FUERA del bloque de SAP para que funcione con ambos estados
         if (field === 'Aprobacion_Doliente' && (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Rechazado')) {
             try {
+                // Pre-fetch data from SharePoint as fallback in case Supabase sync is delayed
+                let spItemData = null;
+                try {
+                    const spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}`).expand('fields').get();
+                    const fields = spItem.fields;
+                    spItemData = {
+                        ID: Number(itemId),
+                        Nro_Factura: fields.Nro_Factura || fields.Title,
+                        Nit: fields.Nit,
+                        Proveedor: fields.Proveedor,
+                        Responsable_de_Autorizar: fields.Responsable_de_Autorizar,
+                        Observaciones: updateData.Observaciones || fields.Observaciones,
+                        Creado: spItem.createdDateTime,
+                        FechaAprobacion: updateData.FechaAprobacion || fields.FechaAprobacion
+                    };
+                } catch (e) {
+                    console.warn('[update-status] Could not fetch SP item data for fallback:', e);
+                }
+
                 const { triggerFactureEventForInvoice } = await import('@/lib/facture');
-                factureResult = await triggerFactureEventForInvoice(itemId, status);
+                factureResult = await triggerFactureEventForInvoice(itemId, status, {
+                    spItemData,
+                    responsableName: spItemData?.Responsable_de_Autorizar,
+                    observaciones: updateData.Observaciones || spItemData?.Observaciones
+                });
             } catch (factureErr: any) {
                 console.error('[update-status] Error triggering Facture event:', factureErr);
                 factureResult = { success: false, error: factureErr?.message };

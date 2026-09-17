@@ -49,8 +49,13 @@ Deno.serve(async (req: Request) => {
       if (attempts < 3) await new Promise(resolve => setTimeout(resolve, 2000))
     }
 
-    if (fetchErr || !invoice) {
-      console.error(`[facture-event] Factura ID ${invoiceId} no encontrada definitivamente:`, fetchErr?.message || 'No rows returned')
+    if (!invoice && extraDetails?.spItemData) {
+      console.log(`[facture-event] Usando datos de SharePoint (fallback) para factura ID ${invoiceId} porque no se encontró en Supabase.`)
+      invoice = extraDetails.spItemData
+    }
+
+    if (!invoice) {
+      console.error(`[facture-event] Factura ID ${invoiceId} no encontrada definitivamente:`, fetchErr?.message || 'No rows returned y sin fallback de SP')
       return new Response(
         JSON.stringify({ success: false, error: `Factura ID ${invoiceId} no encontrada en Registro_Facturas` }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
