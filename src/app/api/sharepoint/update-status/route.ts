@@ -250,15 +250,15 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            // Trigger evento RECEIVEGOODS de Facture únicamente si es la lista Registro_de_Facturas
-            if (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') {
+            // Trigger evento Facture (Aprobado o Rechazado) únicamente si es la lista Registro_de_Facturas
+            if ((listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Rechazado')) {
                 try {
-                    const { triggerReceiveGoodsForInvoice } = await import('@/lib/facture');
-                    triggerReceiveGoodsForInvoice(itemId).catch(err => 
-                        console.error('[update-status] Error background Facture RECEIVEGOODS:', err)
+                    const { triggerFactureEventForInvoice } = await import('@/lib/facture');
+                    triggerFactureEventForInvoice(itemId, status).catch(err => 
+                        console.error('[update-status] Error background Facture event:', err)
                     );
                 } catch (factureErr) {
-                    console.error('[update-status] Error triggering Facture RECEIVEGOODS:', factureErr);
+                    console.error('[update-status] Error triggering Facture event:', factureErr);
                 }
             }
         }

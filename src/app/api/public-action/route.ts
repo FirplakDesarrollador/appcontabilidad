@@ -110,15 +110,15 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            // 6. Enviar evento RECEIVEGOODS a Facture únicamente al aprobar factura de Registro_Facturas
-            if (action === 'Aprobado') {
+            // 6. Enviar evento Facture (Aprobado o Rechazado) a Registro_Facturas
+            if (action === 'Aprobado' || action === 'Rechazado') {
                 try {
-                    const { triggerReceiveGoodsForInvoice } = await import('@/lib/facture');
-                    triggerReceiveGoodsForInvoice(id).catch(err =>
-                        console.error('Error background Facture RECEIVEGOODS:', err)
+                    const { triggerFactureEventForInvoice } = await import('@/lib/facture');
+                    triggerFactureEventForInvoice(id, action).catch(err =>
+                        console.error('Error background Facture event:', err)
                     );
                 } catch (factureErr) {
-                    console.error('Failed to trigger Facture RECEIVEGOODS:', factureErr);
+                    console.error('Failed to trigger Facture event:', factureErr);
                 }
             }
             

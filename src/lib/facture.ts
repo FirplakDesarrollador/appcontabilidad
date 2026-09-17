@@ -21,6 +21,16 @@ export interface AcceptPayload {
   medio?: string;
 }
 
+export interface RejectPayload {
+  motive?: string;
+  observation: string;
+  comments?: string;
+  sourceDelivery?: string;
+  canal?: string;
+  medio?: string;
+  codigoMotivo?: string;
+}
+
 export interface FactureResponse {
   success: boolean;
   data?: any;
@@ -66,9 +76,6 @@ export async function getFactureAuthToken(): Promise<string> {
 
 /**
  * Envía el evento RECEIVEGOODS (Recibo de Bienes y Servicios) a Facture
- * @param documentTokenBase64 Token Base64 del LDF del documento en Facture
- * @param payload Datos del receptor y entrega
- * @param authToken Token JWT opcional (si no se especifica, se obtiene automáticamente)
  */
 export async function sendReceiveGoods(
   documentTokenBase64: string,
@@ -131,9 +138,6 @@ export async function sendReceiveGoods(
 
 /**
  * Envía el evento ACCEPT/V2 (Aceptación del Documento) a Facture
- * @param documentTokenBase64 Token Base64 del LDF del documento en Facture
- * @param payload Datos de la aceptación
- * @param authToken Token JWT opcional (si no se especifica, se obtiene automáticamente)
  */
 export async function sendAcceptDocument(
   documentTokenBase64: string,
@@ -188,14 +192,76 @@ export async function sendAcceptDocument(
 }
 
 /**
- * Dispara automáticamente la secuencia completa (RECEIVEGOODS + ACCEPT/V2) para una factura aprobada de Registro_Facturas.
+ * Envía el evento REJECT/V2 (Rechazo de Documento) a Facture
+ */
+export async function sendRejectDocument(
+  documentTokenBase64: string,
+  payload: RejectPayload,
+  authToken?: string
+): Promise<FactureResponse> {
+  try {
+    const token = authToken || (await getFactureAuthToken());
+    const url = `https://reception-domain-service.facture.co/PLColab.Documents/Document/REJECT/V2/${encodeURIComponent(documentTokenBase64)}`;
+
+    const obsText = payload.observation || "Documento rechazado";
+    const bodyData = {
+      motive: payload.motive || "Documento con inconsistencias",
+      observation: obsText,
+      comments: payload.comments || obsText,
+      sourceDelivery: payload.sourceDelivery || "INBOX",
+      canal: payload.canal || "INBOX",
+      medio: payload.medio || process.env.FACTURE_MEDIO_EMAIL || "890927404@factureinbox.co",
+      codigoMotivo: payload.codigoMotivo || "01"
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Origin": "https://plataforma.facture.co",
+        "Referer": "https://plataforma.facture.co/",
+        "reception": "true",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify(bodyData)
+    });
+
+    const responseData = await res.json().catch(() => null);
+
+    if (!res.ok || (responseData && responseData.isSuccess === false)) {
+      return {
+        success: false,
+        status: res.status,
+        error: responseData?.eventItems?.[0]?.shortDescription || responseData?.message || `Facture API returned status ${res.status}`,
+        data: responseData
+      };
+    }
+
+    return {
+      success: true,
+      status: res.status,
+      data: responseData
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error?.message || "Error al comunicarse con la API de Rechazo de Facture"
+    };
+  }
+}
+
+/**
+ * Dispara automáticamente el flujo de eventos Facture:
+ * - Si es 'Aprobado': ejecuta Recibo de Bienes (RECEIVEGOODS) + Aceptación Expresa (ACCEPT/V2).
+ * - Si es 'Rechazado': ejecuta Rechazo de Documento (REJECT/V2) utilizando la observación dada por el usuario.
  * Exclusivo para Facturas de Proveedores (Registro_Facturas).
  */
-export async function triggerReceiveGoodsForInvoice(
+export async function triggerFactureEventForInvoice(
   invoiceId: number | string,
+  action: 'Aprobado' | 'Rechazado' | string = 'Aprobado',
   extraDetails?: { responsableName?: string; observaciones?: string }
 ): Promise<FactureResponse> {
-  console.log(`[Facture] Iniciando flujo automático (Recibo + Aceptación) para factura ID ${invoiceId}...`);
+  console.log(`[Facture] Iniciando flujo automático Facture (${action}) para factura ID ${invoiceId}...`);
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://zohdtksgxhbheaftgmsi.supabase.co";
@@ -205,7 +271,7 @@ export async function triggerReceiveGoodsForInvoice(
     // 1. Obtener la factura de Registro_Facturas
     const { data: invoice, error: fetchErr } = await supabase
       .from('Registro_Facturas')
-      .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Creado, FechaAprobacion')
+      .select('ID, Nro_Factura, Nit, Proveedor, Responsable_de_Autorizar, Observaciones, Creado, FechaAprobacion')
       .eq('ID', Number(invoiceId))
       .single();
 
@@ -268,13 +334,37 @@ export async function triggerReceiveGoodsForInvoice(
 
     const documentTokenBase64 = Buffer.from(ldfString).toString('base64');
 
-    // Preparar el nombre del responsable
+    // SI LA ACCIÓN ES RECHAZADO:
+    if (action === 'Rechazado') {
+      const obsReason = extraDetails?.observaciones || invoice.Observaciones || "Documento rechazado por el autorizador";
+      console.log(`[Facture] Enviando Rechazo (REJECT/V2) para factura ${nroFactura} (ID ${invoiceId}) con motivo: "${obsReason}"...`);
+
+      const rejectResult = await sendRejectDocument(documentTokenBase64, {
+        motive: "Documento con inconsistencias",
+        observation: obsReason,
+        comments: obsReason,
+        sourceDelivery: "INBOX",
+        canal: "INBOX",
+        medio: process.env.FACTURE_MEDIO_EMAIL || "890927404@factureinbox.co",
+        codigoMotivo: "01"
+      }, token);
+
+      if (rejectResult.success) {
+        console.log(`[Facture] ✅ Rechazo (REJECT/V2) enviado con éxito para factura ${nroFactura} (ID ${invoiceId})`);
+      } else {
+        console.warn(`[Facture] ⚠️ Aviso/Respuesta en Rechazo para factura ${nroFactura}:`, rejectResult.error);
+      }
+
+      return rejectResult;
+    }
+
+    // SI LA ACCIÓN ES APROBADO:
     const fullResponsableName = extraDetails?.responsableName || invoice.Responsable_de_Autorizar || "Responsable Autorizador";
     const nameParts = fullResponsableName.trim().split(' ');
     const firstName = nameParts[0] || "Aprobador";
     const lastName = nameParts.slice(1).join(' ') || "Contabilidad";
 
-    // 4. Paso 1: Enviar RECEIVEGOODS (Recibo de Bienes)
+    // Paso 1: Enviar RECEIVEGOODS (Recibo de Bienes)
     const receiveResult = await sendReceiveGoods(documentTokenBase64, {
       motive: "Otro",
       sourceDelivery: "INBOX",
@@ -295,7 +385,7 @@ export async function triggerReceiveGoodsForInvoice(
       console.warn(`[Facture] ⚠️ Aviso/Respuesta en Recibo de Bienes para factura ${nroFactura}:`, receiveResult.error);
     }
 
-    // 5. Paso 2: Enviar ACCEPT/V2 (Aceptación Expresa del Documento)
+    // Paso 2: Enviar ACCEPT/V2 (Aceptación Expresa del Documento)
     console.log(`[Facture] Iniciando Paso 2: Aceptación Expresa (ACCEPT/V2) para factura ${nroFactura} (ID ${invoiceId})...`);
     const acceptResult = await sendAcceptDocument(documentTokenBase64, {
       motive: "Aceptación",
@@ -319,4 +409,14 @@ export async function triggerReceiveGoodsForInvoice(
     console.error(`[Facture] Excepción en flujo automático Facture (${invoiceId}):`, error);
     return { success: false, error: error?.message || "Error al procesar eventos en Facture" };
   }
+}
+
+/**
+ * Función compatible con versiones anteriores
+ */
+export async function triggerReceiveGoodsForInvoice(
+  invoiceId: number | string,
+  extraDetails?: { responsableName?: string; observaciones?: string }
+): Promise<FactureResponse> {
+  return triggerFactureEventForInvoice(invoiceId, 'Aprobado', extraDetails);
 }
