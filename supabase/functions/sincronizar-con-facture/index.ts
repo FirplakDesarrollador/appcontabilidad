@@ -163,7 +163,7 @@ Deno.serve(async (req: Request) => {
     // MODO AUTÓNOMO BATCH (Si no se envían ítems en el Body, la Edge Function consulta Facture directamente)
     const daysBack = reqBody.days ?? 60
     const filterIsRead = reqBody.isRead !== undefined ? String(reqBody.isRead) : null
-    const markAsRead = reqBody.markAsRead === true
+    const markAsRead = reqBody.markAsRead !== false // Ahora por defecto SIEMPRE marca como leída a menos que explícitamente se mande false
     const maxPages = reqBody.maxPages ?? 5
     const pageSize = reqBody.pageSize ?? 100
 
