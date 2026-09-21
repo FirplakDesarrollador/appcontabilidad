@@ -350,50 +350,58 @@ export async function triggerFactureEventForInvoice(
       console.warn("[Facture] Error buscando en Inbox:", inboxErr);
     }
 
-    // Fallback por verificación si no se encontró en las páginas del Inbox
+    // Fallback por verificación si no se encontró en las páginas del Inbox.
+    // Se prueban FACTURA-UBL, NC-UBL (Nota Crédito) y ND-UBL (Nota Débito)
+    // para cubrir todos los tipos de documento que puede recibir Facture.
     if (!ldfString) {
       const fechaBaseObj = invoice.Creado;
       const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date();
-      
+
+      const docTypes = ["FACTURA-UBL", "NC-UBL", "ND-UBL"];
       let validLdf = "";
-      for (let offset = 0; offset <= 15; offset++) {
-        const candidateDate = new Date(baseDate);
-        candidateDate.setDate(baseDate.getDate() - offset);
-        const dateStr = candidateDate.toISOString().split('T')[0];
-        const candidateLdf = `FACTURA-UBL(${cleanNit};${nroFactura};${dateStr};PRINCIPAL;PRINCIPAL)`;
-        
-        try {
-          const testToken = Buffer.from(candidateLdf).toString('base64');
-          const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`;
-          const testRes = await fetch(testUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "reception": "true",
-              "Authorization": `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              motive: "Otro",
-              sourceDelivery: "INBOX",
-              canal: "INBOX",
-              medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com",
-              receiverDocumentType: "CC",
-              receiverDocumentNumber: "123456789",
-              receiverName: "Verificación",
-              receiverLastName: "Contabilidad",
-              receiveDateTime: new Date().toISOString()
-            })
-          });
 
-          const testJson = await testRes.json().catch(() => null);
-          const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || "";
+      outerLoop:
+      for (const docType of docTypes) {
+        for (let offset = 0; offset <= 15; offset++) {
+          const candidateDate = new Date(baseDate);
+          candidateDate.setDate(baseDate.getDate() - offset);
+          const dateStr = candidateDate.toISOString().split('T')[0];
+          const candidateLdf = `${docType}(${cleanNit};${nroFactura};${dateStr};PRINCIPAL;PRINCIPAL)`;
 
-          if (testRes.ok || errDesc.includes("recibido") || errDesc.includes("aceptado") || errDesc.includes("reclamar")) {
-            validLdf = candidateLdf;
-            console.log(`[Facture] ✅ LDF verificado con éxito por número de factura y fecha (${dateStr}): ${validLdf}`);
-            break;
-          }
-        } catch (tErr) {}
+          try {
+            const testToken = Buffer.from(candidateLdf).toString('base64');
+            const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`;
+            const testRes = await fetch(testUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "reception": "true",
+                "Authorization": `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                motive: "Otro",
+                sourceDelivery: "INBOX",
+                canal: "INBOX",
+                medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com",
+                receiverDocumentType: "CC",
+                receiverDocumentNumber: "123456789",
+                receiverName: "Verificación",
+                receiverLastName: "Contabilidad",
+                receiveDateTime: new Date().toISOString()
+              })
+            });
+
+            const testJson = await testRes.json().catch(() => null);
+            const isSuccess = testJson?.isSuccess === true;
+            const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || "";
+
+            if (isSuccess || testRes.ok || errDesc.includes("recibido") || errDesc.includes("aceptado") || errDesc.includes("reclamar")) {
+              validLdf = candidateLdf;
+              console.log(`[Facture] ✅ LDF verificado (${docType}) con éxito y fecha (${dateStr}): ${validLdf}`);
+              break outerLoop;
+            }
+          } catch (tErr) {}
+        }
       }
 
       ldfString = validLdf || `FACTURA-UBL(${cleanNit};${nroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`;
@@ -500,3 +508,33 @@ export async function triggerReceiveGoodsForInvoice(
 ): Promise<FactureResponse> {
   return triggerFactureEventForInvoice(invoiceId, 'Aprobado', extraDetails);
 }
+
+/**
+ * Invoca la Edge Function 'sincronizar-con-facture' de Supabase para obtener documentos del Inbox de Facture
+ */
+export async function syncWithFacture(options?: {
+  days?: number;
+  isRead?: boolean;
+  markAsRead?: boolean;
+  maxPages?: number;
+  pageSize?: number;
+}): Promise<FactureResponse> {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://zohdtksgxhbheaftgmsi.supabase.co";
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpvaGR0a3NneGhiaGVhZnRnbXNpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcyMjk2MTE1MSwiZXhwIjoyMDM4NTM3MTUxfQ.Y-OdRzGTe0llD1VRPYxyUIo1man7MCeABlMrZVuAqus";
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const { data, error } = await supabase.functions.invoke('sincronizar-con-facture', {
+      body: options || {}
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Error al invocar la Edge Function sincronizar-con-facture" };
+  }
+}
+

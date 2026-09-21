@@ -152,50 +152,58 @@ Deno.serve(async (req: Request) => {
       console.warn('[facture-event] Error buscando en Inbox:', _e)
     }
 
-    // Fallback: construir LDF con verificación de múltiples fechas
+    // Fallback: construir LDF con verificación de múltiples tipos de documento y fechas
+    // Se prueban FACTURA-UBL, NC-UBL (Nota Crédito) y ND-UBL (Nota Débito)
     if (!ldfString) {
       const fechaBaseObj = invoice.Creado
       const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date()
 
+      // Tipos de documento a probar en orden de probabilidad
+      const docTypes = ['FACTURA-UBL', 'NC-UBL', 'ND-UBL']
       let validLdf = ''
-      for (let offset = 0; offset <= 15; offset++) {
-        const candidateDate = new Date(baseDate)
-        candidateDate.setDate(baseDate.getDate() - offset)
-        const dateStr = candidateDate.toISOString().split('T')[0]
-        const candidateLdf = `FACTURA-UBL(${cleanNit};${nroFactura};${dateStr};PRINCIPAL;PRINCIPAL)`
 
-        try {
-          const testToken = btoa(candidateLdf)
-          const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`
-          const testRes = await fetch(testUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'reception': 'true',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              motive: 'Otro',
-              sourceDelivery: 'INBOX',
-              canal: 'INBOX',
-              medio: Deno.env.get('FACTURE_MEDIO_EMAIL') ?? 'recepcionfacturas@firplak.com',
-              receiverDocumentType: 'CC',
-              receiverDocumentNumber: '123456789',
-              receiverName: 'Verificación',
-              receiverLastName: 'Contabilidad',
-              receiveDateTime: new Date().toISOString()
+      outerLoop:
+      for (const docType of docTypes) {
+        for (let offset = 0; offset <= 15; offset++) {
+          const candidateDate = new Date(baseDate)
+          candidateDate.setDate(baseDate.getDate() - offset)
+          const dateStr = candidateDate.toISOString().split('T')[0]
+          const candidateLdf = `${docType}(${cleanNit};${nroFactura};${dateStr};PRINCIPAL;PRINCIPAL)`
+
+          try {
+            const testToken = btoa(candidateLdf)
+            const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`
+            const testRes = await fetch(testUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'reception': 'true',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                motive: 'Otro',
+                sourceDelivery: 'INBOX',
+                canal: 'INBOX',
+                medio: Deno.env.get('FACTURE_MEDIO_EMAIL') ?? 'recepcionfacturas@firplak.com',
+                receiverDocumentType: 'CC',
+                receiverDocumentNumber: '123456789',
+                receiverName: 'Verificación',
+                receiverLastName: 'Contabilidad',
+                receiveDateTime: new Date().toISOString()
+              })
             })
-          })
 
-          const testJson = await testRes.json().catch(() => null)
-          const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || ''
+            const testJson = await testRes.json().catch(() => null)
+            const isSuccess = testJson?.isSuccess === true
+            const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || ''
 
-          if (testRes.ok || errDesc.includes('recibido') || errDesc.includes('aceptado') || errDesc.includes('reclamar')) {
-            validLdf = candidateLdf
-            console.log(`[facture-event] ✅ LDF verificado con fecha ${dateStr}: ${validLdf}`)
-            break
-          }
-        } catch (_tErr) { /* ignore */ }
+            if (isSuccess || testRes.ok || errDesc.includes('recibido') || errDesc.includes('aceptado') || errDesc.includes('reclamar')) {
+              validLdf = candidateLdf
+              console.log(`[facture-event] ✅ LDF verificado (${docType}) con fecha ${dateStr}: ${validLdf}`)
+              break outerLoop
+            }
+          } catch (_tErr) { /* ignore */ }
+        }
       }
 
       ldfString = validLdf || `FACTURA-UBL(${cleanNit};${nroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`
