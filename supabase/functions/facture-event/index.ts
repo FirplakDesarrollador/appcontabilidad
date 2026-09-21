@@ -162,17 +162,19 @@ Deno.serve(async (req: Request) => {
       const docTypes = ['FACTURA-UBL', 'NC-UBL', 'ND-UBL']
       let validLdf = ''
 
-      outerLoop:
-      for (const docType of docTypes) {
-        for (let offset = 0; offset <= 15; offset++) {
+      const promises: Promise<string>[] = []
+
+      for (let offset = 0; offset <= 15; offset++) {
+        for (const docType of docTypes) {
           const candidateDate = new Date(baseDate)
           candidateDate.setDate(baseDate.getDate() - offset)
           const dateStr = candidateDate.toISOString().split('T')[0]
           const candidateLdf = `${docType}(${cleanNit};${nroFactura};${dateStr};PRINCIPAL;PRINCIPAL)`
 
-          try {
+          promises.push((async () => {
             const testToken = btoa(candidateLdf)
             const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`
+            
             const testRes = await fetch(testUrl, {
               method: 'POST',
               headers: {
@@ -198,12 +200,19 @@ Deno.serve(async (req: Request) => {
             const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || ''
 
             if (isSuccess || testRes.ok || errDesc.includes('recibido') || errDesc.includes('aceptado') || errDesc.includes('reclamar')) {
-              validLdf = candidateLdf
-              console.log(`[facture-event] ✅ LDF verificado (${docType}) con fecha ${dateStr}: ${validLdf}`)
-              break outerLoop
+              console.log(`[facture-event] ✅ LDF verificado (${docType}) con fecha ${dateStr}: ${candidateLdf}`)
+              return candidateLdf
             }
-          } catch (_tErr) { /* ignore */ }
+            throw new Error('LDF no válido')
+          })())
         }
+      }
+
+      try {
+        // Ejecutar todas las 48 pruebas en paralelo. Se resolverá instantáneamente con el primer LDF correcto.
+        validLdf = await Promise.any(promises)
+      } catch (e) {
+        console.warn(`[facture-event] ⚠️ Ninguna de las combinaciones de LDF funcionó para ${nroFactura}`)
       }
 
       ldfString = validLdf || `FACTURA-UBL(${cleanNit};${nroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`
