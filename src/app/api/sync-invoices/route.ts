@@ -44,13 +44,16 @@ export async function POST() {
         const now = new Date();
         const sixtyDaysAgo = new Date();
         sixtyDaysAgo.setDate(now.getDate() - 60);
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
 
-        const formatDate = (date: Date) => date.toISOString().split('T')[0] + "T00:00:00.00";
+        const formatStartDate = (date: Date) => date.toISOString().split('T')[0] + "T00:00:00.00";
+        const formatEndDate = (date: Date) => date.toISOString().split('T')[0] + "T23:59:59.00";
 
         // Construct URL with query params
         const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/PRINCIPAL/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`);
-        inboxUrl.searchParams.append("receiverStartingDate", formatDate(sixtyDaysAgo));
-        inboxUrl.searchParams.append("receiverEndingDate", formatDate(now));
+        inboxUrl.searchParams.append("receiverStartingDate", formatStartDate(sixtyDaysAgo));
+        inboxUrl.searchParams.append("receiverEndingDate", formatEndDate(tomorrow));
         inboxUrl.searchParams.append("isRead", "false");
         inboxUrl.searchParams.append("pageIndex", "1");
         inboxUrl.searchParams.append("pageSize", "100");

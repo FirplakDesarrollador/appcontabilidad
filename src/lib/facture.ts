@@ -329,12 +329,15 @@ export async function triggerFactureEventForInvoice(
       const now = new Date();
       const ninetyDaysAgo = new Date();
       ninetyDaysAgo.setDate(now.getDate() - 90);
-      const formatDate = (d: Date) => d.toISOString().split('T')[0] + "T00:00:00.00";
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const formatStartDate = (d: Date) => d.toISOString().split('T')[0] + "T00:00:00.00";
+      const formatEndDate = (d: Date) => d.toISOString().split('T')[0] + "T23:59:59.00";
 
       for (let page = 1; page <= 10; page++) {
         const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/PRINCIPAL/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`);
-        inboxUrl.searchParams.append("receiverStartingDate", formatDate(ninetyDaysAgo));
-        inboxUrl.searchParams.append("receiverEndingDate", formatDate(now));
+        inboxUrl.searchParams.append("receiverStartingDate", formatStartDate(ninetyDaysAgo));
+        inboxUrl.searchParams.append("receiverEndingDate", formatEndDate(tomorrow));
         inboxUrl.searchParams.append("pageIndex", String(page));
         inboxUrl.searchParams.append("pageSize", "100");
 

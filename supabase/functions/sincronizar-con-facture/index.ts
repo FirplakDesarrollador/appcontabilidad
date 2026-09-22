@@ -162,7 +162,7 @@ Deno.serve(async (req: Request) => {
 
     // MODO AUTÓNOMO BATCH (Si no se envían ítems en el Body, la Edge Function consulta Facture directamente)
     const daysBack = reqBody.days ?? 60
-    const filterIsRead = reqBody.isRead !== undefined ? String(reqBody.isRead) : null
+    const filterIsRead = reqBody.isRead !== undefined ? (reqBody.isRead === null || reqBody.isRead === 'all' ? null : String(reqBody.isRead)) : 'false'
     const markAsRead = reqBody.markAsRead !== false // Ahora por defecto SIEMPRE marca como leída a menos que explícitamente se mande false
     const maxPages = reqBody.maxPages ?? 5
     const pageSize = reqBody.pageSize ?? 100
@@ -192,14 +192,17 @@ Deno.serve(async (req: Request) => {
     const now = new Date()
     const startDate = new Date()
     startDate.setDate(now.getDate() - daysBack)
-    const formatDate = (d: Date) => d.toISOString().split('T')[0] + 'T00:00:00.00'
+    const tomorrow = new Date(now)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const formatStartDate = (d: Date) => d.toISOString().split('T')[0] + 'T00:00:00.00'
+    const formatEndDate = (d: Date) => d.toISOString().split('T')[0] + 'T23:59:59.00'
 
     const fetchedItems: any[] = []
 
     for (let page = 1; page <= maxPages; page++) {
       const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/PRINCIPAL/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`)
-      inboxUrl.searchParams.append('receiverStartingDate', formatDate(startDate))
-      inboxUrl.searchParams.append('receiverEndingDate', formatDate(now))
+      inboxUrl.searchParams.append('receiverStartingDate', formatStartDate(startDate))
+      inboxUrl.searchParams.append('receiverEndingDate', formatEndDate(tomorrow))
       if (filterIsRead !== null) {
         inboxUrl.searchParams.append('isRead', filterIsRead)
       }
