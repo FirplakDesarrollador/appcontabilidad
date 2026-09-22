@@ -70,17 +70,20 @@ export async function POST(
                 console.log(`[Auto-Extract] Searching for ${nroFactura} in ITPowerApps...`);
                 const externalDoc = await findExternalInvoiceDocument(nitValue, nroFactura, "");
             
-            if (externalDoc) {
-                console.log(`[Auto-Extract] Found external doc: ${externalDoc.fileName}. Fetching content...`);
-                try {
-                    const response = await client.api(`/drives/${externalDoc.driveId}/items/${externalDoc.id}/content`).get();
-                    if (response) {
-                        fileBuffer = response;
-                        finalFileName = externalDoc.fileName;
+                if (externalDoc) {
+                    console.log(`[Auto-Extract] Found external doc: ${externalDoc.fileName}. Fetching content...`);
+                    try {
+                        const response = await client.api(`/drives/${externalDoc.driveId}/items/${externalDoc.id}/content`).get();
+                        if (response) {
+                            fileBuffer = response;
+                            finalFileName = externalDoc.fileName;
+                        }
+                    } catch (extErr) {
+                        console.error(`[Auto-Extract] Failed to fetch content from ITPowerApps:`, extErr);
                     }
-                } catch (extErr) {
-                    console.error(`[Auto-Extract] Failed to fetch content from ITPowerApps:`, extErr);
                 }
+            } catch (graphErr) {
+                console.warn('[Auto-Extract] Graph lookup failed:', graphErr);
             }
         }
 
