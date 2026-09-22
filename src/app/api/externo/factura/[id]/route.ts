@@ -163,6 +163,7 @@ export async function GET(
             nit: nitValue,
             valorTotal: valorTotal.toString(),
             nroFactura: invoice.Nro_Factura || "N/A",
+            consecutivo: invoice.Consecutivo || supabaseInvoice?.Consecutivo || null,
             fechaRegistro: invoice.Created || invoice.Creado || invoice.OData__RegistrationDate || new Date().toISOString(),
             estadoFactura: invoice.Aprobacion_Doliente || "Pendiente",
             aprobacionDoliente: invoice.Aprobacion_Doliente || "Pendiente",
