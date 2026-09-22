@@ -280,7 +280,45 @@ Deno.serve(async (req: Request) => {
           ? 'Sincronizada automáticamente desde Facture (Responsable asignado)'
           : 'Sincronizada automáticamente desde Facture'
 
-        const generatedId = Number(BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000)))
+        // Obtener y subir PDF si existe LDF
+        let pdfPublicUrl: string | null = null
+        if (ldf) {
+          try {
+            const docRes = await fetch(`${INBOX_BASE_URL}/PLColab.Documents/Document/Get/${encodeURIComponent(ldf)}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+            if (docRes.ok) {
+              const docData = await docRes.json()
+              if (docData.URI) {
+                const pdfRes = await fetch(docData.URI)
+                if (pdfRes.ok) {
+                  const pdfBytes = new Uint8Array(await pdfRes.arrayBuffer())
+                  if (pdfBytes.length > 100) {
+                    const originalFileName = docData.fileName || `face_f${cleanNit}_${cleanNroFactura}.pdf`
+                    const safeFileName = originalFileName.replace(/[^a-zA-Z0-9.-]/g, '_')
+                    const uniqueFileName = `${cleanNit}_${cleanNroFactura}_${Date.now()}_0_${safeFileName}`
+
+                    const { error: uploadErr } = await supabase.storage
+                      .from('adjuntos_facturas')
+                      .upload(uniqueFileName, pdfBytes, {
+                        contentType: 'application/pdf',
+                        upsert: true
+                      })
+
+                    if (!uploadErr) {
+                      const { data: pubUrlData } = supabase.storage
+                        .from('adjuntos_facturas')
+                        .getPublicUrl(uniqueFileName)
+                      pdfPublicUrl = pubUrlData.publicUrl
+                    }
+                  }
+                }
+              }
+            }
+          } catch (pdfErr) {
+            console.warn(`[sincronizar-con-facture] No se pudo adjuntar PDF para ${ldf}:`, pdfErr)
+          }
+        }
 
         const recordToInsert = {
           ID: generatedId,
@@ -295,6 +333,8 @@ Deno.serve(async (req: Request) => {
           Gestion_Contabilidad: 'Por Aprobar',
           Aprobacion_Doliente: 'Por Aprobar',
           Procesado: 'false',
+          fp: pdfPublicUrl,
+          documentos: pdfPublicUrl,
           updated_at: new Date().toISOString()
         }
 
