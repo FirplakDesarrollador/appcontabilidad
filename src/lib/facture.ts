@@ -114,7 +114,12 @@ export async function sendReceiveGoods(
 
     const responseData = await res.json().catch(() => null);
 
-    if (!res.ok || (responseData && responseData.isSuccess === false)) {
+    const isSuccess = res.ok || 
+      responseData?.isSuccess === true || 
+      responseData?.eventItems?.[0]?.shortDescription?.includes('recibido') ||
+      responseData?.message?.includes('recibido');
+
+    if (!isSuccess) {
       return {
         success: false,
         status: res.status,
@@ -169,7 +174,12 @@ export async function sendAcceptDocument(
 
     const responseData = await res.json().catch(() => null);
 
-    if (!res.ok || (responseData && responseData.isSuccess === false)) {
+    const isSuccess = res.ok || 
+      responseData?.isSuccess === true || 
+      responseData?.eventItems?.[0]?.shortDescription?.includes('aceptado') ||
+      responseData?.message?.includes('aceptado');
+
+    if (!isSuccess) {
       return {
         success: false,
         status: res.status,
@@ -228,7 +238,12 @@ export async function sendRejectDocument(
 
     const responseData = await res.json().catch(() => null);
 
-    if (!res.ok || (responseData && responseData.isSuccess === false)) {
+    const isSuccess = res.ok || 
+      responseData?.isSuccess === true || 
+      responseData?.eventItems?.[0]?.shortDescription?.includes('rechazado') ||
+      responseData?.message?.includes('rechazado');
+
+    if (!isSuccess) {
       return {
         success: false,
         status: res.status,
@@ -273,12 +288,12 @@ export async function triggerFactureEventForInvoice(
       const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('facture-event', {
         body: { invoiceId, action, extraDetails }
       });
-      if (!edgeErr && edgeData && edgeData.success !== false) {
+      if (!edgeErr && edgeData && edgeData.success === true) {
         console.log(`[Facture] ✅ Evento Facture procesado mediante Supabase Edge Function 'facture-event':`, edgeData);
         return { success: true, data: edgeData };
       }
-      if (edgeErr) {
-        console.warn(`[Facture] Aviso en Edge Function (se ejecutará fallback directo):`, edgeErr.message);
+      if (edgeErr || (edgeData && !edgeData.success)) {
+        console.warn(`[Facture] Aviso en Edge Function (se ejecutará fallback directo):`, edgeErr?.message || edgeData?.error || 'Falló Edge Function');
       }
     } catch (invokeErr: any) {
       console.warn(`[Facture] Invocación de Edge Function fallback:`, invokeErr.message);
@@ -298,7 +313,7 @@ export async function triggerFactureEventForInvoice(
 
     const rawNroFactura = (invoice.Nro_Factura || "").trim();
     const cleanNroFactura = rawNroFactura.replace(/^(FAC|FE)[-_]?/i, '').trim();
-    const nroFactura = cleanNroFactura || rawNroFactura;
+    const nroFactura = rawNroFactura; // Conservar el número exacto como principal para el LDF
     const cleanNit = (invoice.Nit || "").split('-')[0].trim().replace(/\D/g, '');
 
     if (!rawNroFactura) {
@@ -352,10 +367,14 @@ export async function triggerFactureEventForInvoice(
 
     // Fallback por verificación si no se encontró en las páginas del Inbox.
     // Se prueban FACTURA-UBL, NC-UBL (Nota Crédito) y ND-UBL (Nota Débito)
-    // para cubrir todos los tipos de documento que puede recibir Facture.
     if (!ldfString) {
       const fechaBaseObj = invoice.Creado;
       const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date();
+
+      const numVariants = [rawNroFactura];
+      if (cleanNroFactura && cleanNroFactura !== rawNroFactura) {
+        numVariants.push(cleanNroFactura);
+      }
 
       const docTypes = ["FACTURA-UBL", "NC-UBL", "ND-UBL"];
       let validLdf = "";
@@ -363,48 +382,50 @@ export async function triggerFactureEventForInvoice(
       outerLoop:
       for (const docType of docTypes) {
         for (let offset = 0; offset <= 15; offset++) {
-          const candidateDate = new Date(baseDate);
-          candidateDate.setDate(baseDate.getDate() - offset);
-          const dateStr = candidateDate.toISOString().split('T')[0];
-          const candidateLdf = `${docType}(${cleanNit};${nroFactura};${dateStr};PRINCIPAL;PRINCIPAL)`;
+          for (const num of numVariants) {
+            const candidateDate = new Date(baseDate);
+            candidateDate.setDate(baseDate.getDate() - offset);
+            const dateStr = candidateDate.toISOString().split('T')[0];
+            const candidateLdf = `${docType}(${cleanNit};${num};${dateStr};PRINCIPAL;PRINCIPAL)`;
 
-          try {
-            const testToken = Buffer.from(candidateLdf).toString('base64');
-            const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`;
-            const testRes = await fetch(testUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "reception": "true",
-                "Authorization": `Bearer ${token}`
-              },
-              body: JSON.stringify({
-                motive: "Otro",
-                sourceDelivery: "INBOX",
-                canal: "INBOX",
-                medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com",
-                receiverDocumentType: "CC",
-                receiverDocumentNumber: "123456789",
-                receiverName: "Verificación",
-                receiverLastName: "Contabilidad",
-                receiveDateTime: new Date().toISOString()
-              })
-            });
+            try {
+              const testToken = Buffer.from(candidateLdf).toString('base64');
+              const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`;
+              const testRes = await fetch(testUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "reception": "true",
+                  "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  motive: "Otro",
+                  sourceDelivery: "INBOX",
+                  canal: "INBOX",
+                  medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com",
+                  receiverDocumentType: "CC",
+                  receiverDocumentNumber: "123456789",
+                  receiverName: "Verificación",
+                  receiverLastName: "Contabilidad",
+                  receiveDateTime: new Date().toISOString()
+                })
+              });
 
-            const testJson = await testRes.json().catch(() => null);
-            const isSuccess = testJson?.isSuccess === true;
-            const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || "";
+              const testJson = await testRes.json().catch(() => null);
+              const isSuccess = testJson?.isSuccess === true;
+              const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || "";
 
-            if (isSuccess || testRes.ok || errDesc.includes("recibido") || errDesc.includes("aceptado") || errDesc.includes("reclamar")) {
-              validLdf = candidateLdf;
-              console.log(`[Facture] ✅ LDF verificado (${docType}) con éxito y fecha (${dateStr}): ${validLdf}`);
-              break outerLoop;
-            }
-          } catch (tErr) {}
+              if (isSuccess || testRes.ok || errDesc.includes("recibido") || errDesc.includes("aceptado") || errDesc.includes("reclamar")) {
+                validLdf = candidateLdf;
+                console.log(`[Facture] ✅ LDF verificado (${docType}) con número ${num} y fecha (${dateStr}): ${validLdf}`);
+                break outerLoop;
+              }
+            } catch (tErr) {}
+          }
         }
       }
 
-      ldfString = validLdf || `FACTURA-UBL(${cleanNit};${nroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`;
+      ldfString = validLdf || `FACTURA-UBL(${cleanNit};${rawNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`;
       console.log(`[Facture] LDF final determinado: ${ldfString}`);
     }
 
@@ -488,7 +509,7 @@ export async function triggerFactureEventForInvoice(
       }
 
       return {
-        success: receiveResult.success || acceptResult.success,
+        success: Boolean(receiveResult.success && acceptResult.success),
         data: { receive: receiveResult.data, accept: acceptResult.data },
         error: acceptResult.error || receiveResult.error
       };

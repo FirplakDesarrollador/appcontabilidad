@@ -62,10 +62,10 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // Limpiar Nro_Factura (quitar prefijos FAC/FE)
+    // Nro_Factura: conservar el número crudo como principal para el LDF en Facture/DIAN
     const rawNroFactura = (invoice.Nro_Factura || '').trim()
     const cleanNroFactura = rawNroFactura.replace(/^(FAC|FE)[-_]?/i, '').trim()
-    const nroFactura = cleanNroFactura || rawNroFactura
+    const nroFactura = rawNroFactura // Mantener el número exacto como viene en SharePoint/Facture
     const cleanNit = (invoice.Nit || '').split('-')[0].trim().replace(/\D/g, '')
 
     if (!rawNroFactura) {
@@ -75,7 +75,7 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    console.log(`[facture-event] Factura: ${nroFactura} (raw: ${rawNroFactura}), NIT: ${cleanNit}, Acción: ${action}`)
+    console.log(`[facture-event] Factura: ${nroFactura} (raw: ${rawNroFactura}, clean: ${cleanNroFactura}), NIT: ${cleanNit}, Acción: ${action}`)
 
     // 2. Autenticación en Facture
     const user = Deno.env.get('FACTURE_API_USER') ?? '890927404'
@@ -152,11 +152,17 @@ Deno.serve(async (req: Request) => {
       console.warn('[facture-event] Error buscando en Inbox:', _e)
     }
 
-    // Fallback: construir LDF con verificación de múltiples tipos de documento y fechas
+    // Fallback: construir LDF con verificación de múltiples tipos de documento, variantes de número y fechas
     // Se prueban FACTURA-UBL, NC-UBL (Nota Crédito) y ND-UBL (Nota Débito)
     if (!ldfString) {
       const fechaBaseObj = invoice.Creado
       const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date()
+
+      // Probar número crudo primero (FE32123, FED10858, BAR71851), y si difiere, también el limpio (32123)
+      const numVariants = [rawNroFactura]
+      if (cleanNroFactura && cleanNroFactura !== rawNroFactura) {
+        numVariants.push(cleanNroFactura)
+      }
 
       // Tipos de documento a probar en orden de probabilidad
       const docTypes = ['FACTURA-UBL', 'NC-UBL', 'ND-UBL']
@@ -166,56 +172,58 @@ Deno.serve(async (req: Request) => {
 
       for (let offset = 0; offset <= 15; offset++) {
         for (const docType of docTypes) {
-          const candidateDate = new Date(baseDate)
-          candidateDate.setDate(baseDate.getDate() - offset)
-          const dateStr = candidateDate.toISOString().split('T')[0]
-          const candidateLdf = `${docType}(${cleanNit};${nroFactura};${dateStr};PRINCIPAL;PRINCIPAL)`
+          for (const num of numVariants) {
+            const candidateDate = new Date(baseDate)
+            candidateDate.setDate(baseDate.getDate() - offset)
+            const dateStr = candidateDate.toISOString().split('T')[0]
+            const candidateLdf = `${docType}(${cleanNit};${num};${dateStr};PRINCIPAL;PRINCIPAL)`
 
-          promises.push((async () => {
-            const testToken = btoa(candidateLdf)
-            const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`
-            
-            const testRes = await fetch(testUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'reception': 'true',
-                'Authorization': `Bearer ${token}`
-              },
-              body: JSON.stringify({
-                motive: 'Otro',
-                sourceDelivery: 'INBOX',
-                canal: 'INBOX',
-                medio: Deno.env.get('FACTURE_MEDIO_EMAIL') ?? 'recepcionfacturas@firplak.com',
-                receiverDocumentType: 'CC',
-                receiverDocumentNumber: '123456789',
-                receiverName: 'Verificación',
-                receiverLastName: 'Contabilidad',
-                receiveDateTime: new Date().toISOString()
+            promises.push((async () => {
+              const testToken = btoa(candidateLdf)
+              const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`
+              
+              const testRes = await fetch(testUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'reception': 'true',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  motive: 'Otro',
+                  sourceDelivery: 'INBOX',
+                  canal: 'INBOX',
+                  medio: Deno.env.get('FACTURE_MEDIO_EMAIL') ?? 'recepcionfacturas@firplak.com',
+                  receiverDocumentType: 'CC',
+                  receiverDocumentNumber: '123456789',
+                  receiverName: 'Verificación',
+                  receiverLastName: 'Contabilidad',
+                  receiveDateTime: new Date().toISOString()
+                })
               })
-            })
 
-            const testJson = await testRes.json().catch(() => null)
-            const isSuccess = testJson?.isSuccess === true
-            const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || ''
+              const testJson = await testRes.json().catch(() => null)
+              const isSuccess = testJson?.isSuccess === true
+              const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || ''
 
-            if (isSuccess || testRes.ok || errDesc.includes('recibido') || errDesc.includes('aceptado') || errDesc.includes('reclamar')) {
-              console.log(`[facture-event] ✅ LDF verificado (${docType}) con fecha ${dateStr}: ${candidateLdf}`)
-              return candidateLdf
-            }
-            throw new Error('LDF no válido')
-          })())
+              if (isSuccess || testRes.ok || errDesc.includes('recibido') || errDesc.includes('aceptado') || errDesc.includes('reclamar')) {
+                console.log(`[facture-event] ✅ LDF verificado (${docType}) con número ${num} y fecha ${dateStr}: ${candidateLdf}`)
+                return candidateLdf
+              }
+              throw new Error('LDF no válido')
+            })())
+          }
         }
       }
 
       try {
-        // Ejecutar todas las 48 pruebas en paralelo. Se resolverá instantáneamente con el primer LDF correcto.
+        // Ejecutar las pruebas en paralelo. Se resolverá con el primer LDF correcto.
         validLdf = await Promise.any(promises)
       } catch (e) {
-        console.warn(`[facture-event] ⚠️ Ninguna de las combinaciones de LDF funcionó para ${nroFactura}`)
+        console.warn(`[facture-event] ⚠️ Ninguna de las combinaciones de LDF funcionó para ${rawNroFactura}`)
       }
 
-      ldfString = validLdf || `FACTURA-UBL(${cleanNit};${nroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`
+      ldfString = validLdf || `FACTURA-UBL(${cleanNit};${rawNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`
       console.log(`[facture-event] LDF final determinado: ${ldfString}`)
     }
 
@@ -251,9 +259,16 @@ Deno.serve(async (req: Request) => {
       const rejectData = await rejectRes.json().catch(() => null)
       console.log(`[facture-event] REJECT/V2 response (${rejectRes.status}):`, JSON.stringify(rejectData))
 
+      const rejectSuccess = rejectRes.ok || rejectData?.isSuccess === true || rejectData?.eventItems?.[0]?.shortDescription?.includes('rechazado')
+
       return new Response(
-        JSON.stringify({ success: rejectRes.ok, data: rejectData, ldf: ldfString }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          success: rejectSuccess,
+          data: rejectData,
+          ldf: ldfString,
+          error: !rejectSuccess ? (rejectData?.eventItems?.[0]?.shortDescription || rejectData?.message || 'Error rechazando en Facture') : undefined
+        }),
+        { status: rejectSuccess ? 200 : 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
@@ -318,13 +333,26 @@ Deno.serve(async (req: Request) => {
     const acceptData = await acceptRes.json().catch(() => null)
     console.log(`[facture-event] ACCEPT/V2 response (${acceptRes.status}):`, JSON.stringify(acceptData))
 
+    const receiveSuccess = receiveRes.ok || 
+      receiveData?.isSuccess === true || 
+      receiveData?.eventItems?.[0]?.shortDescription?.includes('recibido') ||
+      receiveData?.message?.includes('recibido')
+
+    const acceptSuccess = acceptRes.ok || 
+      acceptData?.isSuccess === true || 
+      acceptData?.eventItems?.[0]?.shortDescription?.includes('aceptado') ||
+      acceptData?.message?.includes('aceptado')
+
+    const isSuccess = Boolean(receiveSuccess && acceptSuccess)
+
     return new Response(
       JSON.stringify({
-        success: true,
+        success: isSuccess,
         ldf: ldfString,
-        data: { receive: receiveData, accept: acceptData }
+        data: { receive: receiveData, accept: acceptData },
+        error: !isSuccess ? (acceptData?.eventItems?.[0]?.shortDescription || receiveData?.eventItems?.[0]?.shortDescription || 'Error emitiendo eventos de aprobación en Facture') : undefined
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: isSuccess ? 200 : 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (error: any) {

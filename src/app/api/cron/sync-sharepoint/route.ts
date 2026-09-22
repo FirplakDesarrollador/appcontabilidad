@@ -239,7 +239,7 @@ export async function GET(req: Request) {
                     try {
                         const { data: checkData } = await supabaseAdmin
                             .from('Registro_Facturas')
-                            .select('Aprobacion_Doliente, centro_costos, Nro_Factura, Nit, Proveedor, Valor_total, Consecutivo')
+                            .select('Aprobacion_Doliente, centro_costos, Nro_Factura, Nit, Proveedor, Valor_total, Consecutivo, Responsable_de_Autorizar')
                             .eq('ID', Number(spItemId))
                             .single();
 
