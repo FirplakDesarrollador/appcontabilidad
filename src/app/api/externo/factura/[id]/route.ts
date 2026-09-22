@@ -19,12 +19,50 @@ export async function GET(
             return NextResponse.json({ error: 'Missing itemId' }, { status: 400 });
         }
 
-        const invoice = await getSharePointInvoiceById(itemId);
         const { data: supabaseInvoice } = await supabase
             .from('Registro_Facturas')
-            .select('adjuntos_url, fp, documentos')
-            .or(`ID.eq.${itemId},sharepoint_id.eq.${itemId}`)
+            .select('*')
+            .or(`ID.eq.${isNaN(Number(itemId)) ? 0 : itemId},sharepoint_id.eq.${itemId}`)
             .maybeSingle();
+
+        let invoice: any = null;
+
+        if (supabaseInvoice) {
+            invoice = {
+                id: supabaseInvoice.ID,
+                Proveedor: supabaseInvoice.Proveedor,
+                Nit: supabaseInvoice.Nit,
+                Title: supabaseInvoice.Nit,
+                Valortotal: supabaseInvoice.Valor_total,
+                Nro_Factura: supabaseInvoice.Nro_Factura,
+                Created: supabaseInvoice.Creado || supabaseInvoice.updated_at,
+                Aprobacion_Doliente: supabaseInvoice.Aprobacion_Doliente,
+                Gestion_Contabilidad: supabaseInvoice.Gestion_Contabilidad,
+                Responsable_de_Autorizar: supabaseInvoice.Responsable_de_Autorizar,
+                Observaciones: supabaseInvoice.Observaciones,
+                tiene_anticipo: supabaseInvoice.tiene_anticipo,
+                centro_costos: supabaseInvoice.centro_costos,
+                tablaCostos: supabaseInvoice.tablaCostos,
+                Consecutivo: supabaseInvoice.Consecutivo,
+                Documento_x0020_PDF: supabaseInvoice.fp || supabaseInvoice.documentos,
+                fp: supabaseInvoice.fp,
+                documentos: supabaseInvoice.documentos,
+                adjuntos_url: supabaseInvoice.adjuntos_url
+            };
+        } else {
+            // If not found directly in Supabase, query SharePoint
+            try {
+                if (Number(itemId) < 1000000) {
+                    invoice = await getSharePointInvoiceById(itemId);
+                }
+            } catch (spErr) {
+                console.warn('SharePoint lookup failed for item:', itemId, spErr);
+            }
+        }
+
+        if (!invoice) {
+            return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 });
+        }
 
         // Normalize fields similar to the main list view
         const nitValue = invoice.Title || invoice.Nit_x0020_ || invoice["Nit "] || invoice.Nit || "N/A";
@@ -32,8 +70,17 @@ export async function GET(
 
         let documentInfo = null;
         
-        // 1. Check direct fields
-        if (invoice.Documento_x0020_PDF) {
+        // 1. Check direct PDF URL from Supabase / direct storage
+        const directUrl = invoice.fp || invoice.documentos || supabaseInvoice?.fp || supabaseInvoice?.documentos;
+        if (directUrl && typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl)) {
+            documentInfo = {
+                fileName: `${invoice.Nro_Factura || 'Factura'}.pdf`,
+                serverRelativeUrl: directUrl,
+                downloadUrl: directUrl,
+                isExternal: true
+            };
+        }
+        else if (invoice.Documento_x0020_PDF) {
             try {
                 if (invoice.Documento_x0020_PDF.startsWith('{')) {
                     documentInfo = JSON.parse(invoice.Documento_x0020_PDF);
@@ -62,15 +109,17 @@ export async function GET(
 
         // 2. Fallback: Search in ITPowerApps Site if not found
         if (!documentInfo && invoice.Nro_Factura && nitValue !== 'N/A') {
-            const externalDoc = await findExternalInvoiceDocument(nitValue, invoice.Nro_Factura, "");
-            if (externalDoc) {
-                documentInfo = {
-                    fileName: externalDoc.fileName,
-                    serverRelativeUrl: externalDoc.webUrl,
-                    isExternal: true,
-                    downloadUrl: externalDoc.downloadUrl
-                };
-            }
+            try {
+                const externalDoc = await findExternalInvoiceDocument(nitValue, invoice.Nro_Factura, "");
+                if (externalDoc) {
+                    documentInfo = {
+                        fileName: externalDoc.fileName,
+                        serverRelativeUrl: externalDoc.webUrl,
+                        isExternal: true,
+                        downloadUrl: externalDoc.downloadUrl
+                    };
+                }
+            } catch (_extErr) {}
         }
 
         // Fetch latest distribution for this provider from Supabase if not directly set on current invoice
@@ -114,17 +163,17 @@ export async function GET(
             nit: nitValue,
             valorTotal: valorTotal.toString(),
             nroFactura: invoice.Nro_Factura || "N/A",
-            fechaRegistro: invoice.Created || invoice.OData__RegistrationDate,
+            fechaRegistro: invoice.Created || invoice.Creado || invoice.OData__RegistrationDate || new Date().toISOString(),
             estadoFactura: invoice.Aprobacion_Doliente || "Pendiente",
             aprobacionDoliente: invoice.Aprobacion_Doliente || "Pendiente",
             gestionContabilidad: invoice.Gestion_Contabilidad || "Pendiente",
             responsableActual: invoice.Responsable_de_Autorizar || "No asignado",
             documentInfo,
-            adjuntosUrl: supabaseInvoice?.adjuntos_url || [],
+            adjuntosUrl: supabaseInvoice?.adjuntos_url || invoice.adjuntos_url || [],
             distribuciones: invoice.centro_costos || lastProviderDistribution || null,
             observaciones: invoice.Observaciones || "",
             anticipo: invoice.tiene_anticipo || "",
-            documentos: supabaseInvoice?.documentos || supabaseInvoice?.fp || null
+            documentos: supabaseInvoice?.documentos || supabaseInvoice?.fp || invoice.fp || null
         });
 
     } catch (error: any) {

@@ -48,10 +48,21 @@ export async function POST(req: NextRequest) {
             if (action === 'Aprobado') {
                 console.log(`Public Action: Triggering SAP Draft for invoice ${invoice.Nro_Factura}`);
                 
-                const { getSharePointInvoiceById } = await import('@/lib/sharepoint');
-                const spItem = await getSharePointInvoiceById(id);
-                const consecutivoReal = spItem.Consecutivo || id;
-                const proveedorReal = spItem.Proveedor || invoice.Proveedor || "Proveedor Desconocido";
+                let consecutivoReal = invoice.Consecutivo || id;
+                let proveedorReal = invoice.Proveedor || "Proveedor Desconocido";
+
+                try {
+                    if (Number(id) < 1000000) {
+                        const { getSharePointInvoiceById } = await import('@/lib/sharepoint');
+                        const spItem = await getSharePointInvoiceById(id);
+                        if (spItem) {
+                            if (spItem.Consecutivo) consecutivoReal = spItem.Consecutivo;
+                            if (spItem.Proveedor) proveedorReal = spItem.Proveedor;
+                        }
+                    }
+                } catch (_spErr) {
+                    console.warn('[Public Action] SharePoint lookup skipped/failed:', _spErr);
+                }
 
                 let distribuciones = [];
                 try {

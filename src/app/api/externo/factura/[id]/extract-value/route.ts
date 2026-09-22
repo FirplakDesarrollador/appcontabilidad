@@ -16,23 +16,59 @@ export async function POST(
             return NextResponse.json({ error: 'Missing itemId' }, { status: 400 });
         }
 
-        const client = await getGraphClient();
-        const invoiceDetails = await getSharePointInvoiceById(itemId);
+        let invoiceDetails: any = null;
+        try {
+            const { data: dbInvoice } = await supabase
+                .from('Registro_Facturas')
+                .select('*')
+                .or(`ID.eq.${isNaN(Number(itemId)) ? 0 : itemId},sharepoint_id.eq.${itemId}`)
+                .maybeSingle();
+            if (dbInvoice) {
+                invoiceDetails = {
+                    ...dbInvoice,
+                    Title: dbInvoice.Nit,
+                    Nro_Factura: dbInvoice.Nro_Factura,
+                    documentInfo: { fileName: `${dbInvoice.Nro_Factura}.pdf` }
+                };
+            }
+        } catch (_dbErr) {}
+
+        if (!invoiceDetails) {
+            try {
+                if (Number(itemId) < 1000000) {
+                    invoiceDetails = await getSharePointInvoiceById(itemId);
+                }
+            } catch (_spErr) {}
+        }
+
+        if (!invoiceDetails) {
+            return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 });
+        }
         
         const nitValue = invoiceDetails.Title || invoiceDetails.Nit_x0020_ || invoiceDetails["Nit "] || invoiceDetails.Nit || "N/A";
         const nroFactura = invoiceDetails.Nro_Factura;
         let requestFileName = invoiceDetails.documentInfo?.fileName || `factura_${nroFactura || itemId}.pdf`;
 
-        // Si ya tiene un valor válido mayor a 0, podríamos omitirlo, pero el front solo lo llama si es 0.
-        // Aún así, procedemos a leer el PDF.
-
         let fileBuffer: ArrayBuffer | null = null;
         let finalFileName = requestFileName;
 
-        // 1. Try ITPowerApps first
-        if (nroFactura && nitValue !== 'N/A') {
-            console.log(`[Auto-Extract] Searching for ${nroFactura} in ITPowerApps...`);
-            const externalDoc = await findExternalInvoiceDocument(nitValue, nroFactura, "");
+        // 0. Try direct Supabase storage URL first
+        const directUrl = invoiceDetails.fp || invoiceDetails.documentos;
+        if (directUrl && typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl)) {
+            try {
+                const directRes = await fetch(directUrl);
+                if (directRes.ok) {
+                    fileBuffer = await directRes.arrayBuffer();
+                }
+            } catch (_dErr) {}
+        }
+
+        // 1. Try ITPowerApps if not loaded
+        if (!fileBuffer && nroFactura && nitValue !== 'N/A') {
+            try {
+                const client = await getGraphClient();
+                console.log(`[Auto-Extract] Searching for ${nroFactura} in ITPowerApps...`);
+                const externalDoc = await findExternalInvoiceDocument(nitValue, nroFactura, "");
             
             if (externalDoc) {
                 console.log(`[Auto-Extract] Found external doc: ${externalDoc.fileName}. Fetching content...`);
