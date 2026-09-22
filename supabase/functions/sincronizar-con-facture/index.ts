@@ -111,10 +111,32 @@ Deno.serve(async (req: Request) => {
             ? 'Sincronizada vía Power Automate (Responsable asignado)'
             : 'Sincronizada vía Power Automate'
 
+          // Obtener siguiente consecutivo si es necesario
+          let nextConsecutivoNum: number | null = null
+          try {
+            const { data: lastRows } = await supabase
+              .from('Registro_Facturas')
+              .select('Consecutivo')
+              .not('Consecutivo', 'is', null)
+              .order('ID', { ascending: false })
+              .limit(30)
+            if (lastRows && lastRows.length > 0) {
+              let maxNum = 103000
+              for (const row of lastRows) {
+                if (row.Consecutivo) {
+                  const num = parseInt(String(row.Consecutivo).replace(/\D/g, ''), 10)
+                  if (!isNaN(num) && num > maxNum) maxNum = num
+                }
+              }
+              nextConsecutivoNum = maxNum + 1
+            }
+          } catch (_cErr) {}
+
           const generatedId = Number(BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000)))
 
           const recordToInsert = {
             ID: generatedId,
+            Consecutivo: nextConsecutivoNum ? String(nextConsecutivoNum) : null,
             Nit: cleanNit || nit,
             Proveedor: provider,
             Nro_Factura: rawNumber || ldf,
@@ -231,6 +253,24 @@ Deno.serve(async (req: Request) => {
       details: [] as any[]
     }
 
+    let runningConsecutivo = 103077
+    try {
+      const { data: lastRows } = await supabase
+        .from('Registro_Facturas')
+        .select('Consecutivo')
+        .not('Consecutivo', 'is', null)
+        .order('ID', { ascending: false })
+        .limit(30)
+      if (lastRows && lastRows.length > 0) {
+        for (const row of lastRows) {
+          if (row.Consecutivo) {
+            const num = parseInt(String(row.Consecutivo).replace(/\D/g, ''), 10)
+            if (!isNaN(num) && num > runningConsecutivo) runningConsecutivo = num
+          }
+        }
+      }
+    } catch (_cErr) {}
+
     for (const item of fetchedItems) {
       const ldf = item.ldf || item.documentCode || ''
       const notificationId = item.id
@@ -320,8 +360,10 @@ Deno.serve(async (req: Request) => {
           }
         }
 
+        runningConsecutivo++
         const recordToInsert = {
           ID: generatedId,
+          Consecutivo: String(runningConsecutivo),
           Nit: cleanNit || nit,
           Proveedor: provider,
           Nro_Factura: rawNumber || ldf,
