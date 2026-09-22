@@ -141,21 +141,22 @@ export async function POST() {
                 const nit = detailsData.AccountingSupplierParty?.Party?.PartyTaxScheme?.CompanyID || "";
                 const date = detailsData.IssueDate || new Date().toISOString();
 
-                // Lookup responsable
-                let responsable = null;
+                // Lookup responsable and email
+                let responsable: string | null = null;
+                let responsableEmail: string | null = null;
                 if (nit) {
                     const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
                     
                     let { data: resData } = await supabase
                         .from("Proveedores_con_Responsable")
-                        .select('"Responsable", "Autorizador"')
+                        .select('"Responsable", "Autorizador", "Correo"')
                         .eq("Nit", nit)
                         .limit(1);
 
                     if (!resData || resData.length === 0) {
                         const { data: resData2 } = await supabase
                             .from("Proveedores_con_Responsable")
-                            .select('"Responsable", "Autorizador"')
+                            .select('"Responsable", "Autorizador", "Correo"')
                             .like("Nit", `${baseNit}%`)
                             .limit(1);
                         resData = resData2;
@@ -163,13 +164,29 @@ export async function POST() {
 
                     if (resData && resData.length > 0) {
                         responsable = resData[0].Responsable || resData[0].Autorizador || null;
+                        if (resData[0].Correo && resData[0].Correo.includes('@') && !resData[0].Correo.toLowerCase().includes('test')) {
+                            responsableEmail = resData[0].Correo.trim().toLowerCase();
+                        }
+                    }
+                }
+
+                if (responsable && !responsableEmail) {
+                    const cleanName = responsable.trim();
+                    const { data: userMatch } = await supabase
+                        .from('usuarios')
+                        .select('correo')
+                        .ilike('nombre', `%${cleanName}%`)
+                        .limit(1);
+                    if (userMatch && userMatch.length > 0 && userMatch[0].correo) {
+                        responsableEmail = userMatch[0].correo.trim().toLowerCase();
                     }
                 }
 
                 const observaciones = responsable ? 'Creada automáticamente y asignada según proveedor' : 'Creada automáticamente';
+                const generatedId = Number(BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000)) % BigInt(9007199254740991));
 
                 const { error: insertError } = await supabase.from('Registro_Facturas').insert({
-                    ID: Number(BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000)) % BigInt(9007199254740991)),
+                    ID: generatedId,
                     Nit: nit,
                     Proveedor: provider,
                     Nro_Factura: ldf,
@@ -184,6 +201,25 @@ export async function POST() {
                 });
 
                 if (insertError) throw insertError;
+
+                // Notificar Power Automate
+                if (responsableEmail) {
+                    try {
+                        const POWER_AUTOMATE_WEBHOOK = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/13/workflows/8dee7c5363ad40c9957ff2439f937723/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TuYk4u4aCqx_kWf4Ix5vS-MeNeUnvJqK6ikrRjyxiss";
+                        const formattedVal = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(amountValue);
+                        await fetch(POWER_AUTOMATE_WEBHOOK, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                responsable: responsableEmail,
+                                url: `https://appcontabilidad.vercel.app/externo/factura/${generatedId}`,
+                                mensaje: `Se ha recibido la factura ${ldf} de ${provider} por valor de ${formattedVal} para su aprobación.`
+                            })
+                        });
+                    } catch (notifyErr) {
+                        console.error("Error notifying Power Automate:", notifyErr);
+                    }
+                }
 
                 // Mark as Read
                 const markReadUrl = `${INBOX_BASE_URL}/PLColab.Inbox/Notification/PRINCIPAL/MarkAsRead/${id}/${CONSTANT_ID}/true`;

@@ -8,6 +8,93 @@ const corsHeaders = {
 const INBOX_BASE_URL = "https://fone-reception-inbox-pro.azurewebsites.net"
 const FACTURE_AUTH_URL = "https://api.facture.co/PLColab.Identity/Auth/Login"
 const CONSTANT_ID = "0b409936-666f-4a61-8efd-a9c400d9fa7f"
+const POWER_AUTOMATE_WEBHOOK = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/13/workflows/8dee7c5363ad40c9957ff2439f937723/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TuYk4u4aCqx_kWf4Ix5vS-MeNeUnvJqK6ikrRjyxiss"
+
+async function obtenerDatosResponsable(supabase: any, cleanNit: string) {
+  let responsable: string | null = null
+  let correo: string | null = null
+
+  if (cleanNit) {
+    const { data: provData } = await supabase
+      .from('Proveedores_con_Responsable')
+      .select('Responsable, Autorizador, Correo')
+      .or(`Nit.eq.${cleanNit},Nit.like.${cleanNit}%`)
+      .limit(1)
+
+    if (provData && provData.length > 0) {
+      responsable = provData[0].Responsable || provData[0].Autorizador || null
+      if (provData[0].Correo && provData[0].Correo.includes('@') && !provData[0].Correo.toLowerCase().includes('test')) {
+        correo = provData[0].Correo.trim().toLowerCase()
+      }
+    }
+  }
+
+  // Si no se encontró correo directo pero sí responsable, buscar por nombre
+  if (responsable && !correo) {
+    const cleanName = responsable.trim()
+    const { data: nameMatch } = await supabase
+      .from('Proveedores_con_Responsable')
+      .select('Correo')
+      .or(`Responsable.ilike.%${cleanName}%,Autorizador.ilike.%${cleanName}%`)
+      .not('Correo', 'is', null)
+      .neq('Correo', 'test')
+      .limit(1)
+
+    if (nameMatch && nameMatch.length > 0 && nameMatch[0].Correo && nameMatch[0].Correo.includes('@')) {
+      correo = nameMatch[0].Correo.trim().toLowerCase()
+    } else {
+      const { data: userMatch } = await supabase
+        .from('usuarios')
+        .select('correo')
+        .ilike('nombre', `%${cleanName}%`)
+        .limit(1)
+
+      if (userMatch && userMatch.length > 0 && userMatch[0].correo) {
+        correo = userMatch[0].correo.trim().toLowerCase()
+      }
+    }
+  }
+
+  return { responsable, correo }
+}
+
+async function notificarPowerAutomate(params: {
+  responsableEmail: string
+  facturaId: number | string
+  nroFactura: string
+  proveedor: string
+  valorTotal: string | number
+}) {
+  const url = `https://appcontabilidad.vercel.app/externo/factura/${params.facturaId}`
+  const numVal = typeof params.valorTotal === 'number' ? params.valorTotal : parseFloat(String(params.valorTotal).replace(/[^0-9.-]+/g, '')) || 0
+  const formattedVal = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(numVal)
+  const mensaje = `Se ha recibido la factura ${params.nroFactura} de ${params.proveedor} por valor de ${formattedVal} para su aprobación.`
+
+  const payload = {
+    responsable: params.responsableEmail,
+    url: url,
+    mensaje: mensaje
+  }
+
+  try {
+    console.log(`[sincronizar-con-facture] 📤 Enviando a Power Automate (Factura ID ${params.facturaId}, Destinatario: ${params.responsableEmail})...`)
+    const res = await fetch(POWER_AUTOMATE_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    const resText = await res.text()
+    if (!res.ok) {
+      console.error(`[sincronizar-con-facture] ❌ Error en Power Automate (${res.status}): ${resText}`)
+      return { success: false, status: res.status, error: resText }
+    }
+    console.log(`[sincronizar-con-facture] ✅ Notificación enviada exitosamente a Power Automate para ${params.nroFactura}`)
+    return { success: true }
+  } catch (err: any) {
+    console.error(`[sincronizar-con-facture] ❌ Excepción al invocar Power Automate:`, err)
+    return { success: false, error: err.message }
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -44,9 +131,9 @@ Deno.serve(async (req: Request) => {
       itemsList = [reqBody]
     }
 
-    // SI VIENEN ÍTEMS DESDE POWER AUTOMATE
+    // SI VIENEN ÍTEMS DIRECTOS EN EL CUERPO DE LA SOLICITUD
     if (itemsList.length > 0) {
-      console.log(`[sincronizar-con-facture] 📦 Procesando ${itemsList.length} ítems recibidos desde Power Automate...`)
+      console.log(`[sincronizar-con-facture] 📦 Procesando ${itemsList.length} ítems recibidos...`)
 
       const summary = {
         totalReceived: itemsList.length,
@@ -58,7 +145,6 @@ Deno.serve(async (req: Request) => {
 
       for (const item of itemsList) {
         const ldf = item.ldf || item.documentCode || ''
-        const notificationId = item.id
         const rawNumber = item.number || item.documentCode || ldf
         const docType = (item.documentTypeCode || ldf.split('-')[0] || '').toUpperCase()
 
@@ -93,19 +179,8 @@ Deno.serve(async (req: Request) => {
           const cufe = item.cufe || item.uuid || ''
           const createdDate = item.receptionDate || item.issueDate || new Date().toISOString()
 
-          // Buscar responsable en Proveedores_con_Responsable
-          let responsable: string | null = null
-          if (cleanNit) {
-            const { data: provData } = await supabase
-              .from('Proveedores_con_Responsable')
-              .select('Responsable, Autorizador')
-              .or(`Nit.eq.${cleanNit},Nit.like.${cleanNit}%`)
-              .limit(1)
-
-            if (provData && provData.length > 0) {
-              responsable = provData[0].Responsable || provData[0].Autorizador || null
-            }
-          }
+          // Buscar responsable y su correo
+          const { responsable, correo: responsableEmail } = await obtenerDatosResponsable(supabase, cleanNit)
 
           const observaciones = responsable
             ? 'Sincronizada vía Power Automate (Responsable asignado)'
@@ -163,8 +238,20 @@ Deno.serve(async (req: Request) => {
           }
 
           console.log(`[sincronizar-con-facture] ✅ Factura ${rawNumber} (${provider}) guardada con ID ${generatedId}`)
+
+          // Enviar notificación a Power Automate si tenemos correo del responsable
+          if (responsableEmail) {
+            await notificarPowerAutomate({
+              responsableEmail,
+              facturaId: generatedId,
+              nroFactura: rawNumber || ldf,
+              proveedor: provider,
+              valorTotal: amountValue
+            })
+          }
+
           summary.processed++
-          summary.details.push({ ldf, status: 'inserted', id: generatedId, provider, amount: amountValue })
+          summary.details.push({ ldf, status: 'inserted', id: generatedId, provider, amount: amountValue, notifiedTo: responsableEmail })
 
         } catch (itemErr: any) {
           console.error(`[sincronizar-con-facture] Error procesando ${ldf}:`, itemErr)
@@ -182,10 +269,10 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // MODO AUTÓNOMO BATCH (Si no se envían ítems en el Body, la Edge Function consulta Facture directamente)
+    // MODO AUTÓNOMO BATCH (Consulta Facture periódicamente vía pg_cron)
     const daysBack = reqBody.days ?? 60
     const filterIsRead = reqBody.isRead !== undefined ? (reqBody.isRead === null || reqBody.isRead === 'all' ? null : String(reqBody.isRead)) : 'false'
-    const markAsRead = reqBody.markAsRead !== false // Ahora por defecto SIEMPRE marca como leída a menos que explícitamente se mande false
+    const markAsRead = reqBody.markAsRead !== false
     const maxPages = reqBody.maxPages ?? 5
     const pageSize = reqBody.pageSize ?? 100
 
@@ -303,18 +390,8 @@ Deno.serve(async (req: Request) => {
         const cufe = item.cufe || item.uuid || ''
         const createdDate = item.receptionDate || item.issueDate || new Date().toISOString()
 
-        let responsable: string | null = null
-        if (cleanNit) {
-          const { data: provData } = await supabase
-            .from('Proveedores_con_Responsable')
-            .select('Responsable, Autorizador')
-            .or(`Nit.eq.${cleanNit},Nit.like.${cleanNit}%`)
-            .limit(1)
-
-          if (provData && provData.length > 0) {
-            responsable = provData[0].Responsable || provData[0].Autorizador || null
-          }
-        }
+        // Buscar responsable y su correo
+        const { responsable, correo: responsableEmail } = await obtenerDatosResponsable(supabase, cleanNit)
 
         const observaciones = responsable
           ? 'Sincronizada automáticamente desde Facture (Responsable asignado)'
@@ -361,6 +438,8 @@ Deno.serve(async (req: Request) => {
         }
 
         runningConsecutivo++
+        const generatedId = Number(BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000)))
+
         const recordToInsert = {
           ID: generatedId,
           Consecutivo: String(runningConsecutivo),
@@ -390,8 +469,21 @@ Deno.serve(async (req: Request) => {
           continue
         }
 
+        console.log(`[sincronizar-con-facture] ✅ Factura ${rawNumber} (${provider}) guardada con ID ${generatedId}`)
+
+        // Enviar notificación a Power Automate si tenemos correo del responsable
+        if (responsableEmail) {
+          await notificarPowerAutomate({
+            responsableEmail,
+            facturaId: generatedId,
+            nroFactura: rawNumber || ldf,
+            proveedor: provider,
+            valorTotal: amountValue
+          })
+        }
+
         summary.processed++
-        summary.details.push({ ldf, status: 'inserted', id: generatedId, provider, amount: amountValue })
+        summary.details.push({ ldf, status: 'inserted', id: generatedId, provider, amount: amountValue, notifiedTo: responsableEmail })
 
         if (markAsRead && notificationId) {
           try {
