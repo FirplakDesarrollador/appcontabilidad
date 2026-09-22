@@ -281,6 +281,21 @@ export async function GET(req: Request) {
                                     detalles: sapErr
                                 });
                             }
+
+                            // ── Eventos Facture (RECEIVEGOODS + ACCEPT) ──────────────────
+                            // Las facturas auto-aprobadas por el trigger SQL nunca pasaban
+                            // por update-status/externo-accion, así que nunca se enviaban
+                            // los eventos 032 (Recibo de Bienes) y 033 (Aceptación Expresa)
+                            // a Facture/DIAN. Se corrige aquí.
+                            try {
+                                const { triggerFactureEventForInvoice } = await import('@/lib/facture');
+                                await triggerFactureEventForInvoice(spItemId, 'Aprobado', {
+                                    responsableName: checkData.Responsable_de_Autorizar || checkData.Proveedor
+                                });
+                                console.log(`[CRON-SYNC][Auto-Approve] ✅ Eventos Facture (032+033) enviados para factura ${spItemId} (${checkData.Nro_Factura})`);
+                            } catch (factureErr: any) {
+                                console.error(`[CRON-SYNC][Auto-Approve] ⚠️ Error enviando eventos a Facture para ${spItemId}:`, factureErr.message);
+                            }
                         }
                     } catch (autoErr: any) {
                         console.warn('[CRON-SYNC][Auto-Approve] Detection failed (non-fatal):', autoErr.message);
