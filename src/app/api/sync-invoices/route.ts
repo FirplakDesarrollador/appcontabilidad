@@ -207,13 +207,18 @@ export async function POST() {
                     try {
                         const POWER_AUTOMATE_WEBHOOK = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/13/workflows/8dee7c5363ad40c9957ff2439f937723/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TuYk4u4aCqx_kWf4Ix5vS-MeNeUnvJqK6ikrRjyxiss";
                         const formattedVal = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(amountValue);
+                        const url = `https://appcontabilidad.vercel.app/externo/factura/${generatedId}`;
+                        const mensaje = `Se ha recibido la factura <strong>${ldf}</strong> de <strong>${provider}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar la factura</strong></a><br><br>Enlace directo: ${url}`;
                         await fetch(POWER_AUTOMATE_WEBHOOK, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
                                 responsable: responsableEmail,
-                                url: `https://appcontabilidad.vercel.app/externo/factura/${generatedId}`,
-                                mensaje: `Se ha recibido la factura ${ldf} de ${provider} por valor de ${formattedVal} para su aprobación.`
+                                url: url,
+                                mensaje: mensaje,
+                                link: `<a href="${url}">Haga clic aquí para revisar y aprobar la factura</a>`,
+                                titulo: `Factura pendiente por aprobar - ${ldf}`,
+                                contenido: mensaje
                             })
                         });
                     } catch (notifyErr) {

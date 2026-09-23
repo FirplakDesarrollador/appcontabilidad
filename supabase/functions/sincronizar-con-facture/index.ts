@@ -68,12 +68,15 @@ async function notificarPowerAutomate(params: {
   const url = `https://appcontabilidad.vercel.app/externo/factura/${params.facturaId}`
   const numVal = typeof params.valorTotal === 'number' ? params.valorTotal : parseFloat(String(params.valorTotal).replace(/[^0-9.-]+/g, '')) || 0
   const formattedVal = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(numVal)
-  const mensaje = `Se ha recibido la factura ${params.nroFactura} de ${params.proveedor} por valor de ${formattedVal} para su aprobación.`
+  const mensaje = `Se ha recibido la factura <strong>${params.nroFactura}</strong> de <strong>${params.proveedor}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar la factura</strong></a><br><br>Enlace directo: ${url}`
 
   const payload = {
     responsable: params.responsableEmail,
     url: url,
-    mensaje: mensaje
+    mensaje: mensaje,
+    link: `<a href="${url}">Haga clic aquí para revisar y aprobar la factura</a>`,
+    titulo: `Factura pendiente por aprobar - ${params.nroFactura}`,
+    contenido: mensaje
   }
 
   try {
