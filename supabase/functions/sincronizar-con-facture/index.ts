@@ -64,18 +64,20 @@ async function notificarPowerAutomate(params: {
   nroFactura: string
   proveedor: string
   valorTotal: string | number
+  isNC?: boolean
 }) {
   const url = `https://appcontabilidad.vercel.app/externo/factura/${params.facturaId}`
   const numVal = typeof params.valorTotal === 'number' ? params.valorTotal : parseFloat(String(params.valorTotal).replace(/[^0-9.-]+/g, '')) || 0
   const formattedVal = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(numVal)
-  const mensaje = `Se ha recibido la factura <strong>${params.nroFactura}</strong> de <strong>${params.proveedor}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar la factura</strong></a><br><br>Enlace directo: ${url}`
+  const tipoDoc = params.isNC ? 'la Nota Crédito' : 'la factura'
+  const mensaje = `Se ha recibido ${tipoDoc} <strong>${params.nroFactura}</strong> de <strong>${params.proveedor}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar ${tipoDoc}</strong></a><br><br>Enlace directo: ${url}`
 
   const payload = {
     responsable: params.responsableEmail,
     url: url,
     mensaje: mensaje,
-    link: `<a href="${url}">Haga clic aquí para revisar y aprobar la factura</a>`,
-    titulo: `Factura pendiente por aprobar - ${params.nroFactura}`,
+    link: `<a href="${url}">Haga clic aquí para revisar y aprobar ${tipoDoc}</a>`,
+    titulo: `${params.isNC ? 'Nota Crédito' : 'Factura'} pendiente por aprobar - ${params.nroFactura}`,
     contenido: mensaje
   }
 
@@ -150,13 +152,12 @@ Deno.serve(async (req: Request) => {
         const ldf = item.ldf || item.documentCode || ''
         const rawNumber = item.number || item.documentCode || ldf
         const docType = (item.documentTypeCode || ldf.split('-')[0] || '').toUpperCase()
-
-        if (docType === 'NC' || ldf.startsWith('NC-')) {
-          console.log(`[sincronizar-con-facture] Omitiendo Nota Crédito: ${ldf}`)
-          summary.skipped++
-          summary.details.push({ ldf, status: 'skipped', reason: 'Nota Crédito' })
-          continue
-        }
+        const isNC = docType.includes('NC') || ldf.startsWith('NC') || (rawNumber && String(rawNumber).toUpperCase().startsWith('NC'))
+        const docNumberToSave = (isNC && item.documentCode && !item.documentCode.includes('('))
+          ? item.documentCode
+          : (isNC && !String(rawNumber).toUpperCase().startsWith('NC')
+              ? (rawNumber ? `NC-${rawNumber}` : (ldf.startsWith('NC') && !ldf.includes('(') ? ldf : rawNumber))
+              : (rawNumber || ldf))
 
         try {
           const cleanNroFactura = rawNumber.replace(/^(FAC|FE)[-_]?/i, '').trim()
@@ -165,11 +166,11 @@ Deno.serve(async (req: Request) => {
           const { data: existing } = await supabase
             .from('Registro_Facturas')
             .select('ID, Nro_Factura')
-            .or(`Nro_Factura.eq.${ldf},Nro_Factura.eq.${rawNumber},Nro_Factura.eq.${cleanNroFactura}`)
+            .or(`Nro_Factura.eq.${ldf},Nro_Factura.eq.${rawNumber},Nro_Factura.eq.${cleanNroFactura},Nro_Factura.eq.${docNumberToSave}`)
             .maybeSingle()
 
           if (existing) {
-            console.log(`[sincronizar-con-facture] Factura ${rawNumber} ya existe en Registro_Facturas (ID ${existing.ID}). Omitiendo.`)
+            console.log(`[sincronizar-con-facture] Documento ${docNumberToSave} ya existe en Registro_Facturas (ID ${existing.ID}). Omitiendo.`)
             summary.skipped++
             summary.details.push({ ldf, status: 'already_exists', id: existing.ID })
             continue
@@ -186,8 +187,8 @@ Deno.serve(async (req: Request) => {
           const { responsable, correo: responsableEmail } = await obtenerDatosResponsable(supabase, cleanNit)
 
           const observaciones = responsable
-            ? 'Sincronizada vía Power Automate (Responsable asignado)'
-            : 'Sincronizada vía Power Automate'
+            ? (isNC ? 'Nota Crédito sincronizada vía Power Automate (Responsable asignado)' : 'Sincronizada vía Power Automate (Responsable asignado)')
+            : (isNC ? 'Nota Crédito sincronizada vía Power Automate' : 'Sincronizada vía Power Automate')
 
           // Obtener siguiente consecutivo si es necesario
           let nextConsecutivoNum: number | null = null
@@ -217,7 +218,7 @@ Deno.serve(async (req: Request) => {
             Consecutivo: nextConsecutivoNum ? String(nextConsecutivoNum) : null,
             Nit: cleanNit || nit,
             Proveedor: provider,
-            Nro_Factura: rawNumber || ldf,
+            Nro_Factura: docNumberToSave,
             Valor_total: String(amountValue),
             Responsable_de_Autorizar: responsable,
             Observaciones: observaciones,
@@ -234,22 +235,23 @@ Deno.serve(async (req: Request) => {
             .insert(recordToInsert)
 
           if (insertErr) {
-            console.error(`[sincronizar-con-facture] Error insertando factura ${ldf}:`, insertErr.message)
+            console.error(`[sincronizar-con-facture] Error insertando documento ${docNumberToSave}:`, insertErr.message)
             summary.errors++
             summary.details.push({ ldf, error: insertErr.message })
             continue
           }
 
-          console.log(`[sincronizar-con-facture] ✅ Factura ${rawNumber} (${provider}) guardada con ID ${generatedId}`)
+          console.log(`[sincronizar-con-facture] ✅ ${isNC ? 'Nota Crédito' : 'Factura'} ${docNumberToSave} (${provider}) guardada con ID ${generatedId}`)
 
           // Enviar notificación a Power Automate si tenemos correo del responsable
           if (responsableEmail) {
             await notificarPowerAutomate({
               responsableEmail,
               facturaId: generatedId,
-              nroFactura: rawNumber || ldf,
+              nroFactura: docNumberToSave,
               proveedor: provider,
-              valorTotal: amountValue
+              valorTotal: amountValue,
+              isNC
             })
           }
 
@@ -366,11 +368,12 @@ Deno.serve(async (req: Request) => {
       const notificationId = item.id
       const rawNumber = item.number || item.documentCode || item.documentNumber || ldf
       const docType = (item.documentTypeCode || ldf.split('-')[0] || '').toUpperCase()
-
-      if (docType === 'NC' || ldf.startsWith('NC-')) {
-        summary.skipped++
-        continue
-      }
+      const isNC = docType.includes('NC') || ldf.startsWith('NC') || (rawNumber && String(rawNumber).toUpperCase().startsWith('NC'))
+      const docNumberToSave = (isNC && item.documentCode && !item.documentCode.includes('('))
+        ? item.documentCode
+        : (isNC && !String(rawNumber).toUpperCase().startsWith('NC')
+            ? (rawNumber ? `NC-${rawNumber}` : (ldf.startsWith('NC') && !ldf.includes('(') ? ldf : rawNumber))
+            : (rawNumber || ldf))
 
       try {
         const cleanNroFactura = rawNumber.replace(/^(FAC|FE)[-_]?/i, '').trim()
@@ -378,7 +381,7 @@ Deno.serve(async (req: Request) => {
         const { data: existing } = await supabase
           .from('Registro_Facturas')
           .select('ID, Nro_Factura')
-          .or(`Nro_Factura.eq.${ldf},Nro_Factura.eq.${rawNumber},Nro_Factura.eq.${cleanNroFactura}`)
+          .or(`Nro_Factura.eq.${ldf},Nro_Factura.eq.${rawNumber},Nro_Factura.eq.${cleanNroFactura},Nro_Factura.eq.${docNumberToSave}`)
           .maybeSingle()
 
         if (existing) {
@@ -397,8 +400,8 @@ Deno.serve(async (req: Request) => {
         const { responsable, correo: responsableEmail } = await obtenerDatosResponsable(supabase, cleanNit)
 
         const observaciones = responsable
-          ? 'Sincronizada automáticamente desde Facture (Responsable asignado)'
-          : 'Sincronizada automáticamente desde Facture'
+          ? (isNC ? 'Nota Crédito sincronizada automáticamente desde Facture (Responsable asignado)' : 'Sincronizada automáticamente desde Facture (Responsable asignado)')
+          : (isNC ? 'Nota Crédito sincronizada automáticamente desde Facture' : 'Sincronizada automáticamente desde Facture')
 
         // Obtener y subir PDF si existe LDF
         let pdfPublicUrl: string | null = null
@@ -448,7 +451,7 @@ Deno.serve(async (req: Request) => {
           Consecutivo: String(runningConsecutivo),
           Nit: cleanNit || nit,
           Proveedor: provider,
-          Nro_Factura: rawNumber || ldf,
+          Nro_Factura: docNumberToSave,
           Valor_total: String(amountValue),
           Responsable_de_Autorizar: responsable,
           Observaciones: observaciones,
@@ -472,16 +475,17 @@ Deno.serve(async (req: Request) => {
           continue
         }
 
-        console.log(`[sincronizar-con-facture] ✅ Factura ${rawNumber} (${provider}) guardada con ID ${generatedId}`)
+        console.log(`[sincronizar-con-facture] ✅ ${isNC ? 'Nota Crédito' : 'Factura'} ${docNumberToSave} (${provider}) guardada con ID ${generatedId}`)
 
         // Enviar notificación a Power Automate si tenemos correo del responsable
         if (responsableEmail) {
           await notificarPowerAutomate({
             responsableEmail,
             facturaId: generatedId,
-            nroFactura: rawNumber || ldf,
+            nroFactura: docNumberToSave,
             proveedor: provider,
-            valorTotal: amountValue
+            valorTotal: amountValue,
+            isNC
           })
         }
 

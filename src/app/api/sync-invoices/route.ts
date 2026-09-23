@@ -78,12 +78,7 @@ export async function POST() {
             const ldf = item.ldf;
             const id = item.id;
             const type = ldf.split('-')[0]; // Logic from flow: first(split(outputs('ldf'),'-'))
-
-            // Skip if type is 'NC' (Nota Crédito?) based on condition in flow: not equals 'NC'
-            if (type === 'NC') {
-                console.log(`Skipping NC: ${ldf}`);
-                continue;
-            }
+            const isNC = type === 'NC' || ldf.startsWith('NC-');
 
             try {
                 // Check if already exists
