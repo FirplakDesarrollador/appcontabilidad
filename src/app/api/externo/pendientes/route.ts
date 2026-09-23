@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchAllSharePointItems } from '@/lib/sharepoint';
 import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
@@ -38,7 +37,7 @@ function matchesResponsable(respParam: string, name?: string | null, email?: str
 function isPendingStatus(statusRaw?: string | null): boolean {
     if (!statusRaw) return true;
     const status = normalizeStr(statusRaw);
-    if (status === 'aprobado' || status === 'rechazado' || status === 'anulado' || status === 'cancelado') {
+    if (status === 'aprobado' || status === 'rechazado' || status === 'anulado' || status === 'cancelado' || status === 'procesado') {
         return false;
     }
     return status.includes('pendiente') || status.includes('por aprobar') || status === '';
@@ -53,53 +52,58 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Missing responsable parameter' }, { status: 400 });
         }
 
-        // Fetch from the 3 approval sources concurrently (Radicados de importación do NOT require approval)
+        // Fetch from the 3 approval sources concurrently directly from Supabase
         const [
-            spFacturasResult,
             supabaseFacturasResult,
             docSoporteResult,
             viventtaResult
         ] = await Promise.allSettled([
-            fetchAllSharePointItems('Registro_de_Facturas'),
-            supabaseAdmin.from('Registro_Facturas').select('*'),
-            supabaseAdmin.from('Documento_Soporte').select('*'),
-            supabaseAdmin.from('Facturas_Viventta').select('*')
+            supabaseAdmin
+                .from('Registro_Facturas')
+                .select('*')
+                .not('Aprobacion_Doliente', 'in', '("Aprobado","Rechazado","Anulado","Cancelado","Procesado")')
+                .order('Creado', { ascending: false, nullsFirst: false }),
+            supabaseAdmin
+                .from('Documento_Soporte')
+                .select('*')
+                .not('aprobacion_doliente', 'in', '("Aprobado","Rechazado","Anulado","Cancelado","Procesado")')
+                .order('fecha_creacion', { ascending: false, nullsFirst: false }),
+            supabaseAdmin
+                .from('Facturas_Viventta')
+                .select('*')
+                .not('Aprobacion_Doliente', 'in', '("Aprobado","Rechazado","Anulado","Cancelado","Procesado")')
+                .order('created_at', { ascending: false, nullsFirst: false })
         ]);
 
         const normalizedItems: any[] = [];
 
-        // 1. Facturas Firplak (Use SharePoint items or Supabase fallback)
-        let facturasList: any[] = [];
-        if (spFacturasResult.status === 'fulfilled' && spFacturasResult.value && spFacturasResult.value.length > 0) {
-            facturasList = spFacturasResult.value;
-        } else if (supabaseFacturasResult.status === 'fulfilled' && supabaseFacturasResult.value.data) {
-            facturasList = supabaseFacturasResult.value.data;
-        }
+        // 1. Facturas Firplak (Supabase is single source of truth)
+        if (supabaseFacturasResult.status === 'fulfilled' && supabaseFacturasResult.value.data) {
+            for (const item of supabaseFacturasResult.value.data) {
+                const respName = item.Responsable_de_Autorizar || item.Responsable_x0020_de_x0020_Auto || item.responsable_nombre;
+                const respEmail = item.Responsable_email || item.Responsable_x0020_email || item.Email_Responsable;
+                const status = item.Aprobacion_Doliente || item.AprobacionDoliente || "Pendiente";
 
-        for (const item of facturasList) {
-            const respName = item.Responsable_de_Autorizar || item.Responsable_x0020_de_x0020_Auto || item.responsable_nombre;
-            const respEmail = item.Responsable_email || item.Responsable_x0020_email || item.Email_Responsable;
-            const status = item.Aprobacion_Doliente || item.AprobacionDoliente || "Pendiente";
-
-            if (matchesResponsable(responsable, respName, respEmail) && isPendingStatus(status)) {
-                const nitValue = item.Title || item.Nit_x0020_ || item["Nit "] || item.Nit || "N/A";
-                const valorTotal = item.Valortotal ?? item.Valor_x0020_total ?? item["Valor total"] ?? item.Monto ?? 0;
-                
-                normalizedItems.push({
-                    id: String(item.id || item.ID),
-                    proveedor: item.Proveedor || item.tsic || item.Nombre_proveedor || item.Razon_social || "N/A",
-                    nit: nitValue,
-                    valorTotal: valorTotal.toString(),
-                    nroFactura: item.Nro_Factura || item.Factura || "N/A",
-                    consecutivo: item.Consecutivo || item.consecutivo || "",
-                    fechaRegistro: item.Created || item.Creado || item.OData__RegistrationDate || new Date().toISOString(),
-                    aprobacionDoliente: status,
-                    responsableActual: respName || "No asignado",
-                    tipo: "FACTURA",
-                    modulo: "Aprobación de facturas",
-                    moneda: "COP",
-                    url: `/externo/factura/${item.id || item.ID}`
-                });
+                if (matchesResponsable(responsable, respName, respEmail) && isPendingStatus(status)) {
+                    const nitValue = item.Nit || item.Title || item.Nit_x0020_ || item["Nit "] || "N/A";
+                    const valorTotal = item.Valor_total ?? item.Valortotal ?? item.Valor_x0020_total ?? item["Valor total"] ?? item.Monto ?? 0;
+                    
+                    normalizedItems.push({
+                        id: String(item.ID || item.id),
+                        proveedor: item.Proveedor || item.tsic || item.Nombre_proveedor || item.Razon_social || "N/A",
+                        nit: nitValue,
+                        valorTotal: valorTotal.toString(),
+                        nroFactura: item.Nro_Factura || item.Factura || "N/A",
+                        consecutivo: item.Consecutivo || item.consecutivo || "",
+                        fechaRegistro: item.Creado || item.Created || item.OData__RegistrationDate || new Date().toISOString(),
+                        aprobacionDoliente: status,
+                        responsableActual: respName || "No asignado",
+                        tipo: "FACTURA",
+                        modulo: "Aprobación de facturas",
+                        moneda: "COP",
+                        url: `/externo/factura/${item.ID || item.id}`
+                    });
+                }
             }
         }
 

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchAllSharePointItems } from '@/lib/sharepoint';
 import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
@@ -49,54 +48,68 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Missing responsable parameter' }, { status: 400 });
         }
 
-        // Fetch from the 3 approval sources concurrently
+        const tokens = responsable.trim().split(/\s+/).filter(t => t.length > 2);
+        let facturasQuery = supabaseAdmin
+            .from('Registro_Facturas')
+            .select('*')
+            .in('Aprobacion_Doliente', ['Aprobado', 'Rechazado'])
+            .order('Creado', { ascending: false });
+        
+        if (tokens.length > 0) {
+            facturasQuery = facturasQuery.ilike('Responsable_de_Autorizar', `%${tokens[0]}%`);
+        }
+
+        // Fetch from the 3 approval sources concurrently from Supabase
         const [
-            spFacturasResult,
             supabaseFacturasResult,
             docSoporteResult,
             viventtaResult
         ] = await Promise.allSettled([
-            fetchAllSharePointItems('Registro_de_Facturas'),
-            supabaseAdmin.from('Registro_Facturas').select('*'),
-            supabaseAdmin.from('Documento_Soporte').select('*'),
-            supabaseAdmin.from('Facturas_Viventta').select('*')
+            facturasQuery.limit(500),
+            supabaseAdmin
+                .from('Documento_Soporte')
+                .select('*')
+                .in('aprobacion_doliente', ['Aprobado', 'Rechazado'])
+                .order('fecha_creacion', { ascending: false })
+                .limit(500),
+            supabaseAdmin
+                .from('Facturas_Viventta')
+                .select('*')
+                .in('Aprobacion_Doliente', ['Aprobado', 'Rechazado'])
+                .order('created_at', { ascending: false })
+                .limit(500)
         ]);
 
         const historyItems: any[] = [];
 
         // 1. Facturas Firplak
-        let facturasList: any[] = [];
-        if (spFacturasResult.status === 'fulfilled' && spFacturasResult.value && spFacturasResult.value.length > 0) {
-            facturasList = spFacturasResult.value;
-        } else if (supabaseFacturasResult.status === 'fulfilled' && supabaseFacturasResult.value.data) {
-            facturasList = supabaseFacturasResult.value.data;
-        }
+        if (supabaseFacturasResult.status === 'fulfilled' && supabaseFacturasResult.value.data) {
+            for (const item of supabaseFacturasResult.value.data) {
+                const respName = item.Responsable_de_Autorizar || item.Responsable_x0020_de_x0020_Auto || item.responsable_nombre;
+                const respEmail = item.Responsable_email || item.Responsable_x0020_email || item.Email_Responsable;
+                const status = item.Aprobacion_Doliente || item.AprobacionDoliente || "";
 
-        for (const item of facturasList) {
-            const respName = item.Responsable_de_Autorizar || item.Responsable_x0020_de_x0020_Auto || item.responsable_nombre;
-            const respEmail = item.Responsable_email || item.Responsable_x0020_email || item.Email_Responsable;
-            const status = item.Aprobacion_Doliente || item.AprobacionDoliente || "";
-
-            if (matchesResponsable(responsable, respName, respEmail) && isProcessedStatus(status)) {
-                const nitValue = item.Title || item.Nit_x0020_ || item["Nit "] || item.Nit || "N/A";
-                const valorTotal = item.Valortotal ?? item.Valor_x0020_total ?? item["Valor total"] ?? item.Monto ?? 0;
-                
-                historyItems.push({
-                    id: String(item.id || item.ID),
-                    proveedor: item.Proveedor || item.tsic || item.Nombre_proveedor || item.Razon_social || "N/A",
-                    nit: nitValue,
-                    valorTotal: valorTotal.toString(),
-                    nroFactura: item.Nro_Factura || item.Factura || "N/A",
-                    consecutivo: item.Consecutivo || item.consecutivo || "",
-                    fechaRegistro: item.Created || item.Creado || item.OData__RegistrationDate,
-                    fechaAprobacion: item.FechaAprobacion || item.Modified || item.updated_at || null,
-                    aprobacionDoliente: status,
-                    responsableActual: respName || "No asignado",
-                    tipo: "FACTURA",
-                    modulo: "Aprobación de facturas",
-                    moneda: "COP",
-                    url: `/externo/factura/${item.id || item.ID}?readonly=true`
-                });
+                if (matchesResponsable(responsable, respName, respEmail) && isProcessedStatus(status)) {
+                    const nitValue = item.Nit || item.Title || item.Nit_x0020_ || item["Nit "] || "N/A";
+                    const valorTotal = item.Valor_total ?? item.Valortotal ?? item.Valor_x0020_total ?? item["Valor total"] ?? item.Monto ?? 0;
+                    
+                    historyItems.push({
+                        id: String(item.ID || item.id),
+                        proveedor: item.Proveedor || item.tsic || item.Nombre_proveedor || item.Razon_social || "N/A",
+                        nit: nitValue,
+                        valorTotal: valorTotal.toString(),
+                        nroFactura: item.Nro_Factura || item.Factura || "N/A",
+                        consecutivo: item.Consecutivo || item.consecutivo || "",
+                        fechaRegistro: item.Creado || item.Created || item.OData__RegistrationDate,
+                        fechaAprobacion: item.FechaAprobacion || item.Modified || item.updated_at || null,
+                        aprobacionDoliente: status,
+                        responsableActual: respName || "No asignado",
+                        tipo: "FACTURA",
+                        modulo: "Aprobación de facturas",
+                        moneda: "COP",
+                        url: `/externo/factura/${item.ID || item.id}?readonly=true`
+                    });
+                }
             }
         }
 
