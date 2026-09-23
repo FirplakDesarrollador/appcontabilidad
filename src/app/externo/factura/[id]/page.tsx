@@ -317,8 +317,9 @@ export default function PublicApprovalPage() {
             setInvoice(data);
             setInitialResponsable(prev => prev === null ? (data.responsableActual || "") : prev);
             
-            // Default distribution from SharePoint if available, otherwise default to total
-            if (data.distribuciones) {
+            // Only load saved distributions if invoice was already processed/approved, otherwise always start with a single blank line
+            const isProcessedStatus = data.aprobacionDoliente === 'Aprobado' || data.aprobacionDoliente === 'Rechazado';
+            if (isProcessedStatus && data.distribuciones) {
                 try {
                     const parsed = typeof data.distribuciones === 'string' 
                         ? JSON.parse(data.distribuciones) 
@@ -330,8 +331,8 @@ export default function PublicApprovalPage() {
                         cuenta: d.cuenta || "",
                         valor: d.valor || "0"
                     }));
-                    if (normalized.length === 0 && data.valorTotal) {
-                        setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
+                    if (normalized.length === 0) {
+                        setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal || "" }]);
                     } else {
                         const totalActual = parseSafeFloat(data.valorTotal);
                         if (normalized.length === 1 && totalActual > 0) {
@@ -355,12 +356,10 @@ export default function PublicApprovalPage() {
                     }
                 } catch (e) {
                     console.error("Error parsing distributions:", e);
-                    if (data.valorTotal) {
-                        setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
-                    }
+                    setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal || "" }]);
                 }
-            } else if (data.valorTotal) {
-                setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal }]);
+            } else {
+                setDistribuciones([{ centroCostos: "", cuenta: "", valor: data.valorTotal || "" }]);
             }
 
             if (data.valorTotal) {
