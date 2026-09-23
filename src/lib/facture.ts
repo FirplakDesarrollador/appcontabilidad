@@ -324,54 +324,105 @@ export async function triggerFactureEventForInvoice(
     // 2. Obtener Token JWT
     const token = await getFactureAuthToken();
 
-    // 3. Buscar la factura en el Inbox de Facture por NÚMERO DE FACTURA (revisando PRINCIPAL y CONTADO para Notas Crédito y Contado)
+    // 3. Verificación rápida del LDF candidato directo (resuelve en <500ms usando NIT, número y fecha de emisión)
     let ldfString = "";
-    try {
-      const now = new Date();
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(now.getDate() - 90);
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const formatStartDate = (d: Date) => d.toISOString().split('T')[0] + "T00:00:00.00";
-      const formatEndDate = (d: Date) => d.toISOString().split('T')[0] + "T23:59:59.00";
+    const fechaBaseObj = invoice.Creado || invoice.FechaAprobacion;
+    const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date();
+    const isNC = rawNroFactura.toUpperCase().startsWith('NC') || 
+                 rawNroFactura.toUpperCase().includes('NC') ||
+                 (invoice.Proveedor && invoice.Proveedor.toUpperCase().includes('NC'));
+    const primaryDocType = isNC ? 'NC-UBL' : 'FACTURA-UBL';
 
-      const folders = ['PRINCIPAL', 'CONTADO'];
+    const quickCandidates = [
+      `${primaryDocType}(${cleanNit};${rawNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`
+    ];
+    if (cleanNroFactura && cleanNroFactura !== rawNroFactura) {
+      quickCandidates.push(`${primaryDocType}(${cleanNit};${cleanNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`);
+    }
 
-      searchLoop:
-      for (const folder of folders) {
-        for (let page = 1; page <= 5; page++) {
-          const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/${folder}/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`);
-          inboxUrl.searchParams.append("receiverStartingDate", formatStartDate(ninetyDaysAgo));
-          inboxUrl.searchParams.append("receiverEndingDate", formatEndDate(tomorrow));
-          inboxUrl.searchParams.append("pageIndex", String(page));
-          inboxUrl.searchParams.append("pageSize", "100");
+    for (const candLdf of quickCandidates) {
+      try {
+        const testToken = Buffer.from(candLdf).toString('base64');
+        const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`;
+        const testRes = await fetch(testUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "reception": "true",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            motive: "Otro",
+            sourceDelivery: "INBOX",
+            canal: "INBOX",
+            medio: process.env.FACTURE_MEDIO_EMAIL || "recepcionfacturas@firplak.com",
+            receiverDocumentType: "CC",
+            receiverDocumentNumber: "123456789",
+            receiverName: "Verificación",
+            receiverLastName: "Contabilidad",
+            receiveDateTime: new Date().toISOString()
+          })
+        });
+        const testJson = await testRes.json().catch(() => null);
+        const isSuccess = testJson?.isSuccess === true;
+        const errDesc = (testJson?.eventItems?.[0]?.shortDescription || testJson?.message || "").toLowerCase();
+        if (isSuccess || testRes.ok || errDesc.includes("recibido") || errDesc.includes("aceptado") || errDesc.includes("reclamar")) {
+          ldfString = candLdf;
+          console.log(`[Facture] ⚡ LDF verificado instantáneamente por candidato directo: ${ldfString}`);
+          break;
+        }
+      } catch (_eQuick) {}
+    }
 
-          const inboxRes = await fetch(inboxUrl.toString(), {
-            method: "GET",
-            headers: { "Authorization": `Bearer ${token}` }
-          });
+    // Si el candidato directo no confirmó, buscar en el Inbox de Facture (PRINCIPAL y CONTADO)
+    if (!ldfString) {
+      try {
+        const now = new Date();
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(now.getDate() - 90);
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const formatStartDate = (d: Date) => d.toISOString().split('T')[0] + "T00:00:00.00";
+        const formatEndDate = (d: Date) => d.toISOString().split('T')[0] + "T23:59:59.00";
 
-          if (!inboxRes.ok) break;
-          const inboxData = await inboxRes.json();
-          const items: any[] = inboxData?.items || inboxData || [];
-          if (!items.length) break;
+        const folders = ['PRINCIPAL', 'CONTADO'];
 
-          const match = items.find(i => {
-            const num = (i.number || i.documentCode || i.ldf || "").toUpperCase();
-            const targetClean = cleanNroFactura.toUpperCase();
-            const targetRaw = rawNroFactura.toUpperCase();
-            return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num);
-          });
+        searchLoop:
+        for (const folder of folders) {
+          for (let page = 1; page <= 5; page++) {
+            const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/${folder}/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`);
+            inboxUrl.searchParams.append("receiverStartingDate", formatStartDate(ninetyDaysAgo));
+            inboxUrl.searchParams.append("receiverEndingDate", formatEndDate(tomorrow));
+            inboxUrl.searchParams.append("pageIndex", String(page));
+            inboxUrl.searchParams.append("pageSize", "100");
 
-          if (match && match.ldf) {
-            ldfString = match.ldf;
-            console.log(`[Facture] ✅ LDF oficial encontrado en carpeta ${folder} (Página ${page}) para ${nroFactura}: ${ldfString}`);
-            break searchLoop;
+            const inboxRes = await fetch(inboxUrl.toString(), {
+              method: "GET",
+              headers: { "Authorization": `Bearer ${token}` }
+            });
+
+            if (!inboxRes.ok) break;
+            const inboxData = await inboxRes.json();
+            const items: any[] = inboxData?.items || inboxData || [];
+            if (!items.length) break;
+
+            const match = items.find(i => {
+              const num = (i.number || i.documentCode || i.ldf || "").toUpperCase();
+              const targetClean = cleanNroFactura.toUpperCase();
+              const targetRaw = rawNroFactura.toUpperCase();
+              return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num);
+            });
+
+            if (match && match.ldf) {
+              ldfString = match.ldf;
+              console.log(`[Facture] ✅ LDF oficial encontrado en carpeta ${folder} (Página ${page}) para ${nroFactura}: ${ldfString}`);
+              break searchLoop;
+            }
           }
         }
+      } catch (inboxErr) {
+        console.warn("[Facture] Error buscando en Inbox:", inboxErr);
       }
-    } catch (inboxErr) {
-      console.warn("[Facture] Error buscando en Inbox:", inboxErr);
     }
 
     // Fallback por verificación si no se encontró en las páginas del Inbox.

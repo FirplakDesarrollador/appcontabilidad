@@ -187,75 +187,78 @@ export async function POST(req: NextRequest) {
                 throw new Error('Error al actualizar factura en Supabase');
             }
 
-            // Trigger SAP Draft on Approval
-            let sapResult = null;
-            if (action === 'Aprobado') {
-                try {
-                    console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
-
-                    sapResult = await createSapDraft({
-                        nit: nit || "",
-                        total: cleanValor !== null ? cleanValor : (valor || "0"),
-                        distribuciones: distribuciones || [],
-                        anticipo: anticipo === 'Con anticipo' ? 't' : 'f',
-                        observations: observaciones || 'Aprobado vía portal externo',
-                        nroFactura: nroFactura || itemId,
-                        itemId: String(itemId),
-                        consecutivo: consecutivoReal,
-                        proveedorName: proveedorReal
-                    });
-                } catch (sapErr: any) {
-                    console.error('Failed to trigger SAP Draft registration:', sapErr.message);
-                    sapResult = { success: false, error: sapErr.message };
-
-                    try {
-                        await supabase.from('log_errores_sap').insert({
-                            factura_id: Number(itemId),
-                            nro_factura: nroFactura || String(itemId),
-                            proveedor: proveedorReal,
-                            error_mensaje: sapErr.message,
-                            detalles: sapErr
-                        });
-                    } catch (logErr) {
-                        console.error('Failed to log SAP error to database:', logErr);
-                    }
-                }
-            }
-
-            // Enviar Notificación por Webhook de Power Automate
-            if (action === 'Aprobado' || action === 'Rechazado') {
-                try {
-                    const { sendApprovalNotification } = await import('@/lib/sendApprovalNotification');
-                    const responsableNombre = (await supabase
-                        .from('Registro_Facturas')
-                        .select('Responsable_de_Autorizar')
-                        .eq('ID', Number(itemId))
-                        .single()).data?.Responsable_de_Autorizar || "Responsable Desconocido";
-
-                    await sendApprovalNotification({
-                        factura: nroFactura || String(itemId),
-                        proveedor: proveedorReal,
-                        nit: nit || "",
-                        responsable_aprobacion: responsableNombre,
-                        estado_aprobacion: action === 'Aprobado' ? "Aprobada" : "Rechazada",
-                        observaciones: observaciones || (action === 'Aprobado' ? 'Aprobado vía portal externo' : 'Rechazado vía portal externo')
-                    });
-                } catch (notifyErr) {
-                    console.error('Failed to send approval notification:', notifyErr);
-                }
-            }
-
-            // Enviar evento a Facture
+            // Ejecutar en paralelo: Creación de borrador SAP, Notificación a Teams y Eventos Facture
+            let sapResult: any = null;
             let factureResult: any = null;
-            try {
-                const { triggerFactureEventForInvoice } = await import('@/lib/facture');
-                factureResult = await triggerFactureEventForInvoice(itemId, action, {
-                    observaciones
-                });
-            } catch (factureErr: any) {
-                console.error('Failed to trigger Facture event:', factureErr);
-                factureResult = { success: false, error: factureErr?.message };
-            }
+
+            const [sapSettled, _notifySettled, factureSettled] = await Promise.allSettled([
+                // 1. Borrador SAP
+                (action === 'Aprobado') ? (async () => {
+                    try {
+                        console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
+                        return await createSapDraft({
+                            nit: nit || "",
+                            total: cleanValor !== null ? cleanValor : (valor || "0"),
+                            distribuciones: distribuciones || [],
+                            anticipo: anticipo === 'Con anticipo' ? 't' : 'f',
+                            observations: observaciones || 'Aprobado vía portal externo',
+                            nroFactura: nroFactura || itemId,
+                            itemId: String(itemId),
+                            consecutivo: consecutivoReal,
+                            proveedorName: proveedorReal
+                        });
+                    } catch (sapErr: any) {
+                        console.error('Failed to trigger SAP Draft registration:', sapErr.message);
+                        try {
+                            await supabase.from('log_errores_sap').insert({
+                                factura_id: Number(itemId),
+                                nro_factura: nroFactura || String(itemId),
+                                proveedor: proveedorReal,
+                                error_mensaje: sapErr.message,
+                                detalles: sapErr
+                            });
+                        } catch (logErr) {}
+                        return { success: false, error: sapErr.message };
+                    }
+                })() : Promise.resolve(null),
+
+                // 2. Notificación Teams Webhook
+                (action === 'Aprobado' || action === 'Rechazado') ? (async () => {
+                    try {
+                        const { sendApprovalNotification } = await import('@/lib/sendApprovalNotification');
+                        const responsableNombre = (await supabase
+                            .from('Registro_Facturas')
+                            .select('Responsable_de_Autorizar')
+                            .eq('ID', Number(itemId))
+                            .single()).data?.Responsable_de_Autorizar || "Responsable Desconocido";
+
+                        await sendApprovalNotification({
+                            factura: nroFactura || String(itemId),
+                            proveedor: proveedorReal,
+                            nit: nit || "",
+                            responsable_aprobacion: responsableNombre,
+                            estado_aprobacion: action === 'Aprobado' ? "Aprobada" : "Rechazada",
+                            observaciones: observaciones || (action === 'Aprobado' ? 'Aprobado vía portal externo' : 'Rechazado vía portal externo')
+                        });
+                    } catch (notifyErr) {
+                        console.error('Failed to send approval notification:', notifyErr);
+                    }
+                })() : Promise.resolve(null),
+
+                // 3. Eventos Facture (Recibo de Bienes + Aceptación)
+                (async () => {
+                    try {
+                        const { triggerFactureEventForInvoice } = await import('@/lib/facture');
+                        return await triggerFactureEventForInvoice(itemId, action, { observaciones });
+                    } catch (factureErr: any) {
+                        console.error('Failed to trigger Facture event:', factureErr);
+                        return { success: false, error: factureErr?.message };
+                    }
+                })()
+            ]);
+
+            if (sapSettled.status === 'fulfilled') sapResult = sapSettled.value;
+            if (factureSettled.status === 'fulfilled') factureResult = factureSettled.value;
 
             return NextResponse.json({ success: true, sap: sapResult, facture: factureResult });
         }
@@ -344,75 +347,77 @@ export async function POST(req: NextRequest) {
             console.warn('SharePoint update skipped or failed (decoupled):', spErr?.message);
         }
 
-        // 4. Trigger SAP Draft Creation on Approval
-        let sapResult = null;
-        if (action === 'Aprobado') {
-            try {
-                console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
-
-                sapResult = await createSapDraft({
-                    nit: nit || "",
-                    total: cleanValor !== null ? cleanValor : (valor || "0"),
-                    distribuciones: distribuciones || [],
-                    anticipo: anticipo === 'Con anticipo' ? 't' : 'f',
-                    observations: observaciones || 'Aprobado vía portal externo',
-                    nroFactura: nroFactura || itemId,
-                    docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA',
-                    itemId: String(itemId),
-                    consecutivo: consecutivoReal,
-                    proveedorName: proveedorReal,
-                    seriesName: isDocSoporte ? 'DSE3' : undefined
-                });
-            } catch (sapErr: any) {
-                console.error('Failed to trigger SAP Draft registration:', sapErr.message);
-                sapResult = { success: false, error: sapErr.message };
-
-                // LOG ERROR TO SUPABASE
-                try {
-                    await supabase.from('log_errores_sap').insert({
-                        factura_id: Number(itemId),
-                        nro_factura: nroFactura || String(itemId),
-                        proveedor: proveedorReal,
-                        error_mensaje: sapErr.message,
-                        detalles: sapErr
-                    });
-                } catch (logErr) {
-                    console.error('Failed to log SAP error to database:', logErr);
-                }
-            }
-        }
-
-        // 5. Enviar Notificación por Webhook de Power Automate
-        if (action === 'Aprobado' || action === 'Rechazado') {
-            try {
-                const { sendApprovalNotification } = await import('@/lib/sendApprovalNotification');
-                await sendApprovalNotification({
-                    factura: nroFactura || String(itemId),
-                    proveedor: proveedorReal,
-                    nit: nit || "",
-                    responsable_aprobacion: responsableReal || spItem?.Responsable_de_Autorizar || "Responsable Desconocido",
-                    estado_aprobacion: action === 'Aprobado' ? "Aprobada" : "Rechazada",
-                    observaciones: observaciones || (action === 'Aprobado' ? 'Aprobado vía portal externo' : 'Rechazado vía portal externo')
-                });
-            } catch (notifyErr) {
-                console.error('Failed to send approval notification:', notifyErr);
-            }
-        }
-
-        // 6. Enviar evento a Facture (Aprobado o Rechazado) únicamente si es Registro_de_Facturas
+        // Ejecutar en paralelo: Creación de borrador SAP, Notificación a Teams y Eventos Facture
+        let sapResult: any = null;
         let factureResult: any = null;
-        if (!isDocSoporte && (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas')) {
-            try {
-                const { triggerFactureEventForInvoice } = await import('@/lib/facture');
-                factureResult = await triggerFactureEventForInvoice(itemId, action, {
-                    responsableName: responsableReal || spItem?.Responsable_de_Autorizar,
-                    observaciones
-                });
-            } catch (factureErr: any) {
-                console.error('Failed to trigger Facture event:', factureErr);
-                factureResult = { success: false, error: factureErr?.message };
-            }
-        }
+
+        const [sapSettled, _notifySettled, factureSettled] = await Promise.allSettled([
+            // 4. Trigger SAP Draft Creation on Approval
+            (action === 'Aprobado') ? (async () => {
+                try {
+                    console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
+                    return await createSapDraft({
+                        nit: nit || "",
+                        total: cleanValor !== null ? cleanValor : (valor || "0"),
+                        distribuciones: distribuciones || [],
+                        anticipo: anticipo === 'Con anticipo' ? 't' : 'f',
+                        observations: observaciones || 'Aprobado vía portal externo',
+                        nroFactura: nroFactura || itemId,
+                        docTypeDesc: isDocSoporte ? 'DOCUMENTO SOPORTE' : 'FACTURA',
+                        itemId: String(itemId),
+                        consecutivo: consecutivoReal,
+                        proveedorName: proveedorReal,
+                        seriesName: isDocSoporte ? 'DSE3' : undefined
+                    });
+                } catch (sapErr: any) {
+                    console.error('Failed to trigger SAP Draft registration:', sapErr.message);
+                    try {
+                        await supabase.from('log_errores_sap').insert({
+                            factura_id: Number(itemId),
+                            nro_factura: nroFactura || String(itemId),
+                            proveedor: proveedorReal,
+                            error_mensaje: sapErr.message,
+                            detalles: sapErr
+                        });
+                    } catch (logErr) {}
+                    return { success: false, error: sapErr.message };
+                }
+            })() : Promise.resolve(null),
+
+            // 5. Enviar Notificación por Webhook de Power Automate
+            (action === 'Aprobado' || action === 'Rechazado') ? (async () => {
+                try {
+                    const { sendApprovalNotification } = await import('@/lib/sendApprovalNotification');
+                    await sendApprovalNotification({
+                        factura: nroFactura || String(itemId),
+                        proveedor: proveedorReal,
+                        nit: nit || "",
+                        responsable_aprobacion: responsableReal || spItem?.Responsable_de_Autorizar || "Responsable Desconocido",
+                        estado_aprobacion: action === 'Aprobado' ? "Aprobada" : "Rechazada",
+                        observaciones: observaciones || (action === 'Aprobado' ? 'Aprobado vía portal externo' : 'Rechazado vía portal externo')
+                    });
+                } catch (notifyErr) {
+                    console.error('Failed to send approval notification:', notifyErr);
+                }
+            })() : Promise.resolve(null),
+
+            // 6. Enviar evento a Facture (Aprobado o Rechazado) únicamente si es Registro_de_Facturas
+            (!isDocSoporte && (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas')) ? (async () => {
+                try {
+                    const { triggerFactureEventForInvoice } = await import('@/lib/facture');
+                    return await triggerFactureEventForInvoice(itemId, action, {
+                        responsableName: responsableReal || spItem?.Responsable_de_Autorizar,
+                        observaciones
+                    });
+                } catch (factureErr: any) {
+                    console.error('Failed to trigger Facture event:', factureErr);
+                    return { success: false, error: factureErr?.message };
+                }
+            })() : Promise.resolve(null)
+        ]);
+
+        if (sapSettled.status === 'fulfilled') sapResult = sapSettled.value;
+        if (factureSettled.status === 'fulfilled') factureResult = factureSettled.value;
 
         return NextResponse.json({ success: true, sap: sapResult, facture: factureResult });
     } catch (error: any) {

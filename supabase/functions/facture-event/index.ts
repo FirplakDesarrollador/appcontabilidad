@@ -101,62 +101,114 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[facture-event] ✅ Autenticación exitosa en Facture`)
 
-    // 3. Buscar LDF en el Inbox de Facture (revisando carpetas PRINCIPAL y CONTADO, donde caen las NC y de Contado)
+    // 3. Verificación rápida del LDF candidato directo (resuelve en <500ms usando NIT, número y fecha de emisión)
     let ldfString = ''
-    try {
-      const now = new Date()
-      const ninetyDaysAgo = new Date()
-      ninetyDaysAgo.setDate(now.getDate() - 90)
-      const tomorrow = new Date(now)
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      const formatStartDate = (d: Date) => d.toISOString().split('T')[0] + 'T00:00:00.00'
-      const formatEndDate = (d: Date) => d.toISOString().split('T')[0] + 'T23:59:59.00'
+    const fechaBaseObj = invoice.Creado || invoice.FechaAprobacion
+    const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date()
+    const isNC = rawNroFactura.toUpperCase().startsWith('NC') || 
+                 rawNroFactura.toUpperCase().includes('NC') ||
+                 (invoice.Proveedor && invoice.Proveedor.toUpperCase().includes('NC'))
+    const primaryDocType = isNC ? 'NC-UBL' : 'FACTURA-UBL'
 
-      const folders = ['PRINCIPAL', 'CONTADO']
+    // Probar primero el LDF exacto con los datos del documento
+    const quickCandidates = [
+      `${primaryDocType}(${cleanNit};${rawNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`
+    ]
+    if (cleanNroFactura && cleanNroFactura !== rawNroFactura) {
+      quickCandidates.push(`${primaryDocType}(${cleanNit};${cleanNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`)
+    }
 
-      searchLoop:
-      for (const folder of folders) {
-        for (let page = 1; page <= 5; page++) {
-          const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/${folder}/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`)
-          inboxUrl.searchParams.append('receiverStartingDate', formatStartDate(ninetyDaysAgo))
-          inboxUrl.searchParams.append('receiverEndingDate', formatEndDate(tomorrow))
-          inboxUrl.searchParams.append('pageIndex', String(page))
-          inboxUrl.searchParams.append('pageSize', '100')
-
-          const inboxRes = await fetch(inboxUrl.toString(), {
-            method: 'GET',
-            headers: { Authorization: `Bearer ${token}` }
+    for (const candLdf of quickCandidates) {
+      try {
+        const testToken = btoa(candLdf)
+        const testUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(testToken)}`
+        const testRes = await fetch(testUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'reception': 'true',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            motive: 'Otro',
+            sourceDelivery: 'INBOX',
+            canal: 'INBOX',
+            medio: Deno.env.get('FACTURE_MEDIO_EMAIL') ?? 'recepcionfacturas@firplak.com',
+            receiverDocumentType: 'CC',
+            receiverDocumentNumber: '123456789',
+            receiverName: 'Verificación',
+            receiverLastName: 'Contabilidad',
+            receiveDateTime: new Date().toISOString()
           })
+        })
+        const testJson = await testRes.json().catch(() => null)
+        const isSuccess = testJson?.isSuccess === true
+        const errDesc = (testJson?.eventItems?.[0]?.shortDescription || testJson?.message || '').toLowerCase()
+        if (isSuccess || testRes.ok || errDesc.includes('recibido') || errDesc.includes('aceptado') || errDesc.includes('reclamar')) {
+          ldfString = candLdf
+          console.log(`[facture-event] ⚡ LDF confirmado instantáneamente por candidato directo: ${ldfString}`)
+          break
+        }
+      } catch (_eQuick) {}
+    }
 
-          if (!inboxRes.ok) {
-            console.warn(`[facture-event] Inbox ${folder} página ${page} falló (${inboxRes.status})`)
-            break
-          }
+    // Si el candidato directo no confirmó, buscar en el Inbox de Facture (PRINCIPAL y CONTADO)
+    if (!ldfString) {
+      try {
+        const now = new Date()
+        const ninetyDaysAgo = new Date()
+        ninetyDaysAgo.setDate(now.getDate() - 90)
+        const tomorrow = new Date(now)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        const formatStartDate = (d: Date) => d.toISOString().split('T')[0] + 'T00:00:00.00'
+        const formatEndDate = (d: Date) => d.toISOString().split('T')[0] + 'T23:59:59.00'
 
-          const inboxData = await inboxRes.json()
-          const items: any[] = inboxData?.items || inboxData || []
-          if (!items.length) {
-            break
-          }
+        const folders = ['PRINCIPAL', 'CONTADO']
 
-          console.log(`[facture-event] Inbox ${folder} página ${page}: ${items.length} items`)
+        searchLoop:
+        for (const folder of folders) {
+          for (let page = 1; page <= 5; page++) {
+            const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/${folder}/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`)
+            inboxUrl.searchParams.append('receiverStartingDate', formatStartDate(ninetyDaysAgo))
+            inboxUrl.searchParams.append('receiverEndingDate', formatEndDate(tomorrow))
+            inboxUrl.searchParams.append('pageIndex', String(page))
+            inboxUrl.searchParams.append('pageSize', '100')
 
-          const match = items.find((i: any) => {
-            const num = (i.number || i.documentCode || i.ldf || '').toUpperCase()
-            const targetClean = cleanNroFactura.toUpperCase()
-            const targetRaw = rawNroFactura.toUpperCase()
-            return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num)
-          })
+            const inboxRes = await fetch(inboxUrl.toString(), {
+              method: 'GET',
+              headers: { Authorization: `Bearer ${token}` }
+            })
 
-          if (match && match.ldf) {
-            ldfString = match.ldf
-            console.log(`[facture-event] ✅ LDF encontrado en carpeta ${folder} página ${page}: ${ldfString}`)
-            break searchLoop
+            if (!inboxRes.ok) {
+              console.warn(`[facture-event] Inbox ${folder} página ${page} falló (${inboxRes.status})`)
+              break
+            }
+
+            const inboxData = await inboxRes.json()
+            const items: any[] = inboxData?.items || inboxData || []
+            if (!items.length) {
+              break
+            }
+
+            console.log(`[facture-event] Inbox ${folder} página ${page}: ${items.length} items`)
+
+            const match = items.find((i: any) => {
+              const num = (i.number || i.documentCode || i.ldf || '').toUpperCase()
+              const targetClean = cleanNroFactura.toUpperCase()
+              const targetRaw = rawNroFactura.toUpperCase()
+              return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num)
+            })
+
+            if (match && match.ldf) {
+              ldfString = match.ldf
+              console.log(`[facture-event] ✅ LDF encontrado en carpeta ${folder} página ${page}: ${ldfString}`)
+              break searchLoop
+            }
           }
         }
+      } catch (_e) {
+        console.warn('[facture-event] Error buscando en Inbox:', _e)
       }
-    } catch (_e) {
-      console.warn('[facture-event] Error buscando en Inbox:', _e)
     }
 
     // Fallback: construir LDF con verificación de múltiples tipos de documento, variantes de número y fechas
