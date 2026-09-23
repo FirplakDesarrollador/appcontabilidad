@@ -46,8 +46,8 @@ export async function POST(req: Request) {
         // 2. Fetch rows with attachments not yet processed
         const { data: facturas, error: dbError } = await supabaseAdmin
             .from('Registro_Facturas')
-            .select('ID, sharepoint_id, "Datos adjuntos"')
-            .gt('"Datos adjuntos"', 0)
+            .select('ID, sharepoint_id, Datos_adjuntos')
+            .gt('Datos_adjuntos', 0)
             .is('documentos', null)
             .order('ID', { ascending: true })
             .range(offset, offset + limit - 1);

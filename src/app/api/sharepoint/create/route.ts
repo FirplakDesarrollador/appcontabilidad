@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
             Observaciones: `${tipoLabel} cargada directamente en el portal`,
             fp: firstFileUrl,
             documentos: firstFileUrl,
-            "Datos adjuntos": files.length,
+            Datos_adjuntos: files.length,
             adjuntos_url: JSON.stringify(adjuntosData),
             Creado: new Date().toISOString(),
             updated_at: new Date().toISOString()
