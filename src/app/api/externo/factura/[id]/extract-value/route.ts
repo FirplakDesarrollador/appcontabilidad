@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGraphClient, findExternalInvoiceDocument, getSharePointInvoiceById } from '@/lib/sharepoint';
+import { findExternalInvoiceDocument, getGraphClient } from '@/lib/sharepoint';
 import { supabase } from '@/lib/supabaseClient';
 import { PdfReader } from 'pdfreader';
 
@@ -87,26 +87,8 @@ export async function POST(
             }
         }
 
-        // 2. Fallback to FPKContabilidad Attachments
-        if (!fileBuffer && requestFileName && requestFileName !== 'Ver en SharePoint') {
-            console.log(`[Auto-Extract] Falling back to FPKContabilidad attachments for ${requestFileName}...`);
-            try {
-                const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-                const siteId = siteResponse.id;
-                const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-                const list = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
-                
-                if (list) {
-                    const attResponse = await client.api(`/sites/${siteId}/lists/${list.id}/items/${itemId}/attachments/${requestFileName}/$value`).get();
-                    if (attResponse) {
-                        fileBuffer = attResponse;
-                        finalFileName = requestFileName;
-                    }
-                }
-            } catch (attErr) {
-                console.warn(`[Auto-Extract] Failed to fetch attachment from FPKContabilidad:`, attErr);
-            }
-        }
+        // 2. Fallback: intentar buscar en ITPowerApps si no se cargó aún
+        // (El fallback de SharePoint FPKContabilidad fue removido — las facturas ahora vienen de Facture/Supabase)
 
         if (!fileBuffer) {
             return NextResponse.json({ error: 'No se ha encontrado factura en PDF para extraer valor' }, { status: 404 });
@@ -198,24 +180,7 @@ export async function POST(
             extractedNumber = 0;
         }
 
-        // Update SharePoint
-        console.log(`[Auto-Extract] Updating SharePoint item ${itemId} with new value: ${extractedNumber}`);
-        try {
-            const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-            const siteId = siteResponse.id;
-            const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-            const list = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
-            
-            if (list) {
-                await client.api(`/sites/${siteId}/lists/${list.id}/items/${itemId}/fields`).patch({
-                    Valortotal: extractedNumber
-                });
-            }
-        } catch (spErr) {
-            console.error(`[Auto-Extract] Failed to update SharePoint:`, spErr);
-        }
-
-        // Update Supabase
+        // Update Supabase (fuente de verdad)
         console.log(`[Auto-Extract] Updating Supabase item ${itemId} with new value: ${extractedNumber}`);
         try {
             await supabase

@@ -137,7 +137,130 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: true, sap: sapResult });
         }
 
-        // --- For Registro_de_Facturas (SharePoint flow) ---
+        // --- For Registro_de_Facturas ---
+        // Determinar si es un ID nativo de Supabase (generado por Facture) o un ID legacy de SharePoint
+        const isSupabaseNativeId = Number(itemId) > 1000000;
+
+        if (isSupabaseNativeId) {
+            // ─── FLUJO SUPABASE DIRECTO (facturas creadas por Facture) ───
+            let consecutivoReal = String(itemId);
+            let proveedorReal = "Proveedor Desconocido";
+
+            try {
+                const supabaseUpdate: any = {
+                    Aprobacion_Doliente: action,
+                    updated_at: new Date().toISOString()
+                };
+                if (action === 'Aprobado') {
+                    supabaseUpdate.FechaAprobacion = new Date().toISOString();
+                }
+                if (cleanValor !== null) {
+                    supabaseUpdate.Valor_total = cleanValor;
+                }
+                if (observaciones) {
+                    supabaseUpdate.Observaciones = observaciones;
+                }
+                if (anticipo) {
+                    supabaseUpdate.tiene_anticipo = anticipo;
+                }
+                if (jsonDist) {
+                    supabaseUpdate.centro_costos = jsonDist;
+                    supabaseUpdate.tablaCostos = jsonDist;
+                }
+
+                const { data: updatedInvoice, error: supaErr } = await supabase
+                    .from('Registro_Facturas')
+                    .update(supabaseUpdate)
+                    .eq('ID', Number(itemId))
+                    .select('Consecutivo, Proveedor, Responsable_de_Autorizar')
+                    .single();
+
+                if (supaErr) throw supaErr;
+
+                if (updatedInvoice) {
+                    if (updatedInvoice.Consecutivo) consecutivoReal = String(updatedInvoice.Consecutivo);
+                    if (updatedInvoice.Proveedor) proveedorReal = updatedInvoice.Proveedor;
+                }
+                console.log(`Supabase updated for Registro_Facturas item ${itemId} (Supabase-native)`);
+            } catch (supaErr) {
+                console.error('Failed to update Supabase for Registro_Facturas:', supaErr);
+                throw new Error('Error al actualizar factura en Supabase');
+            }
+
+            // Trigger SAP Draft on Approval
+            let sapResult = null;
+            if (action === 'Aprobado') {
+                try {
+                    console.log(`Externo Accion: Triggering SAP Draft for item ${itemId} (Consecutivo: ${consecutivoReal})...`);
+
+                    sapResult = await createSapDraft({
+                        nit: nit || "",
+                        total: cleanValor !== null ? cleanValor : (valor || "0"),
+                        distribuciones: distribuciones || [],
+                        anticipo: anticipo === 'Con anticipo' ? 't' : 'f',
+                        observations: observaciones || 'Aprobado vía portal externo',
+                        nroFactura: nroFactura || itemId,
+                        itemId: String(itemId),
+                        consecutivo: consecutivoReal,
+                        proveedorName: proveedorReal
+                    });
+                } catch (sapErr: any) {
+                    console.error('Failed to trigger SAP Draft registration:', sapErr.message);
+                    sapResult = { success: false, error: sapErr.message };
+
+                    try {
+                        await supabase.from('log_errores_sap').insert({
+                            factura_id: Number(itemId),
+                            nro_factura: nroFactura || String(itemId),
+                            proveedor: proveedorReal,
+                            error_mensaje: sapErr.message,
+                            detalles: sapErr
+                        });
+                    } catch (logErr) {
+                        console.error('Failed to log SAP error to database:', logErr);
+                    }
+                }
+            }
+
+            // Enviar Notificación por Webhook de Power Automate
+            if (action === 'Aprobado' || action === 'Rechazado') {
+                try {
+                    const { sendApprovalNotification } = await import('@/lib/sendApprovalNotification');
+                    const responsableNombre = (await supabase
+                        .from('Registro_Facturas')
+                        .select('Responsable_de_Autorizar')
+                        .eq('ID', Number(itemId))
+                        .single()).data?.Responsable_de_Autorizar || "Responsable Desconocido";
+
+                    await sendApprovalNotification({
+                        factura: nroFactura || String(itemId),
+                        proveedor: proveedorReal,
+                        nit: nit || "",
+                        responsable_aprobacion: responsableNombre,
+                        estado_aprobacion: action === 'Aprobado' ? "Aprobada" : "Rechazada",
+                        observaciones: observaciones || (action === 'Aprobado' ? 'Aprobado vía portal externo' : 'Rechazado vía portal externo')
+                    });
+                } catch (notifyErr) {
+                    console.error('Failed to send approval notification:', notifyErr);
+                }
+            }
+
+            // Enviar evento a Facture
+            let factureResult: any = null;
+            try {
+                const { triggerFactureEventForInvoice } = await import('@/lib/facture');
+                factureResult = await triggerFactureEventForInvoice(itemId, action, {
+                    observaciones
+                });
+            } catch (factureErr: any) {
+                console.error('Failed to trigger Facture event:', factureErr);
+                factureResult = { success: false, error: factureErr?.message };
+            }
+
+            return NextResponse.json({ success: true, sap: sapResult, facture: factureResult });
+        }
+
+        // ─── FLUJO LEGACY SHAREPOINT (IDs cortos de SharePoint) ───
         const updatePayload: any = {};
 
         updatePayload.Aprobacion_Doliente = action;
@@ -284,3 +407,4 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+

@@ -8,13 +8,7 @@ const supabase = createClient(
     (serviceKey && serviceKey !== 'REEMPLAZAR_CON_TU_SERVICE_ROLE_KEY') ? serviceKey : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// TTL del caché de pendientes: 3 minutos
-// Después de este tiempo, el próximo load disparará un sync de fondo con SharePoint
-const PENDING_CACHE_TTL_MS = 3 * 60 * 1000;
-let lastPendingSync: number = 0;
-let pendingSyncInProgress = false;
-
-// Caché en memoria para contadores (30s) para evitar 3 escaneos completos de tabla en cada request
+// TTL del caché de contadores: 30 segundos
 interface CachedCounts {
     pendingCount: number;
     processedCount: number;
@@ -104,49 +98,6 @@ function mapSharePointInvoiceToSupabase(item: any) {
     };
 }
 
-/**
- * Sincroniza en segundo plano los ítems "Por Aprobar" entre SharePoint y Supabase.
- * Solo trae pendientes de SharePoint → Supabase (lectura ligera, sin patch ni cron pesado).
- * Se dispara sin bloquear la respuesta HTTP → el usuario recibe los datos de Supabase
- * inmediatamente, y la próxima carga ya tendrá el estado actualizado.
- */
-async function syncPendingFromSharePointInBackground(reqUrl: string) {
-    if (pendingSyncInProgress) return;
-    pendingSyncInProgress = true;
-    try {
-        console.log('[BG Sync] Lightweight pending-only sync starting...');
-        const { fetchAllSharePointItems } = await import('@/lib/sharepoint');
-        const pendingFilter = "fields/Aprobacion_Doliente eq 'Por Aprobar'";
-        const spItems = await fetchAllSharePointItems('Registro_de_Facturas', 500, pendingFilter);
-        
-        if (spItems.length > 0) {
-            // Bulk upsert to Supabase in chunks of 200
-            const mapped = spItems.map((item: any) => mapSharePointInvoiceToSupabase(item));
-            for (let i = 0; i < mapped.length; i += 200) {
-                const chunk = mapped.slice(i, i + 200);
-                const cleanChunk = chunk.map((row: any) => {
-                    const clean = { ...row };
-                    // Don't overwrite fields that only Supabase owns
-                    if (clean.Responsable_de_Autorizar === null) delete clean.Responsable_de_Autorizar;
-                    if (clean.FechaProcesado === null) delete clean.FechaProcesado;
-                    if (!clean.DigitadoPor) delete clean.DigitadoPor;
-                    return clean;
-                });
-                await supabase.from('Registro_Facturas').upsert(cleanChunk, { onConflict: 'ID' });
-            }
-            console.log(`[BG Sync] Upserted ${spItems.length} pending items to Supabase.`);
-        } else {
-            console.log('[BG Sync] No pending items found in SharePoint.');
-        }
-
-        lastPendingSync = Date.now();
-    } catch (err) {
-        console.error('[BG Sync] Error during lightweight pending sync:', err);
-    } finally {
-        pendingSyncInProgress = false;
-    }
-}
-
 
 export async function GET(req: Request) {
     try {
@@ -159,23 +110,10 @@ export async function GET(req: Request) {
         const offset = parseInt(searchParams.get('offset') || '0');
 
         // ─────────────────────────────────────────────────────────────────────
-        // PENDIENTES: Supabase inmediato + sync de fondo cada 3 minutos
+        // PENDIENTES: Supabase es la fuente de verdad (las facturas llegan vía Facture)
         // ─────────────────────────────────────────────────────────────────────
         if (pending) {
-            const cacheAge = Date.now() - lastPendingSync;
-            const cacheStale = cacheAge > PENDING_CACHE_TTL_MS;
-
-            // Si refresh explícito, esperar la sincronización antes de responder
-            if (refresh) {
-                console.log('[API] Explicit refresh requested — syncing from SharePoint...');
-                await syncPendingFromSharePointInBackground(req.url);
-            } else if (cacheStale && !pendingSyncInProgress) {
-                // Caché expirado → disparar sync en fondo SIN bloquear la respuesta
-                console.log(`[API] Cache stale (${Math.round(cacheAge / 1000)}s) — triggering background sync...`);
-                syncPendingFromSharePointInBackground(req.url); // fire-and-forget
-            }
-
-            // Servir desde Supabase (rápido en 1 sola consulta)
+            // Servir desde Supabase directamente
             const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, DigitadoPor, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
             const fetchLimit = limit > 0 ? limit : 1000;
 
@@ -198,9 +136,7 @@ export async function GET(req: Request) {
                 processedCount: counts.processedCount,
                 toProcessCount: counts.toProcessCount,
                 items: data,
-                source: 'cache',
-                syncStatus: refresh ? 'synced' : (cacheStale ? 'syncing' : 'fresh'),
-                lastSync: lastPendingSync,
+                source: 'supabase',
             });
         }
 
