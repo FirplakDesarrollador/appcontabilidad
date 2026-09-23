@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
-import { getGraphClient, createSharePointFolder, uploadFileToSharePoint, createSharePointListItem, getSharePointRESTToken, ensureSharePointUserByEmail } from '@/lib/sharepoint';
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,27 +14,20 @@ export async function POST(req: NextRequest) {
 
         const nroFactura = (formData.get('nroFactura') as string || '').trim();
         const nit = (formData.get('nit') as string || '').trim();
-        const proveedor = formData.get('proveedor') as string;
-        const responsableEmail = formData.get('responsableEmail') as string;
+        const proveedor = (formData.get('proveedor') as string || '').trim();
+        const responsableEmail = (formData.get('responsableEmail') as string || '').trim();
         const files = formData.getAll('files') as File[];
-        const valorTotal = formData.get('valorTotal') as string;
+        const valorTotal = (formData.get('valorTotal') as string || '').trim();
 
         if (!nroFactura || !nit || !files || files.length === 0) {
             return NextResponse.json({ error: 'Faltan campos obligatorios (Número, NIT o Archivos)' }, { status: 400 });
         }
 
-        const client = await getGraphClient();
+        if (!responsableEmail) {
+            return NextResponse.json({ error: 'Debes seleccionar un responsable para la factura.' }, { status: 400 });
+        }
 
-        // 1. Obtener Site ID de FPKContabilidad (para la lista)
-        const siteFPK = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-        const siteIdFPK = siteFPK.id;
-
-        // 2. Verificar si la factura ya existe para este proveedor (NIT)
-        // Consultamos Supabase (indexado y confiable) en vez del filtro compuesto
-        // de Graph API, que en listas grandes de SharePoint puede devolver
-        // resultados incompletos sin avisar. Comparamos normalizado (sin
-        // espacios sueltos, sin digito de verificacion del NIT) porque datos
-        // historicos tienen esas inconsistencias.
+        // 1. Verificar si la factura ya existe para este proveedor (NIT)
         const normalizedNit = nit.replace(/[^0-9]/g, '');
         const normalizedNro = nroFactura.toUpperCase();
 
@@ -60,32 +52,26 @@ export async function POST(req: NextRequest) {
             }, { status: 400 });
         }
 
-        // 3. Obtener Site ID de ITPowerApps (para el PDF)
-        const siteIT = await client.api('/sites/firplaksa.sharepoint.com:/sites/ITPowerApps').get();
-        const siteIdIT = siteIT.id;
-
-        // Normalizar NIT para la carpeta y búsqueda (quitar puntos, guiones y DV si es necesario)
+        // Normalizar NIT para el almacenamiento
         const cleanNit = nit.split('-')[0].replace(/[^0-9]/g, '');
 
-        // 3. (REMOVED) Carpeta en ITPowerApps y carga a SharePoint para evitar limite de 4MB
-        // Se suben los archivos a Supabase Storage directamente
+        // 2. Subir archivos directamente a Supabase Storage
         let firstFileUrl = "";
-        let adjuntosData = [];
+        const adjuntosData = [];
         
         for (let i = 0; i < files.length; i++) {
             const fileItem = files[i];
             const fileBuffer = await fileItem.arrayBuffer();
-            
-            const fileExtension = fileItem.name.split('.').pop() || '';
             const safeName = fileItem.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-            const uniqueFileName = `${cleanNit}_${nroFactura}_${Date.now()}_${i}_${safeName}`;
+            const safeNro = nroFactura.replace(/[^a-zA-Z0-9.-]/g, '_');
+            const uniqueFileName = `${cleanNit}_${safeNro}_${Date.now()}_${i}_${safeName}`;
             
             const { error: uploadError } = await supabaseAdmin
                 .storage
                 .from('adjuntos_facturas')
                 .upload(uniqueFileName, fileBuffer, {
                     contentType: fileItem.type || 'application/octet-stream',
-                    upsert: false
+                    upsert: true
                 });
 
             if (uploadError) {
@@ -97,7 +83,7 @@ export async function POST(req: NextRequest) {
                 .storage
                 .from('adjuntos_facturas')
                 .getPublicUrl(uniqueFileName);
-                
+
             const fileUrl = publicUrlData.publicUrl;
             
             adjuntosData.push({
@@ -111,200 +97,188 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // 5. Resolver Responsable (Lookup ID) asegurando que exista en SharePoint
-        let responsableLookupId = null;
-        let responsableName = null;
-        if (responsableEmail) {
-            try {
-                const spUser = await ensureSharePointUserByEmail(responsableEmail);
-                if (spUser) {
-                    responsableLookupId = spUser.id;
-                    responsableName = spUser.title;
-                } else {
-                    console.warn('[SharePoint] No se pudo asegurar el responsable por email:', responsableEmail);
-                    return NextResponse.json({ error: `El correo responsable (${responsableEmail}) no es válido o no existe en SharePoint.` }, { status: 400 });
+        // 3. Resolver nombre del responsable desde usuarios o proveedores
+        let responsableName: string | null = null;
+        try {
+            const { data: userMatch } = await supabaseAdmin
+                .from('usuarios')
+                .select('nombre')
+                .ilike('correo', responsableEmail)
+                .maybeSingle();
+
+            if (userMatch?.nombre) {
+                responsableName = userMatch.nombre;
+            } else {
+                const { data: provMatch } = await supabaseAdmin
+                    .from('Proveedores_con_Responsable')
+                    .select('Responsable, Autorizador')
+                    .ilike('Correo', responsableEmail)
+                    .limit(1);
+
+                if (provMatch && provMatch.length > 0) {
+                    responsableName = provMatch[0].Responsable || provMatch[0].Autorizador;
                 }
-            } catch (e) {
-                console.warn('[SharePoint] Error resolviendo responsable por email:', responsableEmail, e);
-                return NextResponse.json({ error: `Ocurrió un error validando al responsable (${responsableEmail}).` }, { status: 400 });
             }
-        } else {
-            return NextResponse.json({ error: 'Debes seleccionar un responsable para la factura.' }, { status: 400 });
+        } catch (_nameErr) {}
+
+        if (!responsableName) {
+            responsableName = responsableEmail.split('@')[0].replace('.', ' ');
         }
 
-        const fields: Record<string, any> = {
-            Title: nit, 
-            Nro_Factura: nroFactura,
+        // 4. Calcular siguiente consecutivo
+        let nextConsecutivoNum: number | null = null;
+        try {
+            const { data: lastRows } = await supabaseAdmin
+                .from('Registro_Facturas')
+                .select('Consecutivo')
+                .not('Consecutivo', 'is', null)
+                .order('ID', { ascending: false })
+                .limit(30);
+
+            if (lastRows && lastRows.length > 0) {
+                let maxNum = 103000;
+                for (const row of lastRows) {
+                    if (row.Consecutivo) {
+                        const num = parseInt(String(row.Consecutivo).replace(/\D/g, ''), 10);
+                        if (!isNaN(num) && num > maxNum) maxNum = num;
+                    }
+                }
+                nextConsecutivoNum = maxNum + 1;
+            }
+        } catch (_cErr) {}
+
+        // 5. Guardar en Supabase (Registro_Facturas)
+        const generatedId = Number(BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000)));
+        const isNC = nroFactura.toUpperCase().startsWith('NC');
+        const tipoLabel = isNC ? 'Nota Crédito' : 'Factura';
+
+        const invoiceData: Record<string, any> = {
+            ID: generatedId,
+            Consecutivo: nextConsecutivoNum ? String(nextConsecutivoNum) : null,
+            Nit: cleanNit || nit,
             Proveedor: proveedor,
+            Nro_Factura: nroFactura,
+            Valor_total: valorTotal || '0',
+            Responsable_de_Autorizar: responsableName,
             Aprobacion_Doliente: 'Por Aprobar',
             Gestion_Contabilidad: 'Por Procesar',
-            fp: firstFileUrl
+            Observaciones: `${tipoLabel} cargada directamente en el portal`,
+            fp: firstFileUrl,
+            documentos: firstFileUrl,
+            "Datos adjuntos": files.length,
+            adjuntos_url: JSON.stringify(adjuntosData),
+            Creado: new Date().toISOString(),
+            updated_at: new Date().toISOString()
         };
 
-        if (valorTotal) {
-            fields['Valortotal'] = valorTotal;
+        const { error: insertError } = await supabaseAdmin
+            .from('Registro_Facturas')
+            .insert(invoiceData);
+
+        if (insertError) {
+            console.error('Error insertando en Registro_Facturas:', insertError);
+            throw new Error(`Error al registrar en base de datos: ${insertError.message}`);
         }
 
-        if (responsableLookupId) {
-            fields['ResponsabledeAutorizarLookupId'] = responsableLookupId;
+        // 6. Auto-registrar proveedor en Proveedores_con_Responsable si no existe
+        if (responsableEmail && responsableName) {
+            try {
+                const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
+                const { data: existingProvider } = await supabaseAdmin
+                    .from("Proveedores_con_Responsable")
+                    .select('"Nit"')
+                    .like("Nit", `${baseNit}%`)
+                    .limit(1);
+
+                if (!existingProvider || existingProvider.length === 0) {
+                    await supabaseAdmin.from("Proveedores_con_Responsable").insert({
+                        "Nit": nit,
+                        "Nombre de socio de negocios": proveedor,
+                        "Responsable": responsableName,
+                        "Autorizador": responsableName,
+                        "Correo": responsableEmail.toLowerCase(),
+                        "Creado": new Date().toISOString()
+                    });
+                    console.log(`[Supabase] Registrado nuevo proveedor con responsable: ${nit} - ${responsableName}`);
+                }
+            } catch (providerErr) {
+                console.error("[Supabase] Error registrando Proveedor_con_Responsable:", providerErr);
+            }
         }
 
-        const newItem = await createSharePointListItem(siteIdFPK, 'Registro_de_Facturas', fields);
-        const newItemId = newItem.id;
+        // 7. Notificar a Power Automate (Teams) con el enlace de aprobación
+        if (responsableEmail) {
+            try {
+                const POWER_AUTOMATE_WEBHOOK = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/13/workflows/8dee7c5363ad40c9957ff2439f937723/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TuYk4u4aCqx_kWf4Ix5vS-MeNeUnvJqK6ikrRjyxiss";
+                const numVal = parseFloat(String(valorTotal).replace(/[^0-9.-]+/g, '')) || 0;
+                const formattedVal = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(numVal);
+                const url = `https://appcontabilidad.vercel.app/externo/factura/${generatedId}`;
+                const tipoDocText = isNC ? 'la Nota Crédito' : 'la factura';
+                const mensaje = `Se ha recibido ${tipoDocText} <strong>${nroFactura}</strong> de <strong>${proveedor}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar ${tipoDocText}</strong></a><br><br>Enlace directo: ${url}`;
 
-        // 7. (REMOVED) Adjuntar a SharePoint REST API (reemplazado por Supabase Storage)
-        if (adjuntosData.length > 0) {
-            fields['adjuntos_url'] = JSON.stringify(adjuntosData);
+                await fetch(POWER_AUTOMATE_WEBHOOK, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        responsable: responsableEmail.toLowerCase(),
+                        url: url,
+                        mensaje: mensaje,
+                        link: `<a href="${url}">Haga clic aquí para revisar y aprobar ${tipoDocText}</a>`,
+                        titulo: `${tipoLabel} pendiente por aprobar - ${nroFactura}`,
+                        contenido: mensaje
+                    })
+                });
+            } catch (notifyErr) {
+                console.error("Error notificando a Power Automate:", notifyErr);
+            }
         }
 
-        // 8. Upsert en Supabase para visibilidad inmediata
+        // 8. Auto-aprobación por regla de proveedor
         try {
-            const invoiceData: Record<string, any> = {
-                ID: Number(newItemId),
-                sharepoint_id: String(newItemId),
-                Nit: nit,
-                Proveedor: proveedor,
-                Nro_Factura: nroFactura,
-                Aprobacion_Doliente: 'Por Aprobar',
-                Gestion_Contabilidad: 'Por Procesar',
-                Valor_total: valorTotal || '0',
-                fp: firstFileUrl,
-                documentos: firstFileUrl,
-                "Datos adjuntos": files.length,
-                adjuntos_url: fields['adjuntos_url'] || null,
-                Creado: new Date().toISOString(),
-            };
-            // Include the responsible person immediately so the invoice never
-            // appears as "Sin asignar" while waiting for the next sync cycle.
-            if (responsableName) {
-                invoiceData.Responsable_de_Autorizar = responsableName;
-            }
-
-            const { error: supabaseError } = await supabaseAdmin
+            const { data: checkData } = await supabaseAdmin
                 .from('Registro_Facturas')
-                .upsert(invoiceData, { onConflict: 'ID' });
+                .select('Aprobacion_Doliente, centro_costos')
+                .eq('ID', generatedId)
+                .single();
 
-            if (supabaseError) {
-                console.error('Error al sincronizar con Supabase inmediatamente:', supabaseError.message);
-            } else {
-                // Auto-create Proveedor en Proveedores_con_Responsable si no existe
+            if (checkData && checkData.Aprobacion_Doliente === 'Aprobado') {
                 try {
-                    const { data: provData, error: provCheckError } = await supabaseAdmin
-                        .from('Proveedores_con_Responsable')
-                        .select('Nit')
-                        .eq('Nit', nit)
-                        .maybeSingle();
-                        
-                    if (!provCheckError && !provData) {
-                        const { error: provInsertError } = await supabaseAdmin
-                            .from('Proveedores_con_Responsable')
-                            .insert({
-                                "Nit": nit,
-                                "Nombre de socio de negocios": proveedor,
-                                "Responsable": responsableName,
-                                "Autorizador": responsableName, // By default the authorizer is the responsible
-                                "Creado": new Date().toISOString()
-                            });
-                        if (provInsertError) {
-                            console.error('Error auto-creando Proveedor_con_Responsable:', provInsertError.message);
-                        } else {
-                            console.log(`Proveedor auto-creado en Proveedores_con_Responsable: ${proveedor} (${nit})`);
-                        }
-                    }
-                } catch (provEx) {
-                    console.error('Exception auto-creando Proveedor_con_Responsable:', provEx);
-                }
-
-                // --- Auto-approval detection ---
-                try {
-                    const { data: checkData } = await supabaseAdmin
-                        .from('Registro_Facturas')
-                        .select('Aprobacion_Doliente, centro_costos')
-                        .eq('ID', Number(newItemId))
-                        .single();
-                        
-                    if (checkData && checkData.Aprobacion_Doliente === 'Aprobado') {
-                        console.log(`[Auto-Approve] Invoice ${newItemId} auto-approved by DB trigger.`);
-                        
-                        try {
-                            const listsResponse = await client.api(`/sites/${siteIdFPK}/lists`).get();
-                            const listId = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas')?.id;
-                            
-                            if (listId) {
-                                await client.api(`/sites/${siteIdFPK}/lists/${listId}/items/${newItemId}/fields`).patch({
-                                    Aprobacion_Doliente: 'Aprobado',
-                                    Observaciones: 'Aprobado automáticamente',
-                                    centro_costos: checkData.centro_costos,
-                                    FechaAprobacion: new Date().toISOString()
-                                });
-                            }
-                        } catch(spErr: any) {
-                            console.error('[Auto-Approve] Error patching SharePoint:', spErr);
-                        }
-                        
-                        try {
-                            const { createSapDraft } = await import('@/lib/sap');
-                            await createSapDraft({
-                                nit: nit || "",
-                                total: valorTotal || "0",
-                                distribuciones: checkData.centro_costos ? JSON.parse(checkData.centro_costos) : [],
-                                anticipo: 'f',
-                                observations: 'Aprobado automáticamente por regla de proveedor',
-                                nroFactura: nroFactura || String(newItemId),
-                                docTypeDesc: 'FACTURA',
-                                itemId: String(newItemId),
-                                consecutivo: String(newItemId),
-                                proveedorName: proveedor || "Proveedor Desconocido"
-                            });
-                        } catch (sapErr: any) {
-                            console.error('[Auto-Approve] Error en SAP:', sapErr);
-                            await supabaseAdmin.from('log_errores_sap').insert({
-                                factura_id: Number(newItemId),
-                                nro_factura: nroFactura || String(newItemId),
-                                proveedor: proveedor,
-                                error_mensaje: sapErr.message,
-                                detalles: sapErr
-                            });
-                        }
-                    }
-                } catch(e: any) {
-                    console.error('[Auto-Approve] Error in post-create auto-approve logic:', e);
-                }
-                // -------------------------------
-            }
-
-            // Auto-registrar proveedor si no existe
-            if (responsableEmail && responsableName) {
-                try {
-                    const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
-                    const { data: existingProvider, error: lookupError } = await supabaseAdmin
-                        .from("Proveedores_con_Responsable")
-                        .select('"Nit"')
-                        .like("Nit", `${baseNit}%`)
-                        .limit(1);
-
-                    if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
-                        await supabaseAdmin.from("Proveedores_con_Responsable").insert({
-                            "Nit": nit,
-                            "Nombre de socio de negocios": proveedor,
-                            "Responsable": responsableName,
-                            "Autorizador": responsableName,
-                            "Correo": responsableEmail,
-                            "Creado": new Date().toISOString()
-                        });
-                        console.log(`[Supabase] Registrado nuevo proveedor con responsable: ${nit} - ${responsableName}`);
-                    }
-                } catch (providerErr) {
-                    console.error("[Supabase] Error registrando Proveedor_con_Responsable:", providerErr);
+                    const { createSapDraft } = await import('@/lib/sap');
+                    await createSapDraft({
+                        nit: nit || "",
+                        total: valorTotal || "0",
+                        distribuciones: checkData.centro_costos ? JSON.parse(checkData.centro_costos) : [],
+                        anticipo: 'f',
+                        observations: 'Aprobado automáticamente por regla de proveedor',
+                        nroFactura: nroFactura || String(generatedId),
+                        docTypeDesc: isNC ? 'NOTA CREDITO' : 'FACTURA',
+                        itemId: String(generatedId),
+                        consecutivo: String(nextConsecutivoNum || generatedId),
+                        proveedorName: proveedor || "Proveedor Desconocido"
+                    });
+                } catch (sapErr: any) {
+                    console.error('[Auto-Approve] Error en SAP:', sapErr);
+                    await supabaseAdmin.from('log_errores_sap').insert({
+                        factura_id: generatedId,
+                        nro_factura: nroFactura || String(generatedId),
+                        proveedor: proveedor,
+                        error_mensaje: sapErr.message,
+                        detalles: sapErr
+                    });
                 }
             }
-        } catch (supabaseCatchError) {
-            console.error('Error fatal al sincronizar con Supabase:', supabaseCatchError);
-        }
+        } catch (_autoErr) {}
 
         return NextResponse.json({ 
             success: true, 
-            item: newItem
+            item: {
+                id: generatedId,
+                ID: generatedId,
+                Consecutivo: nextConsecutivoNum,
+                Nro_Factura: nroFactura,
+                Proveedor: proveedor,
+                Nit: nit
+            }
         });
 
     } catch (error: any) {
