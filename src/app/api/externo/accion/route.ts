@@ -285,17 +285,11 @@ export async function POST(req: NextRequest) {
             updatePayload.centro_costos = jsonDist;
         }
 
-        // Apply update to SharePoint
-        console.log(`Sending PATCH to SharePoint item ${itemId} in list ${listId}:`, JSON.stringify(updatePayload, null, 2));
-        try {
-            await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
-            console.log(`SharePoint update for item ${itemId} to ${action} successful`);
-        } catch (spErr: any) {
-            console.error('SharePoint Patch Error Details:', JSON.stringify(spErr.body || spErr, null, 2));
-            throw new Error(`Error al actualizar SharePoint: ${spErr.message || 'Invalid request'}`);
-        }
+        // 1. Sync to Supabase directly (Primary Source of Truth)
+        let consecutivoReal = itemId;
+        let proveedorReal = "Proveedor Desconocido";
+        let responsableReal = "Responsable Desconocido";
 
-        // Sync to Supabase for immediate feedback
         try {
             const supabaseUpdate: any = {
                 Aprobacion_Doliente: action,
@@ -310,26 +304,45 @@ export async function POST(req: NextRequest) {
             if (observaciones) {
                 supabaseUpdate.Observaciones = observaciones;
             }
+            if (anticipo) {
+                supabaseUpdate.tiene_anticipo = anticipo;
+            }
             if (updatePayload.centro_costos) {
                 supabaseUpdate.centro_costos = updatePayload.centro_costos;
                 supabaseUpdate.tablaCostos = jsonDist; // Keep full version in Supabase
             }
 
-            const { error: supaErr } = await supabase
+            const { data: supaUpdated, error: supaErr } = await supabase
                 .from('Registro_Facturas')
                 .update(supabaseUpdate)
-                .eq('ID', Number(itemId));
+                .eq('ID', Number(itemId))
+                .select('Consecutivo, Proveedor, Responsable_de_Autorizar')
+                .single();
             
             if (supaErr) throw supaErr;
-            console.log(`Supabase cache updated for Registro_Facturas item ${itemId}`);
+
+            if (supaUpdated) {
+                if (supaUpdated.Consecutivo) consecutivoReal = supaUpdated.Consecutivo;
+                if (supaUpdated.Proveedor) proveedorReal = supaUpdated.Proveedor;
+                if (supaUpdated.Responsable_de_Autorizar) responsableReal = supaUpdated.Responsable_de_Autorizar;
+            }
+            console.log(`Supabase updated for Registro_Facturas item ${itemId}`);
         } catch (supaErr) {
-            console.error('Failed to update Supabase cache:', supaErr);
+            console.error('Failed to update Supabase:', supaErr);
         }
 
-        // FETCH the item again to get the "Consecutivo" and "Proveedor" from SharePoint
-        const spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).get();
-        const consecutivoReal = spItem.Consecutivo || itemId;
-        const proveedorReal = spItem.Proveedor || spItem.tsic || spItem.Nombre_proveedor || spItem.Razon_social || "Proveedor Desconocido";
+        // 2. Best-effort update to SharePoint (Legacy, decoupled)
+        let spItem: any = null;
+        try {
+            console.log(`Sending optional PATCH to SharePoint item ${itemId} in list ${listId}`);
+            await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
+            spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).get();
+            if (spItem?.Consecutivo) consecutivoReal = spItem.Consecutivo;
+            if (spItem?.Proveedor) proveedorReal = spItem.Proveedor;
+            if (spItem?.Responsable_de_Autorizar) responsableReal = spItem.Responsable_de_Autorizar;
+        } catch (spErr: any) {
+            console.warn('SharePoint update skipped or failed (decoupled):', spErr?.message);
+        }
 
         // 4. Trigger SAP Draft Creation on Approval
         let sapResult = null;
@@ -377,7 +390,7 @@ export async function POST(req: NextRequest) {
                     factura: nroFactura || String(itemId),
                     proveedor: proveedorReal,
                     nit: nit || "",
-                    responsable_aprobacion: spItem.Responsable_de_Autorizar || "Responsable Desconocido",
+                    responsable_aprobacion: responsableReal || spItem?.Responsable_de_Autorizar || "Responsable Desconocido",
                     estado_aprobacion: action === 'Aprobado' ? "Aprobada" : "Rechazada",
                     observaciones: observaciones || (action === 'Aprobado' ? 'Aprobado vía portal externo' : 'Rechazado vía portal externo')
                 });
@@ -392,7 +405,7 @@ export async function POST(req: NextRequest) {
             try {
                 const { triggerFactureEventForInvoice } = await import('@/lib/facture');
                 factureResult = await triggerFactureEventForInvoice(itemId, action, {
-                    responsableName: spItem.Responsable_de_Autorizar,
+                    responsableName: responsableReal || spItem?.Responsable_de_Autorizar,
                     observaciones
                 });
             } catch (factureErr: any) {

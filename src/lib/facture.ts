@@ -112,12 +112,12 @@ export async function sendReceiveGoods(
       body: JSON.stringify(bodyData)
     });
 
-    const responseData = await res.json().catch(() => null);
-
+    const errDesc = (responseData?.eventItems?.[0]?.shortDescription || responseData?.message || "").toLowerCase();
     const isSuccess = res.ok || 
       responseData?.isSuccess === true || 
-      responseData?.eventItems?.[0]?.shortDescription?.includes('recibido') ||
-      responseData?.message?.includes('recibido');
+      errDesc.includes('recibido') ||
+      errDesc.includes('aceptado') ||
+      errDesc.includes('ya se encuentra');
 
     if (!isSuccess) {
       return {
@@ -174,10 +174,11 @@ export async function sendAcceptDocument(
 
     const responseData = await res.json().catch(() => null);
 
+    const errDesc = (responseData?.eventItems?.[0]?.shortDescription || responseData?.message || "").toLowerCase();
     const isSuccess = res.ok || 
       responseData?.isSuccess === true || 
-      responseData?.eventItems?.[0]?.shortDescription?.includes('aceptado') ||
-      responseData?.message?.includes('aceptado');
+      errDesc.includes('aceptado') ||
+      errDesc.includes('ya se encuentra');
 
     if (!isSuccess) {
       return {
@@ -323,7 +324,7 @@ export async function triggerFactureEventForInvoice(
     // 2. Obtener Token JWT
     const token = await getFactureAuthToken();
 
-    // 3. Buscar la factura en el Inbox de Facture por NÚMERO DE FACTURA (con paginado automático)
+    // 3. Buscar la factura en el Inbox de Facture por NÚMERO DE FACTURA (revisando PRINCIPAL y CONTADO para Notas Crédito y Contado)
     let ldfString = "";
     try {
       const now = new Date();
@@ -334,34 +335,39 @@ export async function triggerFactureEventForInvoice(
       const formatStartDate = (d: Date) => d.toISOString().split('T')[0] + "T00:00:00.00";
       const formatEndDate = (d: Date) => d.toISOString().split('T')[0] + "T23:59:59.00";
 
-      for (let page = 1; page <= 10; page++) {
-        const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/PRINCIPAL/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`);
-        inboxUrl.searchParams.append("receiverStartingDate", formatStartDate(ninetyDaysAgo));
-        inboxUrl.searchParams.append("receiverEndingDate", formatEndDate(tomorrow));
-        inboxUrl.searchParams.append("pageIndex", String(page));
-        inboxUrl.searchParams.append("pageSize", "100");
+      const folders = ['PRINCIPAL', 'CONTADO'];
 
-        const inboxRes = await fetch(inboxUrl.toString(), {
-          method: "GET",
-          headers: { "Authorization": `Bearer ${token}` }
-        });
+      searchLoop:
+      for (const folder of folders) {
+        for (let page = 1; page <= 5; page++) {
+          const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/${folder}/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`);
+          inboxUrl.searchParams.append("receiverStartingDate", formatStartDate(ninetyDaysAgo));
+          inboxUrl.searchParams.append("receiverEndingDate", formatEndDate(tomorrow));
+          inboxUrl.searchParams.append("pageIndex", String(page));
+          inboxUrl.searchParams.append("pageSize", "100");
 
-        if (!inboxRes.ok) break;
-        const inboxData = await inboxRes.json();
-        const items: any[] = inboxData?.items || inboxData || [];
-        if (!items.length) break;
+          const inboxRes = await fetch(inboxUrl.toString(), {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${token}` }
+          });
 
-        const match = items.find(i => {
-          const num = (i.number || i.documentCode || i.ldf || "").toUpperCase();
-          const targetClean = cleanNroFactura.toUpperCase();
-          const targetRaw = rawNroFactura.toUpperCase();
-          return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num);
-        });
+          if (!inboxRes.ok) break;
+          const inboxData = await inboxRes.json();
+          const items: any[] = inboxData?.items || inboxData || [];
+          if (!items.length) break;
 
-        if (match && match.ldf) {
-          ldfString = match.ldf;
-          console.log(`[Facture] ✅ LDF oficial encontrado por número de factura (Página ${page}) para ${nroFactura}: ${ldfString}`);
-          break;
+          const match = items.find(i => {
+            const num = (i.number || i.documentCode || i.ldf || "").toUpperCase();
+            const targetClean = cleanNroFactura.toUpperCase();
+            const targetRaw = rawNroFactura.toUpperCase();
+            return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num);
+          });
+
+          if (match && match.ldf) {
+            ldfString = match.ldf;
+            console.log(`[Facture] ✅ LDF oficial encontrado en carpeta ${folder} (Página ${page}) para ${nroFactura}: ${ldfString}`);
+            break searchLoop;
+          }
         }
       }
     } catch (inboxErr) {
@@ -371,20 +377,33 @@ export async function triggerFactureEventForInvoice(
     // Fallback por verificación si no se encontró en las páginas del Inbox.
     // Se prueban FACTURA-UBL, NC-UBL (Nota Crédito) y ND-UBL (Nota Débito)
     if (!ldfString) {
-      const fechaBaseObj = invoice.Creado;
+      const fechaBaseObj = invoice.Creado || invoice.FechaAprobacion;
       const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date();
 
+      const isNC = rawNroFactura.toUpperCase().startsWith('NC') || 
+                   rawNroFactura.toUpperCase().includes('NC') ||
+                   (invoice.Proveedor && invoice.Proveedor.toUpperCase().includes('NC'));
+
+      // Generar variantes de número (número crudo, limpio de prefijos FAC/FE, y variantes de NC)
       const numVariants = [rawNroFactura];
-      if (cleanNroFactura && cleanNroFactura !== rawNroFactura) {
+      if (cleanNroFactura && !numVariants.includes(cleanNroFactura)) {
         numVariants.push(cleanNroFactura);
       }
+      if (isNC) {
+        const digitsOnly = rawNroFactura.replace(/\D/g, '');
+        if (digitsOnly && !numVariants.includes(digitsOnly)) numVariants.push(digitsOnly);
+        if (digitsOnly && !numVariants.includes(`NC${digitsOnly}`)) numVariants.push(`NC${digitsOnly}`);
+        if (digitsOnly && !numVariants.includes(`NC-${digitsOnly}`)) numVariants.push(`NC-${digitsOnly}`);
+        if (digitsOnly && !numVariants.includes(`NC-NC${digitsOnly}`)) numVariants.push(`NC-NC${digitsOnly}`);
+      }
 
-      const docTypes = ["FACTURA-UBL", "NC-UBL", "ND-UBL"];
+      // Tipos de documento a probar en orden de probabilidad
+      const docTypes = isNC ? ["NC-UBL", "FACTURA-UBL", "ND-UBL"] : ["FACTURA-UBL", "NC-UBL", "ND-UBL"];
       let validLdf = "";
 
       outerLoop:
       for (const docType of docTypes) {
-        for (let offset = 0; offset <= 15; offset++) {
+        for (let offset = 0; offset <= 25; offset++) {
           for (const num of numVariants) {
             const candidateDate = new Date(baseDate);
             candidateDate.setDate(baseDate.getDate() - offset);
@@ -416,7 +435,7 @@ export async function triggerFactureEventForInvoice(
 
               const testJson = await testRes.json().catch(() => null);
               const isSuccess = testJson?.isSuccess === true;
-              const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || "";
+              const errDesc = (testJson?.eventItems?.[0]?.shortDescription || testJson?.message || "").toLowerCase();
 
               if (isSuccess || testRes.ok || errDesc.includes("recibido") || errDesc.includes("aceptado") || errDesc.includes("reclamar")) {
                 validLdf = candidateLdf;
@@ -428,7 +447,8 @@ export async function triggerFactureEventForInvoice(
         }
       }
 
-      ldfString = validLdf || `FACTURA-UBL(${cleanNit};${rawNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`;
+      const defaultDocType = isNC ? "NC-UBL" : "FACTURA-UBL";
+      ldfString = validLdf || `${defaultDocType}(${cleanNit};${rawNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`;
       console.log(`[Facture] LDF final determinado: ${ldfString}`);
     }
 

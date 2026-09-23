@@ -101,7 +101,7 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[facture-event] ✅ Autenticación exitosa en Facture`)
 
-    // 3. Buscar LDF en el Inbox de Facture (con paginación hasta 5 páginas)
+    // 3. Buscar LDF en el Inbox de Facture (revisando carpetas PRINCIPAL y CONTADO, donde caen las NC y de Contado)
     let ldfString = ''
     try {
       const now = new Date()
@@ -112,43 +112,47 @@ Deno.serve(async (req: Request) => {
       const formatStartDate = (d: Date) => d.toISOString().split('T')[0] + 'T00:00:00.00'
       const formatEndDate = (d: Date) => d.toISOString().split('T')[0] + 'T23:59:59.00'
 
-      for (let page = 1; page <= 5; page++) {
-        const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/PRINCIPAL/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`)
-        inboxUrl.searchParams.append('receiverStartingDate', formatStartDate(ninetyDaysAgo))
-        inboxUrl.searchParams.append('receiverEndingDate', formatEndDate(tomorrow))
-        inboxUrl.searchParams.append('pageIndex', String(page))
-        inboxUrl.searchParams.append('pageSize', '100')
+      const folders = ['PRINCIPAL', 'CONTADO']
 
-        const inboxRes = await fetch(inboxUrl.toString(), {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${token}` }
-        })
+      searchLoop:
+      for (const folder of folders) {
+        for (let page = 1; page <= 5; page++) {
+          const inboxUrl = new URL(`${INBOX_BASE_URL}/PLColab.Inbox/Notification/${folder}/With/RECEIVED;ACKNOWLEDGED;RECEIVEDGOODS/WithNot/ACCEPTED;REJECTED/${CONSTANT_ID}`)
+          inboxUrl.searchParams.append('receiverStartingDate', formatStartDate(ninetyDaysAgo))
+          inboxUrl.searchParams.append('receiverEndingDate', formatEndDate(tomorrow))
+          inboxUrl.searchParams.append('pageIndex', String(page))
+          inboxUrl.searchParams.append('pageSize', '100')
 
-        if (!inboxRes.ok) {
-          console.warn(`[facture-event] Inbox página ${page} falló (${inboxRes.status})`)
-          break
-        }
+          const inboxRes = await fetch(inboxUrl.toString(), {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` }
+          })
 
-        const inboxData = await inboxRes.json()
-        const items: any[] = inboxData?.items || inboxData || []
-        if (!items.length) {
-          console.log(`[facture-event] Inbox página ${page}: 0 items, terminando búsqueda`)
-          break
-        }
+          if (!inboxRes.ok) {
+            console.warn(`[facture-event] Inbox ${folder} página ${page} falló (${inboxRes.status})`)
+            break
+          }
 
-        console.log(`[facture-event] Inbox página ${page}: ${items.length} items`)
+          const inboxData = await inboxRes.json()
+          const items: any[] = inboxData?.items || inboxData || []
+          if (!items.length) {
+            break
+          }
 
-        const match = items.find((i: any) => {
-          const num = (i.number || i.documentCode || i.ldf || '').toUpperCase()
-          const targetClean = cleanNroFactura.toUpperCase()
-          const targetRaw = rawNroFactura.toUpperCase()
-          return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num)
-        })
+          console.log(`[facture-event] Inbox ${folder} página ${page}: ${items.length} items`)
 
-        if (match && match.ldf) {
-          ldfString = match.ldf
-          console.log(`[facture-event] ✅ LDF encontrado en página ${page}: ${ldfString}`)
-          break
+          const match = items.find((i: any) => {
+            const num = (i.number || i.documentCode || i.ldf || '').toUpperCase()
+            const targetClean = cleanNroFactura.toUpperCase()
+            const targetRaw = rawNroFactura.toUpperCase()
+            return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num)
+          })
+
+          if (match && match.ldf) {
+            ldfString = match.ldf
+            console.log(`[facture-event] ✅ LDF encontrado en carpeta ${folder} página ${page}: ${ldfString}`)
+            break searchLoop
+          }
         }
       }
     } catch (_e) {
@@ -158,22 +162,33 @@ Deno.serve(async (req: Request) => {
     // Fallback: construir LDF con verificación de múltiples tipos de documento, variantes de número y fechas
     // Se prueban FACTURA-UBL, NC-UBL (Nota Crédito) y ND-UBL (Nota Débito)
     if (!ldfString) {
-      const fechaBaseObj = invoice.Creado
+      const fechaBaseObj = invoice.Creado || invoice.FechaAprobacion
       const baseDate = fechaBaseObj ? new Date(fechaBaseObj) : new Date()
 
-      // Probar número crudo primero (FE32123, FED10858, BAR71851), y si difiere, también el limpio (32123)
+      const isNC = rawNroFactura.toUpperCase().startsWith('NC') || 
+                   rawNroFactura.toUpperCase().includes('NC') ||
+                   (invoice.Proveedor && invoice.Proveedor.toUpperCase().includes('NC'))
+
+      // Generar variantes de número (número crudo, limpio de prefijos FAC/FE, y variantes de NC)
       const numVariants = [rawNroFactura]
-      if (cleanNroFactura && cleanNroFactura !== rawNroFactura) {
+      if (cleanNroFactura && !numVariants.includes(cleanNroFactura)) {
         numVariants.push(cleanNroFactura)
+      }
+      if (isNC) {
+        const digitsOnly = rawNroFactura.replace(/\D/g, '')
+        if (digitsOnly && !numVariants.includes(digitsOnly)) numVariants.push(digitsOnly)
+        if (digitsOnly && !numVariants.includes(`NC${digitsOnly}`)) numVariants.push(`NC${digitsOnly}`)
+        if (digitsOnly && !numVariants.includes(`NC-${digitsOnly}`)) numVariants.push(`NC-${digitsOnly}`)
+        if (digitsOnly && !numVariants.includes(`NC-NC${digitsOnly}`)) numVariants.push(`NC-NC${digitsOnly}`)
       }
 
       // Tipos de documento a probar en orden de probabilidad
-      const docTypes = ['FACTURA-UBL', 'NC-UBL', 'ND-UBL']
+      const docTypes = isNC ? ['NC-UBL', 'FACTURA-UBL', 'ND-UBL'] : ['FACTURA-UBL', 'NC-UBL', 'ND-UBL']
       let validLdf = ''
 
       const promises: Promise<string>[] = []
 
-      for (let offset = 0; offset <= 15; offset++) {
+      for (let offset = 0; offset <= 25; offset++) {
         for (const docType of docTypes) {
           for (const num of numVariants) {
             const candidateDate = new Date(baseDate)
@@ -207,7 +222,7 @@ Deno.serve(async (req: Request) => {
 
               const testJson = await testRes.json().catch(() => null)
               const isSuccess = testJson?.isSuccess === true
-              const errDesc = testJson?.eventItems?.[0]?.shortDescription || testJson?.message || ''
+              const errDesc = (testJson?.eventItems?.[0]?.shortDescription || testJson?.message || '').toLowerCase()
 
               if (isSuccess || testRes.ok || errDesc.includes('recibido') || errDesc.includes('aceptado') || errDesc.includes('reclamar')) {
                 console.log(`[facture-event] ✅ LDF verificado (${docType}) con número ${num} y fecha ${dateStr}: ${candidateLdf}`)
@@ -226,7 +241,8 @@ Deno.serve(async (req: Request) => {
         console.warn(`[facture-event] ⚠️ Ninguna de las combinaciones de LDF funcionó para ${rawNroFactura}`)
       }
 
-      ldfString = validLdf || `FACTURA-UBL(${cleanNit};${rawNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`
+      const defaultDocType = isNC ? 'NC-UBL' : 'FACTURA-UBL'
+      ldfString = validLdf || `${defaultDocType}(${cleanNit};${rawNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`
       console.log(`[facture-event] LDF final determinado: ${ldfString}`)
     }
 
@@ -336,15 +352,18 @@ Deno.serve(async (req: Request) => {
     const acceptData = await acceptRes.json().catch(() => null)
     console.log(`[facture-event] ACCEPT/V2 response (${acceptRes.status}):`, JSON.stringify(acceptData))
 
+    const receiveDesc = (receiveData?.eventItems?.[0]?.shortDescription || receiveData?.message || '').toLowerCase()
     const receiveSuccess = receiveRes.ok || 
       receiveData?.isSuccess === true || 
-      receiveData?.eventItems?.[0]?.shortDescription?.includes('recibido') ||
-      receiveData?.message?.includes('recibido')
+      receiveDesc.includes('recibido') ||
+      receiveDesc.includes('aceptado') ||
+      receiveDesc.includes('ya se encuentra')
 
+    const acceptDesc = (acceptData?.eventItems?.[0]?.shortDescription || acceptData?.message || '').toLowerCase()
     const acceptSuccess = acceptRes.ok || 
       acceptData?.isSuccess === true || 
-      acceptData?.eventItems?.[0]?.shortDescription?.includes('aceptado') ||
-      acceptData?.message?.includes('aceptado')
+      acceptDesc.includes('aceptado') ||
+      acceptDesc.includes('ya se encuentra')
 
     const isSuccess = Boolean(receiveSuccess && acceptSuccess)
 
