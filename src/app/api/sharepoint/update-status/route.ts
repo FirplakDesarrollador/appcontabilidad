@@ -49,113 +49,102 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: true });
         }
 
-        const client = await getGraphClient();
+        const supaTable = listName === 'Radicados de importación'
+            ? 'Radicados_de_importacion'
+            : listName === 'Registro_de_Facturas'
+                ? 'Registro_Facturas'
+                : listName;
+        const idCol = listName === 'Registro_de_Facturas' ? 'ID' : 'id';
 
-        // 1. Resolve Site ID
-        const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-        const siteId = siteResponse.id;
-
-        // 2. Find the List
-        const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-        const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
-
-        if (!list) throw new Error(`SharePoint list "${listName}" not found`);
-        const listId = list.id;
-
+        const supaUpdate: any = {
+            updated_at: new Date().toISOString()
+        };
         const updateData: any = {};
+
         if (field === 'Gestion_Contabilidad') {
+            supaUpdate.Gestion_Contabilidad = status;
             updateData.Gestion_Contabilidad = status;
             if (status === 'Procesado') {
-                updateData.FechaProcesado = new Date().toISOString();
+                const nowIso = new Date().toISOString();
+                supaUpdate.FechaProcesado = nowIso;
+                supaUpdate.Procesado = 'true';
+                updateData.FechaProcesado = nowIso;
                 if (procesadoPor) {
+                    supaUpdate.DigitadoPor = procesadoPor;
                     updateData.DigitadoPor = procesadoPor;
                 }
             }
         } else if (field === 'Observaciones') {
+            supaUpdate.Observaciones = status;
             updateData.Observaciones = status;
         } else {
+            supaUpdate.Aprobacion_Doliente = status;
             updateData.Aprobacion_Doliente = status;
             if (status === 'Aprobado') {
+                supaUpdate.Gestion_Contabilidad = 'Por Procesar';
                 updateData.Gestion_Contabilidad = 'Por Procesar';
             }
-            updateData.FechaAprobacion = new Date().toISOString();
+            const nowIso = new Date().toISOString();
+            supaUpdate.FechaAprobacion = nowIso;
+            updateData.FechaAprobacion = nowIso;
         }
 
-        // 3. Update SharePoint
-        await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updateData);
+        // 1. Actualizar Supabase PRIMERO (Sistema principal)
+        let updatedData: any[] = [];
+        let supaErr: any = null;
 
-        console.log(`Successfully updated status for item ${itemId} in SharePoint`);
+        for (let attempt = 1; attempt <= 5; attempt++) {
+            const result = await supabaseAdmin
+                .from(supaTable)
+                .update(supaUpdate)
+                .eq(idCol, Number(itemId))
+                .select();
 
-        // 4. Update Supabase (using admin client to bypass RLS)
-        try {
-            const supaUpdate: any = {
-                updated_at: new Date().toISOString()
-            };
-            if (field === 'Gestion_Contabilidad') {
-                supaUpdate.Gestion_Contabilidad = status;
-                if (status === 'Procesado') {
-                    supaUpdate.FechaProcesado = new Date().toISOString();
-                    supaUpdate.Procesado = 'true';
-                    if (procesadoPor) {
-                        // NOTA: Registro_Facturas no tiene columna ProcesadoPor (solo
-                        // DigitadoPor). Incluirla hacia que PostgREST rechazara TODO
-                        // el update con "column does not exist", y el error quedaba
-                        // atrapado en el catch de abajo sin avisar al usuario -- la
-                        // factura nunca se guardaba como Procesado pese a mostrar
-                        // "exito".
-                        supaUpdate.DigitadoPor = procesadoPor;
-                    }
-                }
-            } else if (field === 'Observaciones') {
-                supaUpdate.Observaciones = status;
-            } else {
-                supaUpdate.Aprobacion_Doliente = status;
-                supaUpdate.FechaAprobacion = updateData.FechaAprobacion;
-                if (status === 'Aprobado') {
-                    supaUpdate.Gestion_Contabilidad = 'Por Procesar';
-                }
-            }
+            supaErr = result.error;
+            updatedData = result.data || [];
 
-            const supaTable = listName === 'Radicados de importación'
-                ? 'Radicados_de_importacion'
-                : listName === 'Registro_de_Facturas'
-                    ? 'Registro_Facturas'
-                    : listName;
+            if (supaErr) break;
+            if (updatedData.length > 0) break;
 
-            let supaErr = null;
-            let updatedData = [];
-            for (let attempt = 1; attempt <= 5; attempt++) {
-                const result = await supabaseAdmin
-                    .from(supaTable)
-                    .update(supaUpdate)
-                    .eq(listName === 'Registro_de_Facturas' ? 'ID' : 'id', Number(itemId))
-                    .select();
-                
-                supaErr = result.error;
-                updatedData = result.data || [];
+            console.warn(`[update-status] Intento ${attempt}: Registro ${itemId} no existe en Supabase aún. Esperando 2s...`);
+            if (attempt < 5) await new Promise(res => setTimeout(res, 2000));
+        }
 
-                if (supaErr) break; // If there's an actual SQL error, stop retrying
-                if (updatedData.length > 0) break; // Successfully updated
-
-                console.warn(`[update-status] Intento ${attempt}: Registro ${itemId} no existe en Supabase aún. Esperando 2s...`);
-                if (attempt < 5) await new Promise(res => setTimeout(res, 2000));
-            }
-
-            if (supaErr) {
-                console.error(`[update-status] Supabase update FAILED for ${supaTable} ID ${itemId}:`, supaErr.message);
-                return NextResponse.json({
-                    error: `Se actualizo en SharePoint pero fallo el guardado en la base de datos: ${supaErr.message}`
-                }, { status: 500 });
-            } else if (updatedData.length === 0) {
-                console.warn(`[update-status] Supabase update FAILED for ${supaTable} ID ${itemId}: Registro no encontrado tras 5 intentos`);
-            } else {
-                console.log(`[update-status] Supabase update OK for ${supaTable} ID ${itemId} — field=${field} status=${status}`);
-            }
-        } catch (supaErr: any) {
-            console.error('[update-status] Failed to update Supabase cache:', supaErr);
+        if (supaErr) {
+            console.error(`[update-status] Supabase update FAILED for ${supaTable} ID ${itemId}:`, supaErr.message);
             return NextResponse.json({
-                error: `Se actualizo en SharePoint pero fallo el guardado en la base de datos: ${supaErr?.message || supaErr}`
+                error: `Error al actualizar en la base de datos: ${supaErr.message}`
             }, { status: 500 });
+        } else if (updatedData.length === 0) {
+            console.warn(`[update-status] Supabase update FAILED for ${supaTable} ID ${itemId}: Registro no encontrado`);
+            return NextResponse.json({
+                error: `Registro no encontrado en la base de datos: ID ${itemId}`
+            }, { status: 404 });
+        } else {
+            console.log(`[update-status] Supabase update OK for ${supaTable} ID ${itemId} — field=${field} status=${status}`);
+        }
+
+        // 2. Actualización opcional a SharePoint (desacoplada, sólo si tiene ID válido de SharePoint)
+        try {
+            const currentItem = updatedData[0];
+            const spIdToUse = currentItem?.sharepoint_id || (Number(itemId) < 100000000 ? itemId : null);
+
+            if (spIdToUse) {
+                const client = await getGraphClient();
+                const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
+                const siteId = siteResponse.id;
+                const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
+                const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
+
+                if (list) {
+                    await client.api(`/sites/${siteId}/lists/${list.id}/items/${spIdToUse}/fields`).patch(updateData);
+                    console.log(`[update-status] SharePoint item ${spIdToUse} actualizado exitosamente.`);
+                }
+            } else {
+                console.log(`[update-status] Registro ${itemId} no requiere sincronización con SharePoint.`);
+            }
+        } catch (spErr: any) {
+            console.warn(`[update-status] SharePoint update skipped or failed (decoupled):`, spErr?.message);
         }
 
         // 5. Auto-crear draft en SAP cuando se aprueba manualmente
@@ -271,32 +260,12 @@ export async function POST(req: NextRequest) {
         // 6. Trigger evento Facture (Aprobado o Rechazado) — FUERA del bloque de SAP para que funcione con ambos estados
         if (field === 'Aprobacion_Doliente' && (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Rechazado')) {
             try {
-                let spItemData = null;
-                try {
-                    console.log(`[update-status] Pre-fetching SP item ${itemId} for fallback...`);
-                    const spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}`).expand('fields').get();
-                    const fields = spItem.fields;
-                    spItemData = {
-                        ID: Number(itemId),
-                        Nro_Factura: fields.Nro_Factura || fields.Title,
-                        Nit: fields.Nit,
-                        Proveedor: fields.Proveedor,
-                        Responsable_de_Autorizar: fields.Responsable_de_Autorizar,
-                        Observaciones: updateData.Observaciones || fields.Observaciones,
-                        Creado: spItem.createdDateTime,
-                        FechaAprobacion: updateData.FechaAprobacion || fields.FechaAprobacion
-                    };
-                    console.log(`[update-status] ✅ SP item fetched successfully for fallback.`);
-                } catch (e) {
-                    console.warn(`[update-status] ⚠️ Could not fetch SP item data for fallback:`, e);
-                }
-
-                console.log(`[update-status] Calling triggerFactureEventForInvoice with spItemData:`, spItemData !== null);
+                const invoiceRow = updatedData[0];
+                console.log(`[update-status] Calling triggerFactureEventForInvoice for invoice ${itemId}`);
                 const { triggerFactureEventForInvoice } = await import('@/lib/facture');
                 factureResult = await triggerFactureEventForInvoice(itemId, status, {
-                    spItemData,
-                    responsableName: spItemData?.Responsable_de_Autorizar,
-                    observaciones: updateData.Observaciones || spItemData?.Observaciones
+                    responsableName: invoiceRow?.Responsable_de_Autorizar,
+                    observaciones: updateData.Observaciones || invoiceRow?.Observaciones
                 });
             } catch (factureErr: any) {
                 console.error('[update-status] Error triggering Facture event:', factureErr);
