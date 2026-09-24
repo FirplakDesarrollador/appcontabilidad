@@ -112,6 +112,8 @@ export async function sendReceiveGoods(
       body: JSON.stringify(bodyData)
     });
 
+    const responseData = await res.json().catch(() => null);
+
     const errDesc = (responseData?.eventItems?.[0]?.shortDescription || responseData?.message || "").toLowerCase();
     const isSuccess = res.ok || 
       responseData?.isSuccess === true || 
