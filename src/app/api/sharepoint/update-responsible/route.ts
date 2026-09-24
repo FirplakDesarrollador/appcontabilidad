@@ -93,42 +93,7 @@ export async function POST(req: NextRequest) {
             console.log(`Supabase Registro_Facturas responsible updated for item ${itemId}`);
         }
 
-        // Auto-registrar o actualizar proveedor en Proveedores_con_Responsable
-        if (itemNit && userName) {
-            try {
-                const baseNit = itemNit.includes('-') ? itemNit.split('-')[0] : itemNit;
-                const { data: existingProvider, error: lookupError } = await supabaseAdmin
-                    .from("Proveedores_con_Responsable")
-                    .select('"Nit", "Responsable"')
-                    .or(`Nit.ilike.${baseNit}%,Nit.ilike.${itemNit}%`)
-                    .limit(1);
 
-                if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
-                    await supabaseAdmin.from("Proveedores_con_Responsable").insert({
-                        "Nit": itemNit,
-                        "Nombre de socio de negocios": itemProveedor || "Proveedor Desconocido",
-                        "Responsable": userName,
-                        "Autorizador": userName,
-                        "Correo": userEmail,
-                        "Creado": new Date().toISOString()
-                    });
-                    console.log(`[Supabase] Auto-registrado nuevo proveedor con responsable: ${itemNit} - ${userName}`);
-                } else if (existingProvider && existingProvider.length > 0) {
-                    await supabaseAdmin
-                        .from("Proveedores_con_Responsable")
-                        .update({
-                            "Responsable": userName,
-                            "Autorizador": userName,
-                            "Correo": userEmail,
-                            "Modificado": new Date().toISOString()
-                        })
-                        .eq("Nit", existingProvider[0].Nit);
-                    console.log(`[Supabase] Actualizado responsable de proveedor existente: ${existingProvider[0].Nit} -> ${userName}`);
-                }
-            } catch (providerErr) {
-                console.error("[Supabase] Error registrando/actualizando Proveedor_con_Responsable:", providerErr);
-            }
-        }
 
         // 2. Actualización opcional a SharePoint (desacoplada, sólo si tiene ID válido)
         if (sharepointIdToUse) {
