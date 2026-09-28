@@ -200,7 +200,13 @@ function DateDropdownFloatingFilter(props: CustomFloatingFilterProps & { invoice
                 setIsOpen(false);
             }
         };
-        const handleScrollOrResize = () => {
+        const handleScrollOrResize = (e: Event) => {
+            if (e.type === 'scroll' && e.target && popoverRef.current) {
+                const targetNode = e.target as Node;
+                if (popoverRef.current === targetNode || popoverRef.current.contains(targetNode)) {
+                    return;
+                }
+            }
             setIsOpen(false);
         };
         document.addEventListener('mousedown', handleDown);
@@ -271,6 +277,7 @@ function DateDropdownFloatingFilter(props: CustomFloatingFilterProps & { invoice
             {isOpen && popoverPos && typeof document !== 'undefined' && createPortal(
                 <div
                     ref={popoverRef}
+                    onMouseDown={(e) => e.stopPropagation()}
                     style={{
                         position: 'fixed',
                         top: popoverPos.top,
@@ -323,7 +330,7 @@ function DateDropdownFloatingFilter(props: CustomFloatingFilterProps & { invoice
                     )}
 
                     {/* Lista con checkboxes */}
-                    <div className="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 py-0.5">
+                    <div className="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 py-0.5 overscroll-contain">
                         {filteredDates.length === 0 ? (
                             <div className="text-[11px] text-gray-400 py-3 text-center italic">No hay fechas coincidentes</div>
                         ) : (
