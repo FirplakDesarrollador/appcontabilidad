@@ -131,7 +131,13 @@ export async function POST() {
                 // I'll try to map common names.
 
                 // Insert into DB
-                const amountValue = detailsData.TotalPayableAmount || item.totalAmount || 0;
+                const subtotalRaw = detailsData.subTotal 
+                    ?? detailsData.SubTotal 
+                    ?? (detailsData.amount != null && detailsData.taxTotal != null ? detailsData.amount - detailsData.taxTotal : null)
+                    ?? detailsData.TotalPayableAmount 
+                    ?? item.totalAmount 
+                    ?? 0;
+                const amountValue = Math.round(Number(subtotalRaw)) || 0;
                 const provider = detailsData.AccountingSupplierParty?.Party?.PartyName?.Name || "Proveedor Desconocido";
                 const nit = detailsData.AccountingSupplierParty?.Party?.PartyTaxScheme?.CompanyID || "";
                 const date = detailsData.IssueDate || new Date().toISOString();

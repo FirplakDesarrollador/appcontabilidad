@@ -101,6 +101,55 @@ async function notificarPowerAutomate(params: {
   }
 }
 
+async function obtenerTokenFacture(): Promise<string> {
+  const user = Deno.env.get('FACTURE_API_USER') ?? '890927404'
+  const pass = Deno.env.get('FACTURE_API_PASSWORD') ?? '|uLuG&W@SDUdQ26'
+  const loginRes = await fetch(FACTURE_AUTH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ u: user, p: pass, ft: 'issuer|Receiver' })
+  })
+  if (!loginRes.ok) {
+    const errText = await loginRes.text()
+    throw new Error(`Error de autenticación en Facture (${loginRes.status}): ${errText}`)
+  }
+  const loginData = await loginRes.json()
+  const token = loginData.accessToken || loginData.token || (typeof loginData === 'string' ? loginData : loginData.jwt)
+  if (!token) throw new Error('No se obtuvo accessToken en la respuesta de Facture.')
+  return token
+}
+
+function extraerSubtotal(docData: any, item: any): number {
+  if (docData?.subTotal != null && !isNaN(Number(docData.subTotal)) && Number(docData.subTotal) > 0) {
+    return Number(docData.subTotal)
+  }
+  if (item?.subTotal != null && !isNaN(Number(item.subTotal)) && Number(item.subTotal) > 0) {
+    return Number(item.subTotal)
+  }
+  if (item?.subtotal != null && !isNaN(Number(item.subtotal)) && Number(item.subtotal) > 0) {
+    return Number(item.subtotal)
+  }
+  if (item?.SubTotal != null && !isNaN(Number(item.SubTotal)) && Number(item.SubTotal) > 0) {
+    return Number(item.SubTotal)
+  }
+  if (item?.lineExtensionAmount != null && !isNaN(Number(item.lineExtensionAmount)) && Number(item.lineExtensionAmount) > 0) {
+    return Number(item.lineExtensionAmount)
+  }
+  if (item?.taxExclusiveAmount != null && !isNaN(Number(item.taxExclusiveAmount)) && Number(item.taxExclusiveAmount) > 0) {
+    return Number(item.taxExclusiveAmount)
+  }
+  if (docData?.amount != null && docData?.taxTotal != null) {
+    const calc = Number(docData.amount) - Number(docData.taxTotal)
+    if (!isNaN(calc) && calc > 0) return calc
+  }
+  if (item?.amount != null && item?.taxTotal != null) {
+    const calc = Number(item.amount) - Number(item.taxTotal)
+    if (!isNaN(calc) && calc > 0) return calc
+  }
+  const fallback = item?.payableAmount ?? item?.totalAmount ?? item?.amount ?? docData?.amount ?? 0
+  return Number(fallback) || 0
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -139,6 +188,8 @@ Deno.serve(async (req: Request) => {
     // SI VIENEN ÍTEMS DIRECTOS EN EL CUERPO DE LA SOLICITUD
     if (itemsList.length > 0) {
       console.log(`[sincronizar-con-facture] 📦 Procesando ${itemsList.length} ítems recibidos...`)
+
+      let lazyToken: string | null = null
 
       const summary = {
         totalReceived: itemsList.length,
@@ -179,9 +230,30 @@ Deno.serve(async (req: Request) => {
           const nit = item.supplierIdentification || item.issuerNit || item.nit || ''
           const cleanNit = nit.split('-')[0].trim()
           const provider = item.supplierName || item.issuerName || item.provider || 'Proveedor Desconocido'
-          const amountValue = item.payableAmount ?? item.totalAmount ?? item.amount ?? 0
           const cufe = item.cufe || item.uuid || ''
           const createdDate = item.receptionDate || item.issueDate || new Date().toISOString()
+
+          // Obtener detalle de Facture si existe LDF para tener el subTotal exacto y URI
+          let docData: any = null
+          const hasDirectSubtotal = (item.subTotal != null || item.subtotal != null || item.lineExtensionAmount != null || item.taxExclusiveAmount != null)
+          if (!hasDirectSubtotal && ldf && ldf.includes('(')) {
+            try {
+              if (!lazyToken) {
+                lazyToken = await obtenerTokenFacture()
+              }
+              const docRes = await fetch(`${INBOX_BASE_URL}/PLColab.Documents/Document/Get/${encodeURIComponent(ldf)}`, {
+                headers: { Authorization: `Bearer ${lazyToken}` }
+              })
+              if (docRes.ok) {
+                docData = await docRes.json()
+              }
+            } catch (dErr) {
+              console.warn(`[sincronizar-con-facture] No se pudo obtener detalle de Facture para ${ldf}:`, dErr)
+            }
+          }
+
+          const subtotalNum = extraerSubtotal(docData, item)
+          const amountValue = subtotalNum
 
           // Buscar responsable y su correo
           const { responsable, correo: responsableEmail } = await obtenerDatosResponsable(supabase, cleanNit)
@@ -219,14 +291,16 @@ Deno.serve(async (req: Request) => {
             Nit: cleanNit || nit,
             Proveedor: provider,
             Nro_Factura: docNumberToSave,
-            Valor_total: String(amountValue),
+            Valor_total: String(Math.round(amountValue)),
             Responsable_de_Autorizar: responsable,
             Observaciones: observaciones,
             Creado: createdDate,
-            CUFE: cufe,
+            CUFE: cufe || docData?.UUID || '',
             Gestion_Contabilidad: 'Por Aprobar',
             Aprobacion_Doliente: 'Por Aprobar',
             Procesado: 'false',
+            fp: docData?.URI || null,
+            documentos: docData?.URI || null,
             updated_at: new Date().toISOString()
           }
 
@@ -241,7 +315,7 @@ Deno.serve(async (req: Request) => {
             continue
           }
 
-          console.log(`[sincronizar-con-facture] ✅ ${isNC ? 'Nota Crédito' : 'Factura'} ${docNumberToSave} (${provider}) guardada con ID ${generatedId}`)
+          console.log(`[sincronizar-con-facture] ✅ ${isNC ? 'Nota Crédito' : 'Factura'} ${docNumberToSave} (${provider}) guardada con ID ${generatedId} por subtotal: ${amountValue}`)
 
           // Enviar notificación a Power Automate si tenemos correo del responsable
           if (responsableEmail) {
@@ -285,23 +359,7 @@ Deno.serve(async (req: Request) => {
     const pass = Deno.env.get('FACTURE_API_PASSWORD') ?? '|uLuG&W@SDUdQ26'
 
     console.log(`[sincronizar-con-facture] Modo Autónomo: Autenticando en Facture (${user})...`)
-    const loginRes = await fetch(FACTURE_AUTH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ u: user, p: pass, ft: 'issuer|Receiver' })
-    })
-
-    if (!loginRes.ok) {
-      const errText = await loginRes.text()
-      throw new Error(`Error de autenticación en Facture (${loginRes.status}): ${errText}`)
-    }
-
-    const loginData = await loginRes.json()
-    const token = loginData.accessToken || loginData.token || (typeof loginData === 'string' ? loginData : loginData.jwt)
-
-    if (!token) {
-      throw new Error('No se obtuvo accessToken en la respuesta de Facture.')
-    }
+    const token = await obtenerTokenFacture()
 
     const now = new Date()
     const startDate = new Date()
@@ -392,7 +450,6 @@ Deno.serve(async (req: Request) => {
         const nit = item.supplierIdentification || item.issuerNit || item.nit || ''
         const cleanNit = nit.split('-')[0].trim()
         const provider = item.supplierName || item.issuerName || item.provider || 'Proveedor Desconocido'
-        const amountValue = item.payableAmount ?? item.totalAmount ?? item.amount ?? 0
         const cufe = item.cufe || item.uuid || ''
         const createdDate = item.receptionDate || item.issueDate || new Date().toISOString()
 
@@ -405,13 +462,14 @@ Deno.serve(async (req: Request) => {
 
         // Obtener y subir PDF si existe LDF
         let pdfPublicUrl: string | null = null
+        let docData: any = null
         if (ldf) {
           try {
             const docRes = await fetch(`${INBOX_BASE_URL}/PLColab.Documents/Document/Get/${encodeURIComponent(ldf)}`, {
               headers: { Authorization: `Bearer ${token}` }
             })
             if (docRes.ok) {
-              const docData = await docRes.json()
+              docData = await docRes.json()
               if (docData.URI) {
                 const pdfRes = await fetch(docData.URI)
                 if (pdfRes.ok) {
@@ -443,6 +501,9 @@ Deno.serve(async (req: Request) => {
           }
         }
 
+        const subtotalNum = extraerSubtotal(docData, item)
+        const amountValue = subtotalNum
+
         runningConsecutivo++
         const generatedId = Number(BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000)))
 
@@ -452,16 +513,16 @@ Deno.serve(async (req: Request) => {
           Nit: cleanNit || nit,
           Proveedor: provider,
           Nro_Factura: docNumberToSave,
-          Valor_total: String(amountValue),
+          Valor_total: String(Math.round(amountValue)),
           Responsable_de_Autorizar: responsable,
           Observaciones: observaciones,
           Creado: createdDate,
-          CUFE: cufe,
+          CUFE: cufe || docData?.UUID || '',
           Gestion_Contabilidad: 'Por Aprobar',
           Aprobacion_Doliente: 'Por Aprobar',
           Procesado: 'false',
-          fp: pdfPublicUrl,
-          documentos: pdfPublicUrl,
+          fp: pdfPublicUrl || docData?.URI || null,
+          documentos: pdfPublicUrl || docData?.URI || null,
           updated_at: new Date().toISOString()
         }
 
@@ -475,7 +536,7 @@ Deno.serve(async (req: Request) => {
           continue
         }
 
-        console.log(`[sincronizar-con-facture] ✅ ${isNC ? 'Nota Crédito' : 'Factura'} ${docNumberToSave} (${provider}) guardada con ID ${generatedId}`)
+        console.log(`[sincronizar-con-facture] ✅ ${isNC ? 'Nota Crédito' : 'Factura'} ${docNumberToSave} (${provider}) guardada con ID ${generatedId} por subtotal: ${amountValue}`)
 
         // Enviar notificación a Power Automate si tenemos correo del responsable
         if (responsableEmail) {
