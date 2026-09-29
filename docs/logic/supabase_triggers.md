@@ -40,7 +40,7 @@ BEGIN
             SELECT id, aprobacion_automatica
             INTO proveedor_id_uuid, auto_aprobar
             FROM public.proveedores
-            WHERE numero_identificacion = NEW."Nit"
+            WHERE SPLIT_PART(numero_identificacion, '-', 1) = SPLIT_PART(NEW."Nit", '-', 1)
             LIMIT 1;
 
             IF auto_aprobar = true THEN

@@ -1,4 +1,4 @@
-﻿-- ==============================================================================
+-- ==============================================================================
 -- SCRIPT DE REPARACIÓN: Facturas atascadas en "Por Aprobar" / "Pendiente"
 -- que pertenecen a proveedores con aprobación automática.
 --
@@ -24,7 +24,7 @@ SELECT
     rf."Aprobacion_Doliente" AS estado_actual,
     p.aprobacion_automatica
 FROM public."Registro_Facturas" rf
-JOIN public.proveedores p ON p.numero_identificacion = rf."Nit"
+JOIN public.proveedores p ON SPLIT_PART(p.numero_identificacion, '-', 1) = SPLIT_PART(rf."Nit", '-', 1)
 WHERE p.aprobacion_automatica = true
   AND (
       rf."Aprobacion_Doliente" IS NULL OR
@@ -46,7 +46,7 @@ ORDER BY rf."ID" DESC;
 UPDATE public."Registro_Facturas" rf
 SET "Aprobacion_Doliente" = 'Por Aprobar'
 FROM public.proveedores p
-WHERE p.numero_identificacion = rf."Nit"
+WHERE SPLIT_PART(p.numero_identificacion, '-', 1) = SPLIT_PART(rf."Nit", '-', 1)
   AND p.aprobacion_automatica = true
   AND (
       rf."Aprobacion_Doliente" IS NULL OR
@@ -68,7 +68,7 @@ SELECT
     rf."Aprobacion_Doliente" AS estado_final,
     count(*) AS cantidad
 FROM public."Registro_Facturas" rf
-JOIN public.proveedores p ON p.numero_identificacion = rf."Nit"
+JOIN public.proveedores p ON SPLIT_PART(p.numero_identificacion, '-', 1) = SPLIT_PART(rf."Nit", '-', 1)
 WHERE p.aprobacion_automatica = true
 GROUP BY rf."Aprobacion_Doliente"
 ORDER BY cantidad DESC;

@@ -155,7 +155,7 @@ export async function POST(req: NextRequest) {
         const invoiceData: Record<string, any> = {
             ID: generatedId,
             Consecutivo: nextConsecutivoNum ? String(nextConsecutivoNum) : null,
-            Nit: cleanNit || nit,
+            Nit: nit || cleanNit,
             Proveedor: proveedor,
             Nro_Factura: nroFactura,
             Valor_total: valorTotal || '0',

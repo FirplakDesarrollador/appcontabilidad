@@ -55,7 +55,7 @@ BEGIN
         SELECT id, aprobacion_automatica
         INTO proveedor_id_uuid, auto_aprobar
         FROM public.proveedores
-        WHERE numero_identificacion = NEW."Nit"
+        WHERE SPLIT_PART(numero_identificacion, '-', 1) = SPLIT_PART(NEW."Nit", '-', 1)
         LIMIT 1;
 
         IF auto_aprobar = true THEN
@@ -119,7 +119,7 @@ BEGIN
                             -- Estrategia 1: Búsqueda por Valor Exacto
                             SELECT centro_costos INTO historical_cc
                             FROM public."Registro_Facturas"
-                            WHERE "Nit" = NEW."Nit"
+                            WHERE SPLIT_PART("Nit", '-', 1) = SPLIT_PART(NEW."Nit", '-', 1)
                               AND "Aprobacion_Doliente" = 'Aprobado'
                               AND centro_costos IS NOT NULL
                               AND centro_costos != ''
@@ -136,7 +136,7 @@ BEGIN
                                     WITH last_invoices AS (
                                         SELECT centro_costos
                                         FROM public."Registro_Facturas"
-                                        WHERE "Nit" = NEW."Nit"
+                                        WHERE SPLIT_PART("Nit", '-', 1) = SPLIT_PART(NEW."Nit", '-', 1)
                                           AND "Aprobacion_Doliente" = 'Aprobado'
                                           AND centro_costos IS NOT NULL
                                           AND centro_costos != ''
