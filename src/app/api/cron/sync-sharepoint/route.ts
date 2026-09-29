@@ -301,6 +301,20 @@ export async function GET(req: Request) {
                         console.warn('[CRON-SYNC][Auto-Approve] Detection failed (non-fatal):', autoErr.message);
                     }
                 }
+
+                // --- Rejection detection from SharePoint ---
+                if (typeof invoiceData.Aprobacion_Doliente === 'string' && invoiceData.Aprobacion_Doliente.toLowerCase().includes('rechaz')) {
+                    try {
+                        const { triggerFactureEventForInvoice } = await import('@/lib/facture');
+                        await triggerFactureEventForInvoice(spItemId, 'Rechazado', {
+                            responsableName: invoiceData.Responsable_de_Autorizar || invoiceData.Proveedor,
+                            observaciones: invoiceData.Observaciones
+                        });
+                        console.log(`[CRON-SYNC] ✅ Evento Facture (REJECT) enviado para documento ${spItemId} (${invoiceData.Nro_Factura})`);
+                    } catch (factureErr: any) {
+                        console.warn(`[CRON-SYNC] ⚠️ Error enviando rechazo a Facture para ${spItemId}:`, factureErr.message);
+                    }
+                }
             }
         }
 

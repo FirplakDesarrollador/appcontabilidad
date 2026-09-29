@@ -110,12 +110,25 @@ Deno.serve(async (req: Request) => {
                  (invoice.Proveedor && invoice.Proveedor.toUpperCase().includes('NC'))
     const primaryDocType = isNC ? 'NC-UBL' : 'FACTURA-UBL'
 
-    // Probar primero el LDF exacto con los datos del documento
-    const quickCandidates = [
-      `${primaryDocType}(${cleanNit};${rawNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`
-    ]
-    if (cleanNroFactura && cleanNroFactura !== rawNroFactura) {
-      quickCandidates.push(`${primaryDocType}(${cleanNit};${cleanNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`)
+    // Probar primero el LDF exacto con los datos del documento y offsets recientes (0 a 7 días previos)
+    const numVariantsQuick = [rawNroFactura]
+    if (cleanNroFactura && !numVariantsQuick.includes(cleanNroFactura)) {
+      numVariantsQuick.push(cleanNroFactura)
+    }
+    if (isNC) {
+      const sinPrefijo = rawNroFactura.replace(/^NC[-_]?/i, '')
+      if (sinPrefijo && !numVariantsQuick.includes(sinPrefijo)) numVariantsQuick.push(sinPrefijo)
+      if (sinPrefijo && !numVariantsQuick.includes(`NC-${sinPrefijo}`)) numVariantsQuick.push(`NC-${sinPrefijo}`)
+    }
+
+    const quickCandidates: string[] = []
+    for (let offset = 0; offset <= 7; offset++) {
+      const d = new Date(baseDate)
+      d.setDate(baseDate.getDate() - offset)
+      const dStr = d.toISOString().split('T')[0]
+      for (const num of numVariantsQuick) {
+        quickCandidates.push(`${primaryDocType}(${cleanNit};${num};${dStr};PRINCIPAL;PRINCIPAL)`)
+      }
     }
 
     for (const candLdf of quickCandidates) {
@@ -300,10 +313,52 @@ Deno.serve(async (req: Request) => {
 
     const documentTokenBase64 = btoa(ldfString)
 
+    const fullResponsableName = extraDetails?.responsableName || invoice.Responsable_de_Autorizar || 'Responsable Autorizador'
+    const nameParts = fullResponsableName.trim().split(' ')
+    const firstName = nameParts[0] || 'Aprobador'
+    const lastName = nameParts.slice(1).join(' ') || 'Contabilidad'
+
+    const isRechazado = typeof action === 'string' && action.toLowerCase().includes('rechaz')
+
     // 4. Si la acción es RECHAZADO:
-    if (action === 'Rechazado') {
+    if (isRechazado) {
       const obsReason = extraDetails?.observaciones || invoice.Observaciones || 'Documento rechazado por el autorizador'
-      console.log(`[facture-event] ❌ Emitiendo REJECT/V2 para ${nroFactura} con motivo: "${obsReason}"`)
+
+      // PASO 1: Emitir RECEIVEGOODS (032 - Recibo de Bienes) para asegurar que el documento quede recibido en la línea de tiempo
+      console.log(`[facture-event] 📦 PASO 1 (Rechazo): Emitiendo RECEIVEGOODS (032) para ${nroFactura}...`)
+      try {
+        const receiveUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(documentTokenBase64)}`
+        await fetch(receiveUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Origin': 'https://plataforma.facture.co',
+            'Referer': 'https://plataforma.facture.co/',
+            'reception': 'true',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            motive: 'Otro',
+            sourceDelivery: 'INBOX',
+            canal: 'INBOX',
+            medio: Deno.env.get('FACTURE_MEDIO_EMAIL') ?? 'recepcionfacturas@firplak.com',
+            receiverDocumentType: 'CC',
+            receiverDocumentNumber: '123456789',
+            receiverName: firstName,
+            receiverLastName: lastName,
+            receiverJobTitle: 'Responsable de Autorizar',
+            receiverOrganizationDepartment: 'Contabilidad',
+            receiveDateTime: new Date().toISOString()
+          })
+        })
+      } catch (recErr) {
+        console.warn('[facture-event] Aviso en RECEIVEGOODS previo al rechazo (continuando con REJECT):', recErr)
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1500))
+
+      // PASO 2: Emitir REJECT/V2 (031 - Reclamo)
+      console.log(`[facture-event] ❌ PASO 2: Emitiendo REJECT/V2 para ${nroFactura} con motivo: "${obsReason}"`)
 
       const rejectUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/REJECT/V2/${encodeURIComponent(documentTokenBase64)}`
 
@@ -330,7 +385,7 @@ Deno.serve(async (req: Request) => {
       const rejectData = await rejectRes.json().catch(() => null)
       console.log(`[facture-event] REJECT/V2 response (${rejectRes.status}):`, JSON.stringify(rejectData))
 
-      const rejectSuccess = rejectRes.ok || rejectData?.isSuccess === true || rejectData?.eventItems?.[0]?.shortDescription?.includes('rechazado')
+      const rejectSuccess = rejectRes.ok || rejectData?.isSuccess === true || rejectData?.eventItems?.[0]?.shortDescription?.includes('rechazado') || rejectData?.eventItems?.[0]?.shortDescription?.includes('reclamar')
 
       return new Response(
         JSON.stringify({
@@ -344,11 +399,6 @@ Deno.serve(async (req: Request) => {
     }
 
     // 5. Si la acción es APROBADO: RECEIVEGOODS + pausa + ACCEPT/V2
-    const fullResponsableName = extraDetails?.responsableName || invoice.Responsable_de_Autorizar || 'Responsable Autorizador'
-    const nameParts = fullResponsableName.trim().split(' ')
-    const firstName = nameParts[0] || 'Aprobador'
-    const lastName = nameParts.slice(1).join(' ') || 'Contabilidad'
-
     // PASO 1: RECEIVEGOODS (Evento 032 - Recibo de Bienes)
     console.log(`[facture-event] 📦 PASO 1: Emitiendo RECEIVEGOODS (032) para ${nroFactura}...`)
     const receiveUrl = `https://reception-domain-service.facture.co/PLColab.Documents/Document/RECEIVEGOODS/${encodeURIComponent(documentTokenBase64)}`

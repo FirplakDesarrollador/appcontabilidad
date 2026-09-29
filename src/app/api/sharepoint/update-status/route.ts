@@ -258,12 +258,17 @@ export async function POST(req: NextRequest) {
         }
 
         // 6. Trigger evento Facture (Aprobado o Rechazado) — FUERA del bloque de SAP para que funcione con ambos estados
-        if (field === 'Aprobacion_Doliente' && (listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas') && (status === 'Aprobado' || status === 'Rechazado')) {
+        const isFactureList = !listName || listName === 'Registro_de_Facturas' || listName === 'Registro_Facturas';
+        const isAprob = typeof status === 'string' && status.toLowerCase().includes('aprob');
+        const isRechaz = typeof status === 'string' && status.toLowerCase().includes('rechaz');
+
+        if (field === 'Aprobacion_Doliente' && isFactureList && (isAprob || isRechaz)) {
             try {
                 const invoiceRow = updatedData[0];
-                console.log(`[update-status] Calling triggerFactureEventForInvoice for invoice ${itemId}`);
+                const actionToTrigger = isRechaz ? 'Rechazado' : 'Aprobado';
+                console.log(`[update-status] Calling triggerFactureEventForInvoice for invoice ${itemId} with action ${actionToTrigger}`);
                 const { triggerFactureEventForInvoice } = await import('@/lib/facture');
-                factureResult = await triggerFactureEventForInvoice(itemId, status, {
+                factureResult = await triggerFactureEventForInvoice(itemId, actionToTrigger, {
                     responsableName: invoiceRow?.Responsable_de_Autorizar,
                     observaciones: updateData.Observaciones || invoiceRow?.Observaciones
                 });

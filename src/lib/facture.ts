@@ -335,11 +335,25 @@ export async function triggerFactureEventForInvoice(
                  (invoice.Proveedor && invoice.Proveedor.toUpperCase().includes('NC'));
     const primaryDocType = isNC ? 'NC-UBL' : 'FACTURA-UBL';
 
-    const quickCandidates = [
-      `${primaryDocType}(${cleanNit};${rawNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`
-    ];
-    if (cleanNroFactura && cleanNroFactura !== rawNroFactura) {
-      quickCandidates.push(`${primaryDocType}(${cleanNit};${cleanNroFactura};${baseDate.toISOString().split('T')[0]};PRINCIPAL;PRINCIPAL)`);
+    // Probar primero el LDF exacto con los datos del documento y offsets recientes (0 a 7 días previos)
+    const numVariantsQuick = [rawNroFactura];
+    if (cleanNroFactura && !numVariantsQuick.includes(cleanNroFactura)) {
+      numVariantsQuick.push(cleanNroFactura);
+    }
+    if (isNC) {
+      const sinPrefijo = rawNroFactura.replace(/^NC[-_]?/i, '');
+      if (sinPrefijo && !numVariantsQuick.includes(sinPrefijo)) numVariantsQuick.push(sinPrefijo);
+      if (sinPrefijo && !numVariantsQuick.includes(`NC-${sinPrefijo}`)) numVariantsQuick.push(`NC-${sinPrefijo}`);
+    }
+
+    const quickCandidates: string[] = [];
+    for (let offset = 0; offset <= 7; offset++) {
+      const d = new Date(baseDate);
+      d.setDate(baseDate.getDate() - offset);
+      const dStr = d.toISOString().split('T')[0];
+      for (const num of numVariantsQuick) {
+        quickCandidates.push(`${primaryDocType}(${cleanNit};${num};${dStr};PRINCIPAL;PRINCIPAL)`);
+      }
     }
 
     for (const candLdf of quickCandidates) {
@@ -540,10 +554,8 @@ export async function triggerFactureEventForInvoice(
     console.log(`[Facture] ⏳ Pausa de 2 segundos para sincronización obligatoria del Evento 032 en la DIAN...`);
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // -----------------------------------------------------------------------------------------
-    // PASO 2: EMITIR ACEPTACIÓN EXPRESA (ACCEPT/V2) O RECHAZO (REJECT/V2) SEGÚN LA ACCIÓN
-    // -----------------------------------------------------------------------------------------
-    if (action === 'Rechazado') {
+    const isRechazado = typeof action === 'string' && action.toLowerCase().includes('rechaz');
+    if (isRechazado) {
       const obsReason = extraDetails?.observaciones || invoice.Observaciones || "Documento rechazado por el autorizador";
       console.log(`[Facture] ❌ PASO 2: Emitiendo Rechazo (REJECT/V2 - 031) para factura ${nroFactura} (ID ${invoiceId}) con motivo: "${obsReason}"...`);
       
