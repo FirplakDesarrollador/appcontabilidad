@@ -117,17 +117,39 @@ export async function GET(req: Request) {
             const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, DigitadoPor, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
             const fetchLimit = limit > 0 ? limit : 1000;
 
-            const [dataRes, counts] = await Promise.all([
-                supabase
+            let data: any[] = [];
+            const [counts] = await Promise.all([getInvoiceCounts(refresh)]);
+
+            if (fetchLimit <= 1000) {
+                const dataRes = await supabase
                     .from('Registro_Facturas')
                     .select(columns)
                     .eq('Aprobacion_Doliente', 'Por Aprobar')
                     .order('ID', { ascending: false })
-                    .range(offset, offset + fetchLimit - 1),
-                getInvoiceCounts(refresh)
-            ]);
-
-            const data = dataRes.data || [];
+                    .range(offset, offset + fetchLimit - 1);
+                data = dataRes.data || [];
+            } else {
+                const targetCount = Math.min(Math.max(0, counts.pendingCount - offset), fetchLimit);
+                const batchSize = 1000;
+                const numBatches = Math.ceil(targetCount / batchSize);
+                const promises = [];
+                for (let i = 0; i < numBatches; i++) {
+                    const from = offset + i * batchSize;
+                    const to = Math.min(from + batchSize - 1, offset + targetCount - 1);
+                    promises.push(
+                        supabase
+                            .from('Registro_Facturas')
+                            .select(columns)
+                            .eq('Aprobacion_Doliente', 'Por Aprobar')
+                            .order('ID', { ascending: false })
+                            .range(from, to)
+                    );
+                }
+                const batchResults = await Promise.all(promises);
+                for (const br of batchResults) {
+                    if (br.data) data.push(...br.data);
+                }
+            }
 
             return NextResponse.json({
                 success: true,
@@ -151,13 +173,46 @@ export async function GET(req: Request) {
                 console.log(`[API] Fetching PROCESSED from Supabase cache (offset=${offset}, limit=${limit})...`);
                 const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, DigitadoPor, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
                 const fetchLimit = limit > 0 ? limit : 1000;
+                const orFilter = 'Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado,FechaProcesado.not.is.null';
 
-                const { data, error } = await supabase
-                    .from('Registro_Facturas')
-                    .select(columns)
-                    .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado')
-                    .order('ID', { ascending: false })
-                    .range(offset, offset + fetchLimit - 1);
+                let data: any[] = [];
+                let error: any = null;
+
+                if (fetchLimit <= 1000) {
+                    const res = await supabase
+                        .from('Registro_Facturas')
+                        .select(columns)
+                        .or(orFilter)
+                        .order('ID', { ascending: false })
+                        .range(offset, offset + fetchLimit - 1);
+                    data = res.data || [];
+                    error = res.error;
+                } else {
+                    // Carga masiva en lotes de 1000 en paralelo (para "Todas las facturas")
+                    const targetCount = Math.min(Math.max(0, processedCount - offset), fetchLimit);
+                    const batchSize = 1000;
+                    const numBatches = Math.ceil(targetCount / batchSize);
+                    const promises = [];
+
+                    for (let i = 0; i < numBatches; i++) {
+                        const from = offset + i * batchSize;
+                        const to = Math.min(from + batchSize - 1, offset + targetCount - 1);
+                        promises.push(
+                            supabase
+                                .from('Registro_Facturas')
+                                .select(columns)
+                                .or(orFilter)
+                                .order('ID', { ascending: false })
+                                .range(from, to)
+                        );
+                    }
+
+                    const batchResults = await Promise.all(promises);
+                    for (const br of batchResults) {
+                        if (br.error && !error) error = br.error;
+                        if (br.data) data.push(...br.data);
+                    }
+                }
 
                 if (!error && data && data.length > 0) {
                     return NextResponse.json({
