@@ -198,21 +198,59 @@ export async function createSapDraft(payload: SapDraftPayload) {
 
         // Aceptar proveedores con prefijo SAP permitido: AC o cualquier prefijo que empiece con P (P, PN, PE, etc.)
         const allBPs = bpRes.data.value as SapBusinessPartner[];
-        const vendorMatch = allBPs.find((v) => {
-            const candidateCardCode = String(v.CardCode || '').toUpperCase();
+        const validVendors = allBPs.filter((v) => {
+            const candidateCardCode = String(v.CardCode || '').toUpperCase().replace(/\s+/g, '');
             const isAllowedPrefix = candidateCardCode.startsWith('AC') || candidateCardCode.startsWith('P');
             const isSupplier = v.CardType === 'sSupplier' || v.CardType === 'cSupplier' || v.CardType === 'S';
             return isAllowedPrefix && isSupplier;
         });
 
-        if (!vendorMatch) {
+        if (validVendors.length === 0) {
             const candidates = allBPs.map((v) => `${v.CardCode || 'N/A'} (${v.CardType || 'sin tipo'})`).join(', ');
             throw new Error(`Supplier with NIT ${nit} not found in SAP with allowed prefix AC/P. Candidates ignored: ${candidates || 'none'}`);
         }
 
+        // Regla de cuentas: verificar si alguna distribución contiene las cuentas 22050510 o 22100510
+        const requiresPN = Array.isArray(distribuciones) && distribuciones.some((d) => {
+            const rawAccount = String(d.cuenta || '').trim();
+            const accountCode = rawAccount.split(/[\s-]/)[0].trim();
+            return accountCode === '22050510' || accountCode === '22100510' || rawAccount.includes('22050510') || rawAccount.includes('22100510');
+        });
+
+        let vendorMatch: SapBusinessPartner | undefined;
+
+        if (requiresPN) {
+            // Cuando en la aprobación de facturas escojan las cuentas 22050510 y 22100510
+            // se debe buscar el código SN del proveedor que empiece por PN.
+            // En caso de que no tenga PN, ahí sí se deja el AC.
+            // Pero si tiene los 2, siempre que escojan estas cuentas se debe poner el que empiece por PN.
+            vendorMatch = validVendors.find((v) => {
+                const code = String(v.CardCode || '').toUpperCase().replace(/\s+/g, '');
+                return code.startsWith('PN');
+            });
+
+            if (!vendorMatch) {
+                console.log(`SAP Draft [${nroFactura}]: Cuenta 22050510/22100510 detectada pero no se encontró código con prefijo PN para NIT ${nit}. Usando código alternativo (AC)...`);
+                vendorMatch = validVendors.find((v) => {
+                    const code = String(v.CardCode || '').toUpperCase().replace(/\s+/g, '');
+                    return code.startsWith('AC');
+                }) || validVendors[0];
+            } else {
+                console.log(`SAP Draft [${nroFactura}]: Cuenta 22050510/22100510 detectada. Se seleccionó código SN con prefijo PN: ${vendorMatch.CardCode}`);
+            }
+        } else {
+            // Para otras cuentas: priorizar AC si existe; si no, PN u otro permitido
+            vendorMatch = validVendors.find((v) => {
+                const code = String(v.CardCode || '').toUpperCase().replace(/\s+/g, '');
+                return code.startsWith('AC');
+            }) || validVendors.find((v) => {
+                const code = String(v.CardCode || '').toUpperCase().replace(/\s+/g, '');
+                return code.startsWith('PN');
+            }) || validVendors[0];
+        }
+
         const match = vendorMatch;
-        
-        const cardCode = match.CardCode;
+        const cardCode = payload.cardCode || match.CardCode;
         const cardName = match.CardName;
         const cardType = match.CardType;
         
