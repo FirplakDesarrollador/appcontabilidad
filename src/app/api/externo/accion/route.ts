@@ -8,6 +8,8 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+export const maxDuration = 120; // Permitir hasta 2 minutos para procesamiento de SAP, Facture y Teams
+
 export async function POST(req: NextRequest) {
     try {
         const { itemId, action, observaciones, distribuciones, anticipo, valor, nit, nroFactura, listName = 'Registro_de_Facturas' } = await req.json();
@@ -27,20 +29,7 @@ export async function POST(req: NextRequest) {
             cleanValor = numericValue ? Number(numericValue) : null;
         }
 
-        const client = await getGraphClient();
-
-        // 1. Resolve Site ID
-        const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-        const siteId = siteResponse.id;
-
-        // 2. Find the List
-        const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-        const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
-
-        if (!list) throw new Error(`SharePoint list "${listName}" not found`);
-        const listId = list.id;
-
-        // 3. Update the Item AND Fetch current fields for SAP
+        // Update the Item AND Fetch current fields for SAP
         let jsonDist = "";
         if (distribuciones && Array.isArray(distribuciones) && distribuciones.length > 0) {
             const centroCostosArray = distribuciones.map((d: any) => ({
@@ -337,12 +326,20 @@ export async function POST(req: NextRequest) {
         // 2. Best-effort update to SharePoint (Legacy, decoupled)
         let spItem: any = null;
         try {
-            console.log(`Sending optional PATCH to SharePoint item ${itemId} in list ${listId}`);
-            await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
-            spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).get();
-            if (spItem?.Consecutivo) consecutivoReal = spItem.Consecutivo;
-            if (spItem?.Proveedor) proveedorReal = spItem.Proveedor;
-            if (spItem?.Responsable_de_Autorizar) responsableReal = spItem.Responsable_de_Autorizar;
+            const client = await getGraphClient();
+            const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
+            const siteId = siteResponse.id;
+            const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
+            const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
+            if (list) {
+                const listId = list.id;
+                console.log(`Sending optional PATCH to SharePoint item ${itemId} in list ${listId}`);
+                await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
+                spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).get();
+                if (spItem?.Consecutivo) consecutivoReal = spItem.Consecutivo;
+                if (spItem?.Proveedor) proveedorReal = spItem.Proveedor;
+                if (spItem?.Responsable_de_Autorizar) responsableReal = spItem.Responsable_de_Autorizar;
+            }
         } catch (spErr: any) {
             console.warn('SharePoint update skipped or failed (decoupled):', spErr?.message);
         }

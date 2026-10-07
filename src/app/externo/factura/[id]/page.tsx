@@ -540,7 +540,18 @@ export default function PublicApprovalPage() {
                     nroFactura: invoice?.nroFactura
                 })
             });
-            const data = await res.json();
+            let data: any = null;
+            try {
+                data = await res.json();
+            } catch {
+                if (!res.ok) {
+                    throw new Error(`El servidor tardó en responder (${res.status}). Por favor, recarga la página para verificar si la acción se procesó.`);
+                }
+            }
+
+            if (!data) {
+                throw new Error("Respuesta inesperada del servidor. Por favor, recarga la página.");
+            }
 
             if (data.error) throw new Error(data.error);
 
