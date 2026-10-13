@@ -172,4 +172,19 @@ END;
 2.  **`Registro_Facturas`**: Donde se aplica el cambio de estado (`Aprobacion_Doliente`).
 
 ---
-Documentación generada por Antigravity - 25/03/2026
+
+## 2. Normalización de Clave de Centro de Costos
+
+### Resumen del Proceso
+Asegura que el campo `centro_costos` en `Registro_Facturas` siempre utilice la clave `centroCosto` (esperada por SAP y las vistas frontend) incluso si la regla del proveedor configurada en `proveedor_aprobacion_reglas` contenía la clave legacy `centro_costos`.
+
+### Detalles Técnicos
+- **Nombre del Trigger**: `zz_normalizar_centro_costos`
+- **Operación**: `INSERT OR UPDATE` (BEFORE)
+- **Tabla**: `public.Registro_Facturas`
+- **Función Ejecutada**: `public.trg_normalizar_centro_costos()`
+- **Archivo SQL**: `normalizar_centro_costos_trigger.sql`
+
+---
+Documentación actualizada - 13/10/2026
+
