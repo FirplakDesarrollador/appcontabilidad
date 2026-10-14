@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGraphClient } from '@/lib/sharepoint';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseAdmin = createClient(
@@ -35,7 +34,14 @@ export async function POST(req: NextRequest) {
                 updatePayload.aprobacion_doliente = status;
                 updatePayload.fecha_aprobacion = new Date().toISOString();
                 if (status === 'Aprobado') {
-                    updatePayload.gestion_contabilidad = 'Por Procesar';
+                    const { data: existingDoc } = await supabaseAdmin
+                        .from('Documento_Soporte')
+                        .select('gestion_contabilidad, fecha_procesado')
+                        .eq('id', Number(itemId))
+                        .maybeSingle();
+                    if (!existingDoc?.fecha_procesado && existingDoc?.gestion_contabilidad !== 'Procesado') {
+                        updatePayload.gestion_contabilidad = 'Por Procesar';
+                    }
                 }
             }
 
@@ -81,8 +87,22 @@ export async function POST(req: NextRequest) {
             supaUpdate.Aprobacion_Doliente = status;
             updateData.Aprobacion_Doliente = status;
             if (status === 'Aprobado') {
-                supaUpdate.Gestion_Contabilidad = 'Por Procesar';
-                updateData.Gestion_Contabilidad = 'Por Procesar';
+                const { data: existingRow } = await supabaseAdmin
+                    .from(supaTable)
+                    .select('Gestion_Contabilidad, FechaProcesado, Procesado')
+                    .eq(idCol, Number(itemId))
+                    .maybeSingle();
+
+                const isAlreadyProcessed = existingRow && (
+                    existingRow.Gestion_Contabilidad === 'Procesado' ||
+                    !!existingRow.FechaProcesado ||
+                    existingRow.Procesado === 'true'
+                );
+
+                if (!isAlreadyProcessed) {
+                    supaUpdate.Gestion_Contabilidad = 'Por Procesar';
+                    updateData.Gestion_Contabilidad = 'Por Procesar';
+                }
             }
             const nowIso = new Date().toISOString();
             supaUpdate.FechaAprobacion = nowIso;
@@ -122,29 +142,6 @@ export async function POST(req: NextRequest) {
             }, { status: 404 });
         } else {
             console.log(`[update-status] Supabase update OK for ${supaTable} ID ${itemId} — field=${field} status=${status}`);
-        }
-
-        // 2. Actualización opcional a SharePoint (desacoplada, sólo si tiene ID válido de SharePoint)
-        try {
-            const currentItem = updatedData[0];
-            const spIdToUse = currentItem?.sharepoint_id || (Number(itemId) < 100000000 ? itemId : null);
-
-            if (spIdToUse) {
-                const client = await getGraphClient();
-                const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-                const siteId = siteResponse.id;
-                const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-                const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
-
-                if (list) {
-                    await client.api(`/sites/${siteId}/lists/${list.id}/items/${spIdToUse}/fields`).patch(updateData);
-                    console.log(`[update-status] SharePoint item ${spIdToUse} actualizado exitosamente.`);
-                }
-            } else {
-                console.log(`[update-status] Registro ${itemId} no requiere sincronización con SharePoint.`);
-            }
-        } catch (spErr: any) {
-            console.warn(`[update-status] SharePoint update skipped or failed (decoupled):`, spErr?.message);
         }
 
         // 5. Auto-crear draft en SAP cuando se aprueba manualmente

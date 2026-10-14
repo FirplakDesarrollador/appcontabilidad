@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGraphClient } from '@/lib/sharepoint';
 import { sendReassignmentNotification } from '@/lib/sendReassignmentNotification';
 import { supabase } from '@/lib/supabaseClient';
 import { createClient } from '@supabase/supabase-js';
@@ -91,68 +90,6 @@ export async function POST(req: NextRequest) {
                 sharepointIdToUse = itemData.sharepoint_id || (Number(itemId) < 100000000 ? itemId : null);
             }
             console.log(`Supabase Registro_Facturas responsible updated for item ${itemId}`);
-        }
-
-
-
-        // 2. Actualización opcional a SharePoint (desacoplada, sólo si tiene ID válido)
-        if (sharepointIdToUse) {
-            try {
-                const client = await getGraphClient();
-                const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-                const siteId = siteResponse.id;
-                const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-                const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
-
-                if (list) {
-                    let userInfoRes;
-                    try {
-                        userInfoRes = await client.api(`/sites/${siteId}/lists('User Information List')/items`)
-                            .header('Prefer', 'HonorNonIndexedQueriesWarningMayFailRandomly')
-                            .expand('fields($select=id,EMail,Title)')
-                            .filter(`fields/EMail eq '${userEmail}'`)
-                            .get();
-                    } catch (e: any) {
-                        console.warn('Filtered search failed, falling back to full list search:', e.message);
-                    }
-
-                    let sharepointUserId = null;
-                    if (userInfoRes && userInfoRes.value && userInfoRes.value.length > 0) {
-                        sharepointUserId = userInfoRes.value[0].id;
-                    } else {
-                        const allUsers = await client.api(`/sites/${siteId}/lists('User Information List')/items`)
-                            .expand('fields($select=id,EMail,Title)')
-                            .get();
-                        const foundUser = allUsers.value.find((u: any) =>
-                            u.fields.EMail?.toLowerCase() === userEmail.toLowerCase() ||
-                            u.fields.Title?.toLowerCase() === userName?.toLowerCase()
-                        );
-                        if (foundUser) sharepointUserId = foundUser.id;
-                    }
-
-                    if (sharepointUserId) {
-                        const idFieldsToTry = [
-                            'ResponsabledeAutorizarLookupId', 
-                            'Responsable_de_AutorizarLookupId',
-                            'ResponsableAprobarLookupId'
-                        ];
-
-                        for (const fieldName of idFieldsToTry) {
-                            try {
-                                await client.api(`/sites/${siteId}/lists/${list.id}/items/${sharepointIdToUse}/fields`).patch({
-                                    [fieldName]: sharepointUserId
-                                });
-                                console.log(`Successfully updated ${fieldName} for item ${sharepointIdToUse} in SharePoint`);
-                                break;
-                            } catch (e: any) {
-                                console.warn(`Field ${fieldName} error: ${e.message}`);
-                            }
-                        }
-                    }
-                }
-            } catch (spErr: any) {
-                console.warn('SharePoint update skipped or failed (decoupled):', spErr?.message);
-            }
         }
 
         const notificationSent = await sendReassignmentNotification({

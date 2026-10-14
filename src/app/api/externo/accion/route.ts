@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGraphClient } from '@/lib/sharepoint';
 import { createSapDraft } from '@/lib/sap';
 import { createClient } from '@supabase/supabase-js';
 
@@ -321,27 +320,6 @@ export async function POST(req: NextRequest) {
             console.log(`Supabase updated for Registro_Facturas item ${itemId}`);
         } catch (supaErr) {
             console.error('Failed to update Supabase:', supaErr);
-        }
-
-        // 2. Best-effort update to SharePoint (Legacy, decoupled)
-        let spItem: any = null;
-        try {
-            const client = await getGraphClient();
-            const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-            const siteId = siteResponse.id;
-            const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-            const list = listsResponse.value.find((l: any) => l.name === listName || l.displayName === listName);
-            if (list) {
-                const listId = list.id;
-                console.log(`Sending optional PATCH to SharePoint item ${itemId} in list ${listId}`);
-                await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).patch(updatePayload);
-                spItem = await client.api(`/sites/${siteId}/lists/${listId}/items/${itemId}/fields`).get();
-                if (spItem?.Consecutivo) consecutivoReal = spItem.Consecutivo;
-                if (spItem?.Proveedor) proveedorReal = spItem.Proveedor;
-                if (spItem?.Responsable_de_Autorizar) responsableReal = spItem.Responsable_de_Autorizar;
-            }
-        } catch (spErr: any) {
-            console.warn('SharePoint update skipped or failed (decoupled):', spErr?.message);
         }
 
         // Ejecutar en paralelo: Creación de borrador SAP, Notificación a Teams y Eventos Facture

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { fetchAllSharePointItems } from '@/lib/sharepoint';
 import { createClient } from '@supabase/supabase-js';
 
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -36,7 +35,7 @@ async function getInvoiceCounts(forceRefresh: boolean = false): Promise<{ pendin
             supabase
                 .from('Registro_Facturas')
                 .select('ID', { count: 'exact', head: true })
-                .or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado,FechaProcesado.not.is.null'),
+                .or('Gestion_Contabilidad.eq.Procesado,FechaProcesado.not.is.null,Procesado.eq.true,Aprobacion_Doliente.eq.Rechazado'),
             supabase
                 .from('Registro_Facturas')
                 .select('ID', { count: 'exact', head: true })
@@ -173,7 +172,7 @@ export async function GET(req: Request) {
                 console.log(`[API] Fetching PROCESSED from Supabase cache (offset=${offset}, limit=${limit})...`);
                 const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, DigitadoPor, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
                 const fetchLimit = limit > 0 ? limit : 1000;
-                const orFilter = 'Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado,FechaProcesado.not.is.null';
+                const orFilter = 'Gestion_Contabilidad.eq.Procesado,FechaProcesado.not.is.null,Procesado.eq.true,Aprobacion_Doliente.eq.Rechazado';
 
                 let data: any[] = [];
                 let error: any = null;
@@ -214,47 +213,39 @@ export async function GET(req: Request) {
                     }
                 }
 
-                if (!error && data && data.length > 0) {
-                    return NextResponse.json({
-                        success: true,
-                        total: data.length,
-                        pendingCount,
-                        processedCount,
-                        toProcessCount,
-                        items: data,
-                        source: 'cache'
-                    });
+                if (error) {
+                    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
                 }
+
+                return NextResponse.json({
+                    success: true,
+                    total: (data || []).length,
+                    pendingCount,
+                    processedCount,
+                    toProcessCount,
+                    items: data || [],
+                    source: 'supabase'
+                });
             }
-
-            // Fallback a SharePoint si no hay datos en caché
-            console.log('[API] Fetching PROCESSED items from SharePoint...');
-            const sharepointFilter = "fields/Aprobacion_Doliente eq 'Aprobado' or fields/Aprobacion_Doliente eq 'Rechazado' or fields/Gestion_Contabilidad eq 'Procesado'";
-            let items = await fetchAllSharePointItems('Registro_de_Facturas', limit || 5000, sharepointFilter);
-            if (limit > 0 && items.length > limit) items = items.slice(0, limit);
-
-            return NextResponse.json({
-                success: true,
-                total: items.length,
-                pendingCount,
-                processedCount,
-                toProcessCount,
-                items,
-                source: 'sharepoint'
-            });
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // SIN FILTRO → todo desde SharePoint
+        // SIN FILTRO → todo desde Supabase
         // ─────────────────────────────────────────────────────────────────────
-        console.log('[API] Fetching ALL items from SharePoint...');
-        let items = await fetchAllSharePointItems('Registro_de_Facturas', limit || 5000, '');
-        if (limit > 0 && items.length > limit) items = items.slice(0, limit);
+        console.log('[API] Fetching ALL items from Supabase...');
+        const columns = 'ID, Nit, Proveedor, Nro_Factura, Consecutivo, Observaciones, Aprobacion_Doliente, Gestion_Contabilidad, Responsable_de_Autorizar, Valor_total, Creado, sharepoint_id, documentos, FechaAprobacion, FechaProcesado, DigitadoPor, adjuntos_url, centro_costos, tablaCostos, tiene_anticipo, Procesado';
+        const fetchLimit = limit > 0 ? limit : 1000;
+        const res = await supabase
+            .from('Registro_Facturas')
+            .select(columns)
+            .order('ID', { ascending: false })
+            .range(offset, offset + fetchLimit - 1);
+        const items = res.data || [];
 
         const [{ count: pendingCount }, { count: processedCount }, { count: toProcessCount }] = await Promise.all([
             supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Por Aprobar'),
-            supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).or('Aprobacion_Doliente.in.(Aprobado,Rechazado),Gestion_Contabilidad.eq.Procesado'),
-            supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Aprobado').ilike('Gestion_Contabilidad', '%POR PROCESAR%')
+            supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).or('Gestion_Contabilidad.eq.Procesado,FechaProcesado.not.is.null,Procesado.eq.true,Aprobacion_Doliente.eq.Rechazado'),
+            supabase.from('Registro_Facturas').select('ID', { count: 'exact', head: true }).eq('Aprobacion_Doliente', 'Aprobado').ilike('Gestion_Contabilidad', '%POR PROCESAR%').is('FechaProcesado', null)
         ]);
 
         return NextResponse.json({
@@ -264,7 +255,7 @@ export async function GET(req: Request) {
             processedCount: processedCount || 0,
             toProcessCount: toProcessCount || 0,
             items,
-            source: 'sharepoint'
+            source: 'supabase'
         });
 
     } catch (error: any) {

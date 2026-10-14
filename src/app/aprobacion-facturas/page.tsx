@@ -1130,7 +1130,7 @@ export default function InvoicesPage() {
                     } else {
                         updated.Aprobacion_Doliente = action;
                         updated.FechaAprobacion = nowIso;
-                        if (action === 'Aprobado') {
+                        if (action === 'Aprobado' && !inv.FechaProcesado && inv.Gestion_Contabilidad !== 'Procesado') {
                             updated.Gestion_Contabilidad = 'Por Procesar';
                         }
                     }
@@ -1370,13 +1370,13 @@ export default function InvoicesPage() {
     const isToProcess = (inv: SharePointInvoice) => {
         const state = (inv.Aprobacion_Doliente || "").toLowerCase();
         const contabilidad = (inv.Gestion_Contabilidad || "").toLowerCase();
-        return state.includes("aprobado") && contabilidad.includes("por procesar") && !inv.FechaProcesado;
+        return state.includes("aprobado") && !contabilidad.includes("procesado") && !inv.FechaProcesado && !state.includes("rechazado");
     };
 
     const isProcessed = (inv: SharePointInvoice) => {
         const state = (inv.Aprobacion_Doliente || "").toLowerCase();
         const contabilidad = (inv.Gestion_Contabilidad || "").toLowerCase();
-        return state.includes("aprobado") || state.includes("rechazado") || contabilidad.includes("procesado") || !!inv.FechaProcesado;
+        return contabilidad.includes("procesado") || !!inv.FechaProcesado || state.includes("rechazado");
     };
 
     const filteredInvoices = useMemo(() => {
