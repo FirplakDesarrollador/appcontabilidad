@@ -793,7 +793,7 @@ export default function InvoicesPage() {
 
 
     useEffect(() => {
-        if (activeTab === 'processed' || activeTab === 'to_process') {
+        if (activeTab === 'processed') {
             fetchHistory();
         }
     }, [activeTab]);
@@ -1153,7 +1153,10 @@ export default function InvoicesPage() {
                 // pestañas Por Procesar / Histórico queden consistentes con
                 // la base de datos de inmediato.
                 if (field === 'Gestion_Contabilidad' && action === 'Procesado') {
-                    fetchHistory(true);
+                    fetchInvoices(true);
+                    if (processedInvoices.length > 0) {
+                        fetchHistory(true);
+                    }
                 }
             } else {
                 const data = await res.json();
@@ -1698,8 +1701,8 @@ export default function InvoicesPage() {
                         >
                             <h2 className="text-3xl font-extrabold text-[#254153]">Gestión de Facturas</h2>
                             <p className="text-gray-500 mt-1 font-medium flex items-center gap-2">
-                                <span className={`h-2 w-2 rounded-full animate-pulse ${dataSource === 'cache' ? 'bg-emerald-500' : dataSource === 'sharepoint' ? 'bg-blue-500' : 'bg-gray-400'}`} />
-                                {dataSource === 'cache' ? 'Cargado desde Caché (Alta Velocidad)' : dataSource === 'sharepoint' ? 'Cargado desde SharePoint Online' : 'Cargando datos...'}
+                                <span className={`h-2 w-2 rounded-full animate-pulse ${dataSource === 'supabase' || dataSource === 'cache' ? 'bg-emerald-500' : dataSource === 'sharepoint' ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                                {dataSource === 'supabase' || dataSource === 'cache' ? 'Cargado desde Base de Datos (Alta Velocidad)' : dataSource === 'sharepoint' ? 'Cargado desde SharePoint Online' : 'Cargando datos...'}
                             </p>
                         </motion.div>
 
@@ -1923,7 +1926,7 @@ export default function InvoicesPage() {
                                 Mostrando <span className="text-[#254153] font-bold">{displayedRowCount}</span> de <span className="text-gray-600 font-bold">{filteredInvoices.length}</span> registros cargados (Total servidor: {activeTab === 'pending' ? `${pendingCount} pendientes` : activeTab === 'to_process' ? `${toProcessCount} por procesar` : `${processedCount} procesados`})
                             </div>
                             
-                            {(activeTab === 'processed' || activeTab === 'to_process') && (
+                            {activeTab === 'processed' && (
                                 <div className="flex items-center gap-2">
                                     <span className="text-sm text-gray-500 font-medium">Cargar:</span>
                                     <select
