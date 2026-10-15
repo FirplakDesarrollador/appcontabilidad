@@ -211,7 +211,7 @@ export async function POST(req: NextRequest) {
                 const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
                 const { data: existingProvider, error: lookupError } = await supabaseAdmin
                     .from("Proveedores_con_Responsable")
-                    .select('"Nit", "Responsable"')
+                    .select('"Nit", "Responsable", "Correo"')
                     .or(`Nit.ilike.${baseNit}%,Nit.ilike.${nit}%`)
                     .limit(1);
 
@@ -222,19 +222,27 @@ export async function POST(req: NextRequest) {
                         "Responsable": responsableNombreRecibido,
                         "Autorizador": responsableNombreRecibido,
                         "Correo": responsableEmail || null,
+                        "Notificar": "True",
                         "Creado": new Date().toISOString()
                     });
                     console.log(`[Supabase] Auto-registrado nuevo proveedor con responsable (Doc Soporte): ${nit} - ${responsableNombreRecibido}`);
-                } else if (existingProvider && existingProvider.length > 0 && !existingProvider[0].Responsable) {
-                    await supabaseAdmin
-                        .from("Proveedores_con_Responsable")
-                        .update({
-                            "Responsable": responsableNombreRecibido,
-                            "Autorizador": responsableNombreRecibido,
-                            "Correo": responsableEmail || null,
-                        })
-                        .eq("Nit", existingProvider[0].Nit);
-                    console.log(`[Supabase] Actualizado responsable en Proveedores_con_Responsable (Doc Soporte): ${existingProvider[0].Nit} - ${responsableNombreRecibido}`);
+                } else if (existingProvider && existingProvider.length > 0) {
+                    const prov = existingProvider[0];
+                    const updates: any = {};
+                    if (!prov.Responsable) {
+                        updates.Responsable = responsableNombreRecibido;
+                        updates.Autorizador = responsableNombreRecibido;
+                    }
+                    if (!prov.Correo && responsableEmail) {
+                        updates.Correo = responsableEmail;
+                    }
+                    if (Object.keys(updates).length > 0) {
+                        await supabaseAdmin
+                            .from("Proveedores_con_Responsable")
+                            .update(updates)
+                            .eq("Nit", prov.Nit);
+                        console.log(`[Supabase] Actualizado Proveedores_con_Responsable (Doc Soporte): ${prov.Nit}`);
+                    }
                 }
             } catch (providerErr) {
                 console.error("[Supabase] Error registrando Proveedor_con_Responsable (Doc Soporte):", providerErr);
@@ -284,11 +292,12 @@ export async function POST(req: NextRequest) {
 
                 console.log('[Webhook] Sending notification to Power Automate:', payload);
 
-                fetch(webhookUrl, {
+                const notifyRes = await fetch(webhookUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
-                }).catch(e => console.error('[Webhook] Error fetching background:', e));
+                });
+                console.log(`[Webhook] Power Automate response status: ${notifyRes.status}`);
             }
         } catch (webhookError) {
             console.error('[Webhook] Error configuring notification:', webhookError);

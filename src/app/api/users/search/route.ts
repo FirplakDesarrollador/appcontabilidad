@@ -14,8 +14,17 @@ export async function GET(req: NextRequest) {
         const siteId = await getCachedSiteId(client, 'FPKContabilidad');
         const directory = await getCachedUserDirectory(client, siteId);
 
+        const terms = q.split(/\s+/).filter(Boolean);
         const matchedUsers = directory
-            .filter(u => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+            .filter(u => {
+                const nameLower = u.name.toLowerCase();
+                const emailLower = u.email.toLowerCase();
+                return (
+                    nameLower.includes(q) ||
+                    emailLower.includes(q) ||
+                    terms.every(t => nameLower.includes(t) || emailLower.includes(t))
+                );
+            })
             .slice(0, 10);
 
         return NextResponse.json({ users: matchedUsers });
