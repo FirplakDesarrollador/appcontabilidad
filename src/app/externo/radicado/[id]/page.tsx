@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { PdfViewerWithZoom } from "@/components/ui/PdfViewerWithZoom";
 import * as XLSX from "xlsx";
 
 interface RadicadoData {
@@ -659,30 +660,15 @@ function RadicadoApprovalContent() {
 
                             {/* Right Column: PDF Viewer */}
                             <div className="lg:col-span-7 sticky top-8">
-                                <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 p-4 h-[calc(100vh-100px)] min-h-[600px] flex flex-col">
-                                    <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 mb-2">
-                                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                                            <FileText className="h-4 w-4 text-blue-500" />
-                                            Vista Previa del Documento
-                                        </span>
-                                        <a
-                                            href={`/api/externo/radicado/${radicado.id}/download?download=true`}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
-                                        >
-                                            <Download className="h-3.5 w-3.5" />
-                                            Descargar
-                                        </a>
-                                    </div>
-
-                                    <div className="flex-1 bg-gray-50 rounded-2xl overflow-hidden relative">
-                                        <iframe
-                                            src={`/api/externo/radicado/${radicado.id}/download`}
-                                            className="w-full h-full border-0 rounded-2xl"
-                                            title="Document Preview"
-                                        />
-                                    </div>
+                                <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 p-4 sm:p-6 min-h-[600px] flex flex-col">
+                                    <PdfViewerWithZoom
+                                        url={`/api/externo/radicado/${radicado.id}/download`}
+                                        title="Vista Previa del Documento"
+                                        fileName={radicado.documentInfo?.fileName || `Radicado #${radicado.consecutivo || radicado.id}`}
+                                        containerHeightClass="h-[calc(100vh-200px)] min-h-[550px]"
+                                        downloadUrl={`/api/externo/radicado/${radicado.id}/download?download=true`}
+                                        onDownload={handleDownload}
+                                    />
                                 </div>
                             </div>
 

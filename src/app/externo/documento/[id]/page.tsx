@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { PdfViewerWithZoom } from "@/components/ui/PdfViewerWithZoom";
 
 interface DocumentData {
     id: string;
@@ -890,52 +891,16 @@ export default function PublicDocumentApprovalPage() {
                             <div className="lg:col-span-7 h-full">
                                 <div className="lg:sticky lg:top-8 space-y-4">
                                     <div className="bg-white p-4 sm:p-6 rounded-[32px] shadow-2xl border border-gray-100 overflow-hidden h-fit">
-                                        <div className="flex items-center justify-between mb-6 px-2">
-                                            <div className="flex items-center gap-3">
-                                                <div className="bg-blue-50 p-2 rounded-xl">
-                                                    <FileText className="h-5 w-5 text-blue-600" />
-                                                </div>
-                                                <div>
-                                                    <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider">Vista del Documento</h4>
-                                                    <p className="text-[10px] text-gray-400 font-bold">{document?.documentInfo?.fileName || "Visualización Directa"}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="relative min-h-[500px] lg:min-h-[750px] w-full bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden group">
-                                            {previewLoading ? (
-                                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-10 transition-all">
-                                                    <Loader2 className="h-10 w-10 text-[#254153] animate-spin mb-4" />
-                                                    <p className="text-xs font-black text-[#254153] uppercase tracking-[2px]">Optimizando visualización...</p>
-                                                </div>
-                                            ) : previewError ? (
-                                                <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-red-50/50">
-                                                    <div className="bg-white p-4 rounded-full shadow-sm mb-4">
-                                                        <AlertCircle className="h-8 w-8 text-red-500" />
-                                                    </div>
-                                                    <p className="text-sm font-black text-red-900 mb-4 px-4">{previewError}</p>
-                                                    <Button 
-                                                        onClick={handlePreview} 
-                                                        className="px-8 py-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-2xl shadow-lg transition-all"
-                                                    >
-                                                        Reintentar Carga
-                                                    </Button>
-                                                </div>
-                                            ) : previewUrl ? (
-                                                <iframe 
-                                                    src={`${previewUrl}#toolbar=0&navpanes=0&scrollbar=1`} 
-                                                    className="w-full h-[500px] lg:h-[750px] border-none shadow-inner bg-white"
-                                                    title="Document Preview"
-                                                />
-                                            ) : (
-                                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl m-4">
-                                                    <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 mb-4">
-                                                        <FileText className="h-8 w-8 text-[#254153]/20" />
-                                                    </div>
-                                                    <p className="text-xs font-bold text-gray-400">Esperando archivo...</p>
-                                                </div>
-                                            )}
-                                        </div>
+                                        <PdfViewerWithZoom
+                                            url={previewUrl}
+                                            title="Vista del Documento"
+                                            fileName={document?.documentInfo?.fileName || "Visualización Directa"}
+                                            isLoading={previewLoading}
+                                            error={previewError}
+                                            onRetry={handlePreview}
+                                            isNativeSharePoint={!!document?.documentInfo?.isNative}
+                                            onDownload={handleDownload}
+                                        />
                                     </div>
 
                                     {/* Quick Tips or Footer for Right Column */}
