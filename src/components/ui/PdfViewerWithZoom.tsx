@@ -252,21 +252,14 @@ export function PdfViewerWithZoom({
             );
         }
 
+        const separator = url.includes("?") ? "&" : "?";
+        const pdfSrc = `${url}${separator}z=${zoom}#zoom=${zoom}&navpanes=0&toolbar=0`;
+
         return (
-            <div
-                style={{
-                    width: zoom > 100 ? `${zoom}%` : "100%",
-                    height: zoom > 100 ? `${zoom}%` : "100%",
-                    minWidth: "100%",
-                    minHeight: "100%",
-                    transform: zoom < 100 ? `scale(${zoom / 100})` : undefined,
-                    transformOrigin: "top center",
-                    transition: "width 0.15s ease-out, height 0.15s ease-out, transform 0.15s ease-out",
-                }}
-                className={zoom > 100 ? "block" : "flex items-start justify-center"}
-            >
+            <div className="w-full h-full min-h-full">
                 <iframe
-                    src={`${url}#toolbar=0&navpanes=0&scrollbar=1`}
+                    key={`${url}-${zoom}`}
+                    src={pdfSrc}
                     className={`w-full h-full ${customHeight || "min-h-[500px] lg:min-h-[750px]"} border-none shadow-inner bg-white`}
                     title="Invoice Preview"
                 />
@@ -306,7 +299,7 @@ export function PdfViewerWithZoom({
             {/* Main Embedded Viewer Box */}
             <div
                 ref={containerRef}
-                className={`relative w-full ${containerHeightClass} bg-slate-100/70 rounded-2xl border border-gray-100 overflow-auto group`}
+                className={`relative w-full ${containerHeightClass} bg-slate-100/70 rounded-2xl border border-gray-100 overflow-hidden group`}
             >
                 {renderDocumentContent()}
             </div>
@@ -358,7 +351,7 @@ export function PdfViewerWithZoom({
                         </div>
 
                         {/* Modal Scrollable Document Viewer */}
-                        <div className="relative flex-1 w-full bg-slate-900 rounded-2xl border border-white/10 overflow-auto">
+                        <div className="relative flex-1 w-full bg-slate-900 rounded-2xl border border-white/10 overflow-hidden">
                             {renderDocumentContent("min-h-full h-full")}
                         </div>
 
