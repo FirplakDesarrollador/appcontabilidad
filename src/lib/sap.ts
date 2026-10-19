@@ -77,6 +77,11 @@ function sapRequest(url: string, options: { method?: string; headers?: Record<st
             reject(err);
         });
 
+        // Evitar conexiones colgadas: si SAP no responde en 30s, abortar (el retry lo reintenta)
+        req.setTimeout(30000, () => {
+            req.destroy(new Error('SAP request timeout (30s) - el servidor SAP no respondió'));
+        });
+
         if (options.body) {
             req.write(options.body);
         }

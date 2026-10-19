@@ -1171,7 +1171,7 @@ export default function InvoicesPage() {
     };
 
     const handleManualSapSync = async (inv: SharePointInvoice) => {
-        if (!confirm(`Â¿Estás seguro de crear un documento preliminar en SAP para la factura ${inv.Nro_Factura}?`)) return;
+        if (!confirm(`¿Estás seguro de crear un documento preliminar en SAP para la factura ${inv.Nro_Factura}?`)) return;
         
         setSyncingId(inv.id);
         try {
@@ -1186,15 +1186,25 @@ export default function InvoicesPage() {
                 })
             });
 
-            const data = await res.json();
+            // Leer como texto: si el servidor corta por timeout devuelve HTML, no JSON
+            const raw = await res.text();
+            let data: any = null;
+            try {
+                data = JSON.parse(raw);
+            } catch {
+                console.error(`Respuesta no JSON de manual-draft (HTTP ${res.status}):`, raw.slice(0, 300));
+                alert(`❌ SAP no respondió a tiempo o el servidor falló (HTTP ${res.status}). Intenta de nuevo en un momento.`);
+                return;
+            }
+
             if (data.success) {
-                alert(`âœ… Preliminar SAP creado exitosamente\nDocEntry: ${data.sap.draftId}`);
+                alert(`✅ Preliminar SAP creado exitosamente\nDocEntry: ${data.sap.draftId}`);
             } else {
-                alert(`âŒ Error al crear preliminar SAP: ${data.error}`);
+                alert(`❌ Error al crear preliminar SAP: ${data.error}`);
             }
         } catch (error) {
             console.error("Error manual SAP sync:", error);
-            alert("âŒ Error de conexión al sincronizar con SAP. Revisa la consola.");
+            alert("❌ Error de conexión al sincronizar con SAP. Revisa la consola.");
         } finally {
             setSyncingId(null);
         }

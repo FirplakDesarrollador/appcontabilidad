@@ -3,6 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 import { getSharePointInvoiceById, getSharePointItemById } from '@/lib/sharepoint';
 import { createSapDraft } from '@/lib/sap';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 120; // SAP (login + búsqueda de SN + draft) puede tardar más que el límite por defecto
+
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
