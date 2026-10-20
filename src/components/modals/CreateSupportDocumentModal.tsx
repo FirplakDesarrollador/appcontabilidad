@@ -119,98 +119,126 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
         setIsLoading(true);
         setError(null);
 
+        let directErrorDetail = "";
+        let serverErrorDetail = "";
+
         // Plan B: Subida a través de la API del servidor (evita bloqueos a supabase.co por adblockers o firewalls)
         const uploadViaServer = async () => {
-            const data = new FormData();
-            data.append("nit", formData.nit);
-            data.append("proveedor", formData.proveedor);
-            if (formData.responsableEmail) {
-                data.append("responsableEmail", formData.responsableEmail);
-            }
-            if (userSearch) {
-                data.append("responsableNombre", userSearch);
-            }
-            if (formData.valor) {
-                data.append("valorTotal", formData.valor);
-            }
-            files.forEach((f) => {
-                data.append("files", f);
-            });
-
-            const res = await fetch("/api/sharepoint/documentos/create", {
-                method: "POST",
-                body: data
-            });
-
-            const raw = await res.text();
-            let result: any = null;
             try {
-                result = JSON.parse(raw);
-            } catch {
-                throw new Error(`El servidor respondió con error (HTTP ${res.status}).`);
-            }
+                const data = new FormData();
+                data.append("nit", formData.nit);
+                data.append("proveedor", formData.proveedor);
+                if (formData.responsableEmail) {
+                    data.append("responsableEmail", formData.responsableEmail);
+                }
+                if (userSearch) {
+                    data.append("responsableNombre", userSearch);
+                }
+                if (formData.valor) {
+                    data.append("valorTotal", formData.valor);
+                }
+                files.forEach((f) => {
+                    data.append("files", f);
+                });
 
-            if (!result.success) {
-                throw new Error(result.error || "Error al crear el documento soporte.");
+                const res = await fetch("/api/sharepoint/documentos/create", {
+                    method: "POST",
+                    body: data
+                });
+
+                const raw = await res.text();
+                let result: any = null;
+                try {
+                    result = JSON.parse(raw);
+                } catch {
+                    throw new Error(`El servidor respondió HTTP ${res.status}: ${raw.slice(0, 120)}`);
+                }
+
+                if (!result.success) {
+                    throw new Error(result.error || "Error al crear el documento soporte.");
+                }
+                return result;
+            } catch (err: any) {
+                serverErrorDetail = String(err?.message || err);
+                throw err;
             }
-            return result;
         };
 
         // Plan A: Subida directa a Supabase Storage con URLs firmadas (para archivos grandes sin límite de Vercel)
         const uploadDirectToSupabase = async () => {
-            // 1. Pedir URLs de subida firmadas
-            const urlRes = await fetch("/api/sharepoint/documentos/upload-url", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ files: files.map(f => ({ name: f.name, type: f.type })) })
-            });
-            const urlJson = await urlRes.json().catch(() => null);
-            if (!urlJson?.success) {
-                throw new Error(urlJson?.error || "No se pudo preparar la subida de los archivos.");
-            }
-
-            // 2. Subir cada archivo directo a Supabase Storage
-            const uploaded: { name: string; url: string }[] = [];
-            for (let i = 0; i < files.length; i++) {
-                const up = urlJson.uploads[i];
-                const { error: upErr } = await supabase.storage
-                    .from("documento_soporte")
-                    .uploadToSignedUrl(up.path, up.token, files[i], {
-                        contentType: files[i].type || "application/octet-stream"
-                    });
-                if (upErr) {
-                    throw new Error(`Error subiendo ${files[i].name}: ${upErr.message}`);
-                }
-                uploaded.push({ name: files[i].name, url: up.publicUrl });
-            }
-
-            // 3. Registrar el documento enviando solo las URLs ligeras
-            const res = await fetch("/api/sharepoint/documentos/create", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    nit: formData.nit,
-                    proveedor: formData.proveedor,
-                    responsableEmail: formData.responsableEmail || null,
-                    responsableNombre: userSearch || null,
-                    valorTotal: formData.valor,
-                    pdfUrl: uploaded[0].url,
-                    anexos: uploaded.slice(1)
-                })
-            });
-
-            const raw = await res.text();
-            let result: any = null;
             try {
-                result = JSON.parse(raw);
-            } catch {
-                throw new Error(`El servidor respondió con error (HTTP ${res.status}).`);
-            }
+                // 1. Pedir URLs de subida firmadas
+                const urlRes = await fetch("/api/sharepoint/documentos/upload-url", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ files: files.map(f => ({ name: f.name, type: f.type })) })
+                });
+                const urlJson = await urlRes.json().catch(() => null);
+                if (!urlJson?.success) {
+                    throw new Error(urlJson?.error || "No se pudo preparar la subida de los archivos.");
+                }
 
-            if (!result.success) {
-                throw new Error(result.error || "Error al crear el documento soporte.");
+                // 2. Subir cada archivo directo a Supabase Storage
+                const uploaded: { name: string; url: string }[] = [];
+                for (let i = 0; i < files.length; i++) {
+                    const up = urlJson.uploads[i];
+                    if (up.signedUrl) {
+                        const upRes = await fetch(up.signedUrl, {
+                            method: "PUT",
+                            headers: {
+                                "Content-Type": files[i].type || "application/octet-stream",
+                                "x-upsert": "false"
+                            },
+                            body: files[i]
+                        });
+                        if (!upRes.ok) {
+                            const errTxt = await upRes.text();
+                            throw new Error(`Fallo en storage (${upRes.status}): ${errTxt.slice(0, 100)}`);
+                        }
+                    } else {
+                        const { error: upErr } = await supabase.storage
+                            .from("documento_soporte")
+                            .uploadToSignedUrl(up.path, up.token, files[i], {
+                                contentType: files[i].type || "application/octet-stream"
+                            });
+                        if (upErr) {
+                            throw new Error(`Error subiendo ${files[i].name}: ${upErr.message}`);
+                        }
+                    }
+                    uploaded.push({ name: files[i].name, url: up.publicUrl });
+                }
+
+                // 3. Registrar el documento enviando solo las URLs ligeras
+                const res = await fetch("/api/sharepoint/documentos/create", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        nit: formData.nit,
+                        proveedor: formData.proveedor,
+                        responsableEmail: formData.responsableEmail || null,
+                        responsableNombre: userSearch || null,
+                        valorTotal: formData.valor,
+                        pdfUrl: uploaded[0].url,
+                        anexos: uploaded.slice(1)
+                    })
+                });
+
+                const raw = await res.text();
+                let result: any = null;
+                try {
+                    result = JSON.parse(raw);
+                } catch {
+                    throw new Error(`El servidor respondió HTTP ${res.status}: ${raw.slice(0, 120)}`);
+                }
+
+                if (!result.success) {
+                    throw new Error(result.error || "Error al crear el documento soporte.");
+                }
+                return result;
+            } catch (err: any) {
+                directErrorDetail = String(err?.message || err);
+                throw err;
             }
-            return result;
         };
 
         try {
@@ -230,12 +258,23 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
             }, 2000);
         } catch (e: any) {
             console.error("[Doc Soporte Modal] Error final:", e);
-            const msg = String(e?.message || "");
-            if (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("networkerror")) {
-                setError("No se pudo conectar con el servidor. Revisa tu conexión a internet o intenta de nuevo.");
+            let detail = "";
+            if (directErrorDetail && serverErrorDetail) {
+                detail = `No se pudo enviar el documento.\n• Subida directa: ${directErrorDetail}\n• Subida por servidor: ${serverErrorDetail}`;
+            } else if (serverErrorDetail) {
+                detail = `Error del servidor: ${serverErrorDetail}`;
+            } else if (directErrorDetail) {
+                detail = `Error de subida: ${directErrorDetail}`;
             } else {
-                setError(msg || "Error de conexión.");
+                detail = e?.message || "Error al enviar el documento.";
             }
+
+            const mainFile = files[0];
+            if (mainFile && mainFile.size > 4.5 * 1024 * 1024) {
+                detail += `\n\nNota: El archivo pesa ${(mainFile.size / (1024 * 1024)).toFixed(1)} MB. Si tu red corporativa o navegador bloquea la subida directa a la nube, el servidor no puede recibir archivos mayores a 4.5 MB. Por favor comprime el archivo o prueba desde otra red.`;
+            }
+
+            setError(detail);
         } finally {
             setIsLoading(false);
         }

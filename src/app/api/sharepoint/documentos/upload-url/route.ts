@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
         }
 
         const batchId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-        const uploads: { path: string; token: string; publicUrl: string }[] = [];
+        const uploads: { path: string; token: string; signedUrl: string; publicUrl: string }[] = [];
 
         for (let i = 0; i < files.length; i++) {
             const name = String(files[i]?.name || 'archivo');
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
             }
 
             const { data: urlData } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(path);
-            uploads.push({ path, token: data.token, publicUrl: urlData.publicUrl });
+            uploads.push({ path, token: data.token, signedUrl: data.signedUrl, publicUrl: urlData.publicUrl });
         }
 
         return NextResponse.json({ success: true, uploads });
