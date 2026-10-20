@@ -220,9 +220,50 @@ export default function DocumentoSoporteExternoPage() {
         setIsLoading(true);
         setError(null);
 
-        try {
-            // 1. Pedir URLs de subida firmadas (petición liviana, solo nombres)
-            const allFiles: File[] = [file, ...attachments];
+        const allFiles: File[] = [file, ...attachments];
+        const finalRespName = formData.responsableNombre || userSearch;
+
+        // Plan B: Subida a través de la API del servidor (evita bloqueos a supabase.co por adblockers o firewalls)
+        const uploadViaServer = async () => {
+            const data = new FormData();
+            data.append("nit", formData.nit);
+            data.append("proveedor", formData.proveedor);
+            if (formData.responsableEmail) {
+                data.append("responsableEmail", formData.responsableEmail);
+            }
+            if (finalRespName) {
+                data.append("responsableNombre", finalRespName);
+            }
+            if (formData.valor) {
+                data.append("valorTotal", formData.valor);
+            }
+            data.append("file", file);
+            attachments.forEach(att => {
+                data.append("attachments", att);
+            });
+
+            const res = await fetch("/api/sharepoint/documentos/create", {
+                method: "POST",
+                body: data
+            });
+
+            const raw = await res.text();
+            let result: any = null;
+            try {
+                result = JSON.parse(raw);
+            } catch {
+                throw new Error(`El servidor respondió con error (HTTP ${res.status}).`);
+            }
+
+            if (!result.success) {
+                throw new Error(result.error || "Error al enviar el documento soporte.");
+            }
+            return result;
+        };
+
+        // Plan A: Subida directa a Supabase Storage con URLs firmadas (para archivos grandes sin límite de Vercel)
+        const uploadDirectToSupabase = async () => {
+            // 1. Pedir URLs de subida firmadas
             const urlRes = await fetch("/api/sharepoint/documentos/upload-url", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -233,7 +274,7 @@ export default function DocumentoSoporteExternoPage() {
                 throw new Error(urlJson?.error || "No se pudo preparar la subida de los archivos.");
             }
 
-            // 2. Subir cada archivo directo a Supabase Storage (sin pasar por Vercel)
+            // 2. Subir cada archivo directo a Supabase Storage
             const uploaded: { name: string; url: string }[] = [];
             for (let i = 0; i < allFiles.length; i++) {
                 const up = urlJson.uploads[i];
@@ -243,13 +284,12 @@ export default function DocumentoSoporteExternoPage() {
                         contentType: allFiles[i].type || "application/octet-stream"
                     });
                 if (upErr) {
-                    throw new Error(`No se pudo subir "${allFiles[i].name}": ${upErr.message}`);
+                    throw new Error(`Error subiendo ${allFiles[i].name}: ${upErr.message}`);
                 }
                 uploaded.push({ name: allFiles[i].name, url: up.publicUrl });
             }
 
-            // 3. Registrar el documento enviando solo las URLs
-            const finalRespName = formData.responsableNombre || userSearch;
+            // 3. Registrar el documento enviando las URLs
             const res = await fetch("/api/sharepoint/documentos/create", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -269,18 +309,34 @@ export default function DocumentoSoporteExternoPage() {
             try {
                 result = JSON.parse(raw);
             } catch {
-                throw new Error(`El servidor tardó demasiado o falló (HTTP ${res.status}). Intenta de nuevo.`);
+                throw new Error(`El servidor respondió con error (HTTP ${res.status}).`);
             }
 
-            if (result.success) {
+            if (!result.success) {
+                throw new Error(result.error || "Error al enviar el documento soporte.");
+            }
+            return result;
+        };
+
+        try {
+            // Intentar primero Plan A (subida directa a Supabase Storage)
+            try {
+                await uploadDirectToSupabase();
                 setSuccess(true);
-            } else {
-                throw new Error(result.error || "Error al enviar el documento soporte");
+                return;
+            } catch (directErr: any) {
+                console.warn("[Doc Soporte] Subida directa falló, activando fallback vía servidor:", directErr);
+                // Si falla (por ejemplo por adblocker, VPN corporativa bloqueando supabase.co, etc.),
+                // conmutamos automáticamente al Plan B (servidor)
+                await uploadViaServer();
+                setSuccess(true);
+                return;
             }
         } catch (e: any) {
+            console.error("[Doc Soporte] Error final al enviar documento:", e);
             const msg = String(e?.message || "");
             if (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("networkerror")) {
-                setError("No se pudo conectar con el servidor. Revisa tu conexión a internet e intenta de nuevo.");
+                setError("No se pudo conectar con el servidor. Revisa tu conexión a internet o intenta de nuevo.");
             } else {
                 setError(msg || "Error de conexión al enviar el documento.");
             }

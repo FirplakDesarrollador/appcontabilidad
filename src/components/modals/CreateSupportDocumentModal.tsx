@@ -119,7 +119,45 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
         setIsLoading(true);
         setError(null);
 
-        try {
+        // Plan B: Subida a través de la API del servidor (evita bloqueos a supabase.co por adblockers o firewalls)
+        const uploadViaServer = async () => {
+            const data = new FormData();
+            data.append("nit", formData.nit);
+            data.append("proveedor", formData.proveedor);
+            if (formData.responsableEmail) {
+                data.append("responsableEmail", formData.responsableEmail);
+            }
+            if (userSearch) {
+                data.append("responsableNombre", userSearch);
+            }
+            if (formData.valor) {
+                data.append("valorTotal", formData.valor);
+            }
+            files.forEach((f) => {
+                data.append("files", f);
+            });
+
+            const res = await fetch("/api/sharepoint/documentos/create", {
+                method: "POST",
+                body: data
+            });
+
+            const raw = await res.text();
+            let result: any = null;
+            try {
+                result = JSON.parse(raw);
+            } catch {
+                throw new Error(`El servidor respondió con error (HTTP ${res.status}).`);
+            }
+
+            if (!result.success) {
+                throw new Error(result.error || "Error al crear el documento soporte.");
+            }
+            return result;
+        };
+
+        // Plan A: Subida directa a Supabase Storage con URLs firmadas (para archivos grandes sin límite de Vercel)
+        const uploadDirectToSupabase = async () => {
             // 1. Pedir URLs de subida firmadas
             const urlRes = await fetch("/api/sharepoint/documentos/upload-url", {
                 method: "POST",
@@ -131,7 +169,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                 throw new Error(urlJson?.error || "No se pudo preparar la subida de los archivos.");
             }
 
-            // 2. Subir cada archivo directo a Supabase Storage (evita el límite de 4.5MB de Vercel)
+            // 2. Subir cada archivo directo a Supabase Storage
             const uploaded: { name: string; url: string }[] = [];
             for (let i = 0; i < files.length; i++) {
                 const up = urlJson.uploads[i];
@@ -141,7 +179,7 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                         contentType: files[i].type || "application/octet-stream"
                     });
                 if (upErr) {
-                    throw new Error(`No se pudo subir "${files[i].name}": ${upErr.message}`);
+                    throw new Error(`Error subiendo ${files[i].name}: ${upErr.message}`);
                 }
                 uploaded.push({ name: files[i].name, url: up.publicUrl });
             }
@@ -166,22 +204,35 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
             try {
                 result = JSON.parse(raw);
             } catch {
-                throw new Error(`El servidor tardó demasiado o falló (HTTP ${res.status}). Intenta de nuevo.`);
+                throw new Error(`El servidor respondió con error (HTTP ${res.status}).`);
             }
 
-            if (result.success) {
-                setSuccess(true);
-                setTimeout(() => {
-                    onSuccess();
-                    handleClose();
-                }, 2000);
-            } else {
-                throw new Error(result.error || "Error al crear el documento soporte");
+            if (!result.success) {
+                throw new Error(result.error || "Error al crear el documento soporte.");
             }
+            return result;
+        };
+
+        try {
+            // Intentar primero Plan A (subida directa a Supabase Storage)
+            try {
+                await uploadDirectToSupabase();
+            } catch (directErr: any) {
+                console.warn("[Doc Soporte Modal] Subida directa falló, activando fallback vía servidor:", directErr);
+                // Si falla (adblocker, VPN, etc.), conmutamos automáticamente al Plan B (servidor)
+                await uploadViaServer();
+            }
+
+            setSuccess(true);
+            setTimeout(() => {
+                onSuccess();
+                handleClose();
+            }, 2000);
         } catch (e: any) {
+            console.error("[Doc Soporte Modal] Error final:", e);
             const msg = String(e?.message || "");
             if (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("networkerror")) {
-                setError("No se pudo conectar con el servidor. Revisa tu conexión a internet o el tamaño de los archivos.");
+                setError("No se pudo conectar con el servidor. Revisa tu conexión a internet o intenta de nuevo.");
             } else {
                 setError(msg || "Error de conexión.");
             }
