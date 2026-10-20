@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Upload, Loader2, CheckCircle2, AlertCircle, FileText, FileSpreadsheet, User, Search, ChevronDown, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { supabase } from "@/lib/supabaseClient";
 
 interface CreateSupportDocumentModalProps {
     isOpen: boolean;
@@ -119,26 +120,54 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
         setError(null);
 
         try {
-            const data = new FormData();
-            data.append("nit", formData.nit);
-            data.append("proveedor", formData.proveedor);
-            data.append("responsableEmail", formData.responsableEmail);
-            if (userSearch) {
-                data.append("responsableNombre", userSearch);
-            }
-            if (formData.valor) {
-                data.append("valorTotal", formData.valor);
-            }
-            files.forEach((f) => {
-                data.append("files", f);
+            // 1. Pedir URLs de subida firmadas
+            const urlRes = await fetch("/api/sharepoint/documentos/upload-url", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ files: files.map(f => ({ name: f.name, type: f.type })) })
             });
+            const urlJson = await urlRes.json().catch(() => null);
+            if (!urlJson?.success) {
+                throw new Error(urlJson?.error || "No se pudo preparar la subida de los archivos.");
+            }
 
+            // 2. Subir cada archivo directo a Supabase Storage (evita el límite de 4.5MB de Vercel)
+            const uploaded: { name: string; url: string }[] = [];
+            for (let i = 0; i < files.length; i++) {
+                const up = urlJson.uploads[i];
+                const { error: upErr } = await supabase.storage
+                    .from("documento_soporte")
+                    .uploadToSignedUrl(up.path, up.token, files[i], {
+                        contentType: files[i].type || "application/octet-stream"
+                    });
+                if (upErr) {
+                    throw new Error(`No se pudo subir "${files[i].name}": ${upErr.message}`);
+                }
+                uploaded.push({ name: files[i].name, url: up.publicUrl });
+            }
+
+            // 3. Registrar el documento enviando solo las URLs ligeras
             const res = await fetch("/api/sharepoint/documentos/create", {
                 method: "POST",
-                body: data
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    nit: formData.nit,
+                    proveedor: formData.proveedor,
+                    responsableEmail: formData.responsableEmail || null,
+                    responsableNombre: userSearch || null,
+                    valorTotal: formData.valor,
+                    pdfUrl: uploaded[0].url,
+                    anexos: uploaded.slice(1)
+                })
             });
 
-            const result = await res.json();
+            const raw = await res.text();
+            let result: any = null;
+            try {
+                result = JSON.parse(raw);
+            } catch {
+                throw new Error(`El servidor tardó demasiado o falló (HTTP ${res.status}). Intenta de nuevo.`);
+            }
 
             if (result.success) {
                 setSuccess(true);
@@ -150,7 +179,12 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                 throw new Error(result.error || "Error al crear el documento soporte");
             }
         } catch (e: any) {
-            setError(e.message || "Error de conexión.");
+            const msg = String(e?.message || "");
+            if (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("networkerror")) {
+                setError("No se pudo conectar con el servidor. Revisa tu conexión a internet o el tamaño de los archivos.");
+            } else {
+                setError(msg || "Error de conexión.");
+            }
         } finally {
             setIsLoading(false);
         }

@@ -18,6 +18,7 @@ import {
     DollarSign
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function DocumentoSoporteExternoPage() {
     const [isLoading, setIsLoading] = useState(false);
@@ -220,30 +221,56 @@ export default function DocumentoSoporteExternoPage() {
         setError(null);
 
         try {
-            const data = new FormData();
-            data.append("nit", formData.nit);
-            data.append("proveedor", formData.proveedor);
-            if (formData.responsableEmail) {
-                data.append("responsableEmail", formData.responsableEmail);
-            }
-            const finalRespName = formData.responsableNombre || userSearch;
-            if (finalRespName) {
-                data.append("responsableNombre", finalRespName);
-            }
-            if (formData.valor) {
-                data.append("valorTotal", formData.valor);
-            }
-            data.append("file", file);
-            attachments.forEach(att => {
-                data.append("attachments", att);
+            // 1. Pedir URLs de subida firmadas (petición liviana, solo nombres)
+            const allFiles: File[] = [file, ...attachments];
+            const urlRes = await fetch("/api/sharepoint/documentos/upload-url", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ files: allFiles.map(f => ({ name: f.name, type: f.type })) })
             });
+            const urlJson = await urlRes.json().catch(() => null);
+            if (!urlJson?.success) {
+                throw new Error(urlJson?.error || "No se pudo preparar la subida de los archivos.");
+            }
 
+            // 2. Subir cada archivo directo a Supabase Storage (sin pasar por Vercel)
+            const uploaded: { name: string; url: string }[] = [];
+            for (let i = 0; i < allFiles.length; i++) {
+                const up = urlJson.uploads[i];
+                const { error: upErr } = await supabase.storage
+                    .from("documento_soporte")
+                    .uploadToSignedUrl(up.path, up.token, allFiles[i], {
+                        contentType: allFiles[i].type || "application/octet-stream"
+                    });
+                if (upErr) {
+                    throw new Error(`No se pudo subir "${allFiles[i].name}": ${upErr.message}`);
+                }
+                uploaded.push({ name: allFiles[i].name, url: up.publicUrl });
+            }
+
+            // 3. Registrar el documento enviando solo las URLs
+            const finalRespName = formData.responsableNombre || userSearch;
             const res = await fetch("/api/sharepoint/documentos/create", {
                 method: "POST",
-                body: data
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    nit: formData.nit,
+                    proveedor: formData.proveedor,
+                    responsableEmail: formData.responsableEmail || null,
+                    responsableNombre: finalRespName || null,
+                    valorTotal: formData.valor,
+                    pdfUrl: uploaded[0].url,
+                    anexos: uploaded.slice(1)
+                })
             });
 
-            const result = await res.json();
+            const raw = await res.text();
+            let result: any = null;
+            try {
+                result = JSON.parse(raw);
+            } catch {
+                throw new Error(`El servidor tardó demasiado o falló (HTTP ${res.status}). Intenta de nuevo.`);
+            }
 
             if (result.success) {
                 setSuccess(true);
@@ -251,7 +278,12 @@ export default function DocumentoSoporteExternoPage() {
                 throw new Error(result.error || "Error al enviar el documento soporte");
             }
         } catch (e: any) {
-            setError(e.message || "Error de conexión al enviar el documento.");
+            const msg = String(e?.message || "");
+            if (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("networkerror")) {
+                setError("No se pudo conectar con el servidor. Revisa tu conexión a internet e intenta de nuevo.");
+            } else {
+                setError(msg || "Error de conexión al enviar el documento.");
+            }
         } finally {
             setIsLoading(false);
         }

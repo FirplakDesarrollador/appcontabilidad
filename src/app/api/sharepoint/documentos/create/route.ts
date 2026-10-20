@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120; // SAP / notificaciones pueden tardar más que el límite por defecto
+
+const STORAGE_PUBLIC_PREFIX = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/documento_soporte/`;
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,29 +13,60 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: NextRequest) {
     try {
-        const formData = await req.formData();
-        
-        const nit = formData.get('nit') as string;
-        const proveedor = formData.get('proveedor') as string;
-        let responsableEmail = formData.get('responsableEmail') as string | null;
-        let responsableNombreRecibido = formData.get('responsableNombre') as string | null;
-        const valorTotal = formData.get('valorTotal') as string | null;
-        
-        let files = formData.getAll('files') as File[];
-        let file = files && files.length > 0 ? files[0] : (formData.get('file') as File | null);
-        let attachments = files && files.length > 1 ? files.slice(1) : (formData.getAll('attachments') as File[]);
+        const isJson = (req.headers.get('content-type') || '').includes('application/json');
 
-        if (!file || !nit || !proveedor || !valorTotal) {
+        let nit: string;
+        let proveedor: string;
+        let responsableEmail: string | null;
+        let responsableNombreRecibido: string | null;
+        let valorTotal: string | null;
+        let file: File | null = null;
+        let attachments: File[] = [];
+        let presetPublicUrl: string | null = null;
+        let presetAnexos: { name: string, url: string }[] = [];
+
+        if (isJson) {
+            // Modo directo: el navegador ya subió los archivos a Supabase Storage
+            const body = await req.json();
+            nit = body.nit;
+            proveedor = body.proveedor;
+            responsableEmail = body.responsableEmail || null;
+            responsableNombreRecibido = body.responsableNombre || null;
+            valorTotal = body.valorTotal || null;
+            presetPublicUrl = body.pdfUrl || null;
+            presetAnexos = Array.isArray(body.anexos) ? body.anexos : [];
+
+            // Solo aceptar URLs de nuestro propio bucket
+            const urlsOk = (!presetPublicUrl || presetPublicUrl.startsWith(STORAGE_PUBLIC_PREFIX))
+                && presetAnexos.every(a => typeof a?.url === 'string' && a.url.startsWith(STORAGE_PUBLIC_PREFIX));
+            if (!urlsOk) {
+                return NextResponse.json({ success: false, error: 'URL de archivo no válida' }, { status: 400 });
+            }
+        } else {
+            const formData = await req.formData();
+
+            nit = formData.get('nit') as string;
+            proveedor = formData.get('proveedor') as string;
+            responsableEmail = formData.get('responsableEmail') as string | null;
+            responsableNombreRecibido = formData.get('responsableNombre') as string | null;
+            valorTotal = formData.get('valorTotal') as string | null;
+
+            const files = formData.getAll('files') as File[];
+            file = files && files.length > 0 ? files[0] : (formData.get('file') as File | null);
+            attachments = files && files.length > 1 ? files.slice(1) : (formData.getAll('attachments') as File[]);
+        }
+
+        if ((!file && !presetPublicUrl) || !nit || !proveedor || !valorTotal) {
             return NextResponse.json({ success: false, error: 'Faltan campos obligatorios' }, { status: 400 });
         }
 
-        const fileBuffer = Buffer.from(await file.arrayBuffer());
+        const fileBuffer = file ? Buffer.from(await file.arrayBuffer()) : Buffer.alloc(0);
 
         // Generate a new ID based on timestamp or UUID. For now, use epoch ms for ID.
         const newItemId = Date.now();
 
-        let publicUrl = null;
-        try {
+        let publicUrl: string | null = presetPublicUrl;
+        if (!presetPublicUrl && file) try {
             const fileExtension = file.name.split('.').pop() || 'pdf';
             const storagePath = `${newItemId}_${Date.now()}.${fileExtension}`;
             
@@ -62,7 +96,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ success: false, error: 'Error interno de almacenamiento' }, { status: 500 });
         }
 
-        let anexosUrls: { name: string, url: string }[] = [];
+        let anexosUrls: { name: string, url: string }[] = [...presetAnexos];
         for (const att of attachments) {
             try {
                 const fileExtension = att.name.split('.').pop() || 'pdf';
