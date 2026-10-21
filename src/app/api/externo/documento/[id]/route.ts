@@ -58,7 +58,10 @@ export async function GET(
             gestionContabilidad: dbDoc.gestion_contabilidad || "Pendiente",
             responsableActual: dbDoc.responsable_nombre || "No asignado",
             documentInfo,
-            distribuciones: dbDoc.centro_costos || null
+            distribuciones: dbDoc.centro_costos || null,
+            anticipo: dbDoc.tiene_anticipo || null,
+            tiene_anticipo: dbDoc.tiene_anticipo || null,
+            observaciones: dbDoc.observaciones || ""
         });
 
     } catch (error: any) {

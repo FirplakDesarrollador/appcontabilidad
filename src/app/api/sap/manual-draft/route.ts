@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
                     Observaciones: supaDoc.observaciones || supaDoc.Observaciones || 'Sincronización manual desde portal de aprobación',
                     centro_costos: supaDoc.centro_costos || supaDoc.tablaCostos || passedCC || "[]",
                     "Valor total": String(supaDoc.monto || supaDoc.valor_total || supaDoc.Monto || 0),
-                    tiene_anticipo: supaDoc.tiene_anticipo === true || supaDoc.tiene_anticipo === 'true' || supaDoc.tiene_anticipo === 't',
+                    tiene_anticipo: supaDoc.tiene_anticipo === true || supaDoc.tiene_anticipo === 'true' || supaDoc.tiene_anticipo === 't' || supaDoc.tiene_anticipo === 'Con anticipo',
                     Consecutivo: supaDoc.consecutivo || supaDoc.Consecutivo || String(invoiceId)
                 };
                 console.log(`[Manual SAP Draft] Supabase Documento Soporte ${invoiceId} loaded successfully.`);

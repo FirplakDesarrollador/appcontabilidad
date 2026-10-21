@@ -67,7 +67,9 @@ export async function GET(req: Request) {
             Valortotal: item.valor_total,
             Observaciones: item.observaciones,
             Consecutivo_Doc_Soporte: item.consecutivo,
-            Responsable_de_Autorizar: item.responsable_nombre
+            Responsable_de_Autorizar: item.responsable_nombre,
+            Anticipo: item.tiene_anticipo || null,
+            anticipo: item.tiene_anticipo || null
         }));
 
         return NextResponse.json({

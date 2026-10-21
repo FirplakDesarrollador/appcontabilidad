@@ -252,6 +252,12 @@ export default function PublicDocumentApprovalPage() {
             if (data.valorTotal) {
                 setEditableTotal(data.valorTotal);
             }
+            if (data.anticipo) {
+                setAnticipo(data.anticipo);
+            }
+            if (data.observaciones) {
+                setObservaciones(data.observaciones);
+            }
         } catch (err: any) {
             setError(err.message || "No se pudo cargar la información del documento soporte");
         }

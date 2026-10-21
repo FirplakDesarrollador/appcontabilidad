@@ -30,6 +30,8 @@ export async function POST(req: NextRequest) {
                 }
             } else if (field === 'Observaciones') {
                 updatePayload.observaciones = status;
+            } else if (field === 'Anticipo' || field === 'tiene_anticipo') {
+                updatePayload.tiene_anticipo = status;
             } else {
                 updatePayload.aprobacion_doliente = status;
                 updatePayload.fecha_aprobacion = new Date().toISOString();

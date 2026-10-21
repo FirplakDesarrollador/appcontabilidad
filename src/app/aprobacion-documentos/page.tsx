@@ -85,6 +85,38 @@ const renderCostCenterForModal = (costCenterStr: any, tableCostStr: any) => {
     return <span className="text-gray-400 italic">Sin asignar</span>;
 };
 
+const formatAnticipo = (val: any) => {
+    if (!val || val === "N/A") return "N/A";
+    if (val === true || val === 'true') return "Con anticipo";
+    if (val === false || val === 'false') return "Sin anticipo";
+    if (typeof val === 'string') {
+        const lower = val.toLowerCase();
+        if (lower.includes('tarjeta')) return "Compra con tarjeta";
+        if (lower.includes('con anticipo')) return "Con anticipo";
+        if (lower.includes('sin anticipo')) return "Sin anticipo";
+        return val;
+    }
+    return "N/A";
+};
+
+const renderAnticipoBadge = (val: any) => {
+    const str = formatAnticipo(val);
+    if (str === "N/A") {
+        return <span className="text-gray-400 font-bold text-xs">N/A</span>;
+    }
+    if (str === "Sin anticipo") {
+        return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200">{str}</span>;
+    }
+    if (str === "Compra con tarjeta") {
+        return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">{str}</span>;
+    }
+    return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+            {str}
+        </span>
+    );
+};
+
 interface DocAttachment {
     id: string;
     name: string;
@@ -336,7 +368,8 @@ export default function SupportDocumentsPage() {
         Aprobacion_Doliente: item.aprobacion_doliente || item.AprobacionDoliente || "Pendiente",
         Gestion_Contabilidad: item.gestion_contabilidad || item.Gestion_Contabilidad || "Pendiente",
         FechaAprobacion: item.FechaAprobacion || item.fecha_aprobacion || null,
-        Anticipo: item.Anticipo || item.anticipo || "N/A",
+        Anticipo: item.tiene_anticipo || item.Anticipo || item.anticipo || "N/A",
+        tiene_anticipo: item.tiene_anticipo || item.Anticipo || item.anticipo || null,
         Created: item.fecha_creacion || item.Created || item.created_at,
         centro_costos: item.centro_costos || item.CentroCostos || item.Centro_x0020_de_x0020_Costos || "",
         tablaCostos: item.tablaCostos || item.TablaCostos || ""
@@ -519,7 +552,7 @@ export default function SupportDocumentsPage() {
         }
     };
 
-    const handleUpdateStatus = async (field: 'Aprobacion_Doliente' | 'Gestion_Contabilidad' | 'Observaciones', value: string, procesadoPor?: string) => {
+    const handleUpdateStatus = async (field: 'Aprobacion_Doliente' | 'Gestion_Contabilidad' | 'Observaciones' | 'Anticipo', value: string, procesadoPor?: string) => {
         if (!selectedDoc) return;
         if (field === 'Gestion_Contabilidad' && value === 'Procesado' && !procesadoPor) {
             alert("Debes seleccionar quién procesa antes de cambiar el estado a Procesado.");
@@ -552,7 +585,11 @@ export default function SupportDocumentsPage() {
                 const nowIso = new Date().toISOString();
                 const updatedDocs = documents.map(doc => {
                     if (doc.id === selectedDoc.id) {
-                        const newDoc = { ...doc, [field]: value };
+                        const newDoc = { 
+                            ...doc, 
+                            [field]: value,
+                            ...(field === 'Anticipo' ? { tiene_anticipo: value, Anticipo: value } : {})
+                        };
                         if (field === 'Aprobacion_Doliente' && value === 'Aprobado') {
                             newDoc.Gestion_Contabilidad = 'Por Procesar';
                         }
@@ -566,7 +603,11 @@ export default function SupportDocumentsPage() {
                 });
                 setDocuments(updatedDocs);
                 
-                const newSelected = { ...selectedDoc, [field]: value };
+                const newSelected: any = { 
+                    ...selectedDoc, 
+                    [field]: value,
+                    ...(field === 'Anticipo' ? { tiene_anticipo: value, Anticipo: value } : {})
+                };
                 if (field === 'Aprobacion_Doliente' && value === 'Aprobado') {
                     newSelected.Gestion_Contabilidad = 'Por Procesar';
                 }
@@ -575,7 +616,7 @@ export default function SupportDocumentsPage() {
                     if (procesadoPor) newSelected.ProcesadoPor = procesadoPor;
                 }
                 setSelectedDoc(newSelected);
-                alert("Estado actualizado correctamente");
+                alert("Actualizado correctamente");
             } else {
                 const data = await res.json();
                 alert(`Error al actualizar estado: ${data.error}`);
@@ -914,6 +955,7 @@ export default function SupportDocumentsPage() {
             'Valor Total': doc.Monto,
             'Responsable': doc.Responsable_de_Autorizar,
             'Estado': doc.Aprobacion_Doliente,
+            'Anticipo / Tarjeta': formatAnticipo(doc.Anticipo || doc.tiene_anticipo),
             'G. Contabilidad': doc.Gestion_Contabilidad,
             'Consecutivo': doc.Consecutivo,
             'Fecha Creación': doc.Created ? new Date(doc.Created).toLocaleString() : 'Sin fecha',
@@ -996,6 +1038,7 @@ export default function SupportDocumentsPage() {
         { headerName: 'Valor total', field: 'Monto', width: 140, cellRenderer: (p: any) => <div className="text-sm font-extrabold text-[#254153] h-full flex items-center">{formatCurrency(p.value)}</div> },
         { headerName: 'Responsable', field: 'Responsable_de_Autorizar', width: 200, cellRenderer: (p: any) => <div className="flex flex-col justify-center h-full"><div className="text-xs font-semibold text-gray-600">{p.value || 'Sin asignar'}</div><div className="text-[10px] text-gray-400 font-medium">{p.data?.Created ? new Date(p.data.Created).toLocaleDateString() : ''}</div></div> },
         { headerName: 'Estado', field: 'Aprobacion_Doliente', width: 140, cellRenderer: (p: any) => <div className="h-full flex items-center"><span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold border ${getStatusStyles(p.value)}`}>{p.value || 'Pendiente'}</span></div> },
+        { headerName: 'Anticipo / Tarjeta', field: 'Anticipo', width: 155, cellRenderer: (p: any) => <div className="h-full flex items-center">{renderAnticipoBadge(p.value)}</div> },
         { headerName: 'G. Contabilidad', field: 'Gestion_Contabilidad', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-600 uppercase tracking-tight h-full flex items-center">{p.value || 'Pendiente'}</div> },
         { headerName: 'Consecutivo', field: 'Consecutivo', width: 130, cellRenderer: (p: any) => <div className="text-xs font-bold text-gray-600 h-full flex items-center">{p.value || 'N/A'}</div> },
         { headerName: 'Fecha Creación', field: 'Created', width: 160, cellRenderer: (p: any) => <div className="text-[10px] font-bold text-gray-500 uppercase tracking-tight h-full flex items-center">{p.value ? new Date(p.value).toLocaleString() : 'Sin fecha'}</div> },
@@ -1380,8 +1423,21 @@ export default function SupportDocumentsPage() {
                                                     </p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-[11px] font-bold text-gray-400 uppercase">Anticipo / Tarjeta</p>
-                                                    <p className="font-bold text-gray-600">{selectedDoc.Anticipo || "N/A"}</p>
+                                                    <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Anticipo / Tarjeta</p>
+                                                    {role !== 'viewer' ? (
+                                                        <select
+                                                            value={formatAnticipo(selectedDoc.Anticipo || selectedDoc.tiene_anticipo)}
+                                                            onChange={(e) => handleUpdateStatus('Anticipo', e.target.value)}
+                                                            disabled={isUpdatingStatus}
+                                                            className="w-full text-xs font-bold text-[#254153] bg-white border border-gray-200 rounded-xl px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer disabled:opacity-50"
+                                                        >
+                                                            <option value="Sin anticipo">Sin anticipo</option>
+                                                            <option value="Con anticipo">Con anticipo</option>
+                                                            <option value="Compra con tarjeta">Compra con tarjeta</option>
+                                                        </select>
+                                                    ) : (
+                                                        <div className="mt-1">{renderAnticipoBadge(selectedDoc.Anticipo || selectedDoc.tiene_anticipo)}</div>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
