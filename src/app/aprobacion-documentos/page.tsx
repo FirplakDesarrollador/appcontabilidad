@@ -1387,13 +1387,6 @@ export default function SupportDocumentsPage() {
                                         </div>
 
                                         <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
-                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Centro de Costos y Cuenta</h4>
-                                            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
-                                                {renderCostCenterForModal(selectedDoc.centro_costos, selectedDoc.tablaCostos)}
-                                            </div>
-                                        </div>
-
-                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
                                             <div className="flex items-center justify-between">
                                                 <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Observaciones</h4>
                                                 {!isEditingObservaciones && role !== 'viewer' && (
@@ -1424,6 +1417,13 @@ export default function SupportDocumentsPage() {
                                                         </div>
                                                     </div>
                                                 )}
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
+                                            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Centro de Costos y Cuenta</h4>
+                                            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                                                {renderCostCenterForModal(selectedDoc.centro_costos, selectedDoc.tablaCostos)}
                                             </div>
                                         </div>
 
