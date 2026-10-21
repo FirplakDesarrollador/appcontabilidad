@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, Download, CloudUpload } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, Download, CloudUpload, FileSpreadsheet, Printer, Eye } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { useSidebar } from "@/context/SidebarContext";
@@ -85,6 +85,97 @@ const renderCostCenterForModal = (costCenterStr: any, tableCostStr: any) => {
     return <span className="text-gray-400 italic">Sin asignar</span>;
 };
 
+interface DocAttachment {
+    id: string;
+    name: string;
+    url: string;
+    downloadUrl: string;
+    isPrincipal: boolean;
+    anexoIndex?: number;
+    ext: string;
+    isPdf: boolean;
+    isExcel: boolean;
+    isImage: boolean;
+}
+
+const getAttachmentsForDoc = (doc: any): DocAttachment[] => {
+    if (!doc) return [];
+    const items: DocAttachment[] = [];
+
+    const getExt = (nameOrUrl: string) => {
+        try {
+            const clean = nameOrUrl.split('?')[0].split('#')[0];
+            const parts = clean.split('.');
+            if (parts.length > 1) {
+                const ext = parts.pop()?.toLowerCase();
+                if (ext && ext.length <= 6 && /^[a-z0-9]+$/.test(ext)) return ext;
+            }
+        } catch {}
+        return 'pdf';
+    };
+
+    const buildAttachment = (name: string, rawUrl: string, isPrincipal: boolean, anexoIndex?: number): DocAttachment => {
+        const ext = getExt(name) || getExt(rawUrl);
+        const downloadUrl = `/api/externo/documento/${doc.id}/download?download=true${anexoIndex !== undefined ? `&anexoIndex=${anexoIndex}` : ''}`;
+        const previewUrl = `/api/externo/documento/${doc.id}/download${anexoIndex !== undefined ? `&anexoIndex=${anexoIndex}` : ''}`;
+        const isPdf = ext === 'pdf';
+        const isExcel = ['xlsx', 'xls', 'csv'].includes(ext);
+        const isImage = ['png', 'jpg', 'jpeg', 'webp', 'svg'].includes(ext);
+
+        return {
+            id: isPrincipal ? `principal_${doc.id}` : `anexo_${anexoIndex}`,
+            name,
+            url: previewUrl,
+            downloadUrl,
+            isPrincipal,
+            anexoIndex,
+            ext,
+            isPdf,
+            isExcel,
+            isImage
+        };
+    };
+
+    // 1. Principal document
+    if (doc.pdf_url || (doc.adjunto && typeof doc.adjunto === 'string' && doc.adjunto.startsWith('http') && !doc.adjunto.startsWith('['))) {
+        const principalUrl = doc.pdf_url || doc.adjunto;
+        const ext = getExt(principalUrl);
+        const providerClean = (doc.Proveedor || doc.proveedor || '').replace(/[<>:"/\\|?*]/g, '').trim();
+        const consecutivo = doc.Nro_Factura || doc.consecutivo || doc.id;
+        const name = providerClean ? `RAD ${providerClean} DOC SOPORTE.${ext}` : `Documento_Principal_${consecutivo}.${ext}`;
+        items.push(buildAttachment(name, principalUrl, true));
+    }
+
+    // 2. Anexos
+    if (doc.adjunto) {
+        try {
+            const parsed = typeof doc.adjunto === 'string' ? JSON.parse(doc.adjunto) : doc.adjunto;
+            if (Array.isArray(parsed)) {
+                parsed.forEach((anexo: any, idx: number) => {
+                    const anexoName = anexo.name || `Anexo_${idx + 1}`;
+                    items.push(buildAttachment(anexoName, anexo.url || '', false, idx));
+                });
+            } else if (typeof doc.adjunto === 'string' && doc.adjunto !== doc.pdf_url && doc.adjunto.startsWith('http')) {
+                const ext = getExt(doc.adjunto);
+                items.push(buildAttachment(`Anexo_Adicional.${ext}`, doc.adjunto, false, 0));
+            }
+        } catch {
+            if (typeof doc.adjunto === 'string' && doc.adjunto !== doc.pdf_url && doc.adjunto.startsWith('http')) {
+                const ext = getExt(doc.adjunto);
+                items.push(buildAttachment(`Anexo_Adicional.${ext}`, doc.adjunto, false, 0));
+            }
+        }
+    }
+
+    // Fallback if none found
+    if (items.length === 0) {
+        const consecutivo = doc.Nro_Factura || doc.consecutivo || doc.id;
+        items.push(buildAttachment(`Documento_${consecutivo}.pdf`, `/api/externo/documento/${doc.id}/download`, true));
+    }
+
+    return items;
+};
+
 export default function SupportDocumentsPage() {
     const { toggleSidebar } = useSidebar();
     const { role, user } = useAuth();
@@ -100,6 +191,34 @@ export default function SupportDocumentsPage() {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewError, setPreviewError] = useState<string | null>(null);
     const [expandedPdfUrl, setExpandedPdfUrl] = useState<string | null>(null);
+    const [activeAttachment, setActiveAttachment] = useState<DocAttachment | null>(null);
+
+    const currentDocAttachments = useMemo(() => {
+        return getAttachmentsForDoc(selectedDoc);
+    }, [selectedDoc]);
+
+    const handleDownloadOne = (att: DocAttachment) => {
+        const link = document.createElement('a');
+        link.href = att.downloadUrl;
+        link.download = att.name;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleDownloadAll = (attachments: DocAttachment[]) => {
+        if (!attachments || attachments.length === 0) return;
+        if (attachments.length === 1) {
+            handleDownloadOne(attachments[0]);
+            return;
+        }
+        attachments.forEach((att, idx) => {
+            setTimeout(() => {
+                handleDownloadOne(att);
+            }, idx * 350);
+        });
+    };
 
     const getProcesadoPorName = (email?: string) => {
         if (!email) return "Desconocido";
@@ -110,32 +229,17 @@ export default function SupportDocumentsPage() {
         return email;
     };
 
-    useEffect(() => {
-        if (selectedDoc) {
-            handlePreview(selectedDoc);
-        } else {
-            setPreviewUrl(null);
-            setPreviewError(null);
-        }
-    }, [selectedDoc]);
-
-    const handlePreview = async (doc: any) => {
+    const handlePreview = async (doc: any, targetAtt?: DocAttachment) => {
         try {
             setPreviewError(null);
             setPreviewLoading(true);
-            
-            const res = await fetch(`/api/externo/documento/${doc.id}`);
-            const data = await res.json();
-            
-            if (data.error) {
-                throw new Error(data.error);
+            const atts = getAttachmentsForDoc(doc);
+            const current = targetAtt || atts[0];
+            if (!current) {
+                throw new Error("No se encontraron adjuntos para este documento");
             }
-            
-            if (data.documentInfo?.pdfUrl || data.documentInfo?.fileName) {
-                setPreviewUrl(`/api/externo/documento/${doc.id}/download`);
-            } else {
-                throw new Error("No se encontraron adjuntos PDF válidos");
-            }
+            setActiveAttachment(current);
+            setPreviewUrl(current.url);
         } catch (err: any) {
             console.error('Preview error:', err);
             setPreviewError(err.message || "No se pudo cargar la vista previa");
@@ -143,6 +247,25 @@ export default function SupportDocumentsPage() {
             setPreviewLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (selectedDoc) {
+            const atts = getAttachmentsForDoc(selectedDoc);
+            const first = atts[0] || null;
+            setActiveAttachment(first);
+            if (first) {
+                setPreviewError(null);
+                setPreviewLoading(false);
+                setPreviewUrl(first.url);
+            } else {
+                setPreviewUrl(null);
+            }
+        } else {
+            setActiveAttachment(null);
+            setPreviewUrl(null);
+            setPreviewError(null);
+        }
+    }, [selectedDoc]);
     const [selectedResponsable, setSelectedResponsable] = useState<string>("all");
     const [isEditingResponsible, setIsEditingResponsible] = useState(false);
     const [userSearchQuery, setUserSearchQuery] = useState("");
@@ -844,7 +967,7 @@ export default function SupportDocumentsPage() {
             headerName: 'Acciones',
             field: 'id',
             width: 160,
-            pinned: 'left',
+            pinned: 'left' as any,
             filter: false,
             sortable: false,
             cellRenderer: (params: any) => {
@@ -1293,8 +1416,8 @@ export default function SupportDocumentsPage() {
                                                             placeholder="Escribe las observaciones aquí..."
                                                         />
                                                         <div className="flex justify-end gap-2">
-                                                            <Button variant="outline" size="sm" onClick={() => setIsEditingObservaciones(false)} className="h-8 text-xs font-bold" disabled={isUpdatingStatus}>Cancelar</Button>
-                                                            <Button size="sm" onClick={async () => { await handleUpdateStatus('Observaciones', tempObservaciones); setIsEditingObservaciones(false); }} className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold" disabled={isUpdatingStatus}>
+                                                            <Button variant="outline" onClick={() => setIsEditingObservaciones(false)} className="h-8 text-xs font-bold" disabled={isUpdatingStatus}>Cancelar</Button>
+                                                            <Button onClick={async () => { await handleUpdateStatus('Observaciones', tempObservaciones); setIsEditingObservaciones(false); }} className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold" disabled={isUpdatingStatus}>
                                                                 {isUpdatingStatus ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 mr-1" />}
                                                                 Guardar
                                                             </Button>
@@ -1306,81 +1429,82 @@ export default function SupportDocumentsPage() {
 
                                         <div className="bg-gray-50/50 p-6 rounded-[24px] border border-gray-100 space-y-4">
                                             <div className="flex items-center justify-between">
-                                                <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documentos Adjuntos</h4>
-                                                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[9px] font-black uppercase">LINKS</span>
+                                                <div className="flex items-center gap-2">
+                                                    <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documentos Adjuntos</h4>
+                                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg text-[9px] font-black">
+                                                        {currentDocAttachments.length}
+                                                    </span>
+                                                </div>
+                                                {currentDocAttachments.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDownloadAll(currentDocAttachments)}
+                                                        className="text-[10px] font-black text-blue-600 hover:text-blue-700 flex items-center gap-1 hover:underline transition-colors"
+                                                        title="Descargar todos los adjuntos a la vez"
+                                                    >
+                                                        <Download className="h-3 w-3" />
+                                                        Descargar todos
+                                                    </button>
+                                                )}
                                             </div>
                                             <div className="space-y-3">
-                                                {/* Documento Principal */}
-                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-blue-200 transition-colors" onClick={() => { window.open(`/api/externo/documento/${selectedDoc.id}/download?download=true`, '_blank'); }}>
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
-                                                            <FileText className="h-5 w-5 text-blue-500" />
+                                                {currentDocAttachments.map((att, idx) => {
+                                                    const isSelectedForPreview = activeAttachment?.id === att.id;
+                                                    return (
+                                                        <div 
+                                                            key={att.id || idx} 
+                                                            className={`bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between group transition-all ${
+                                                                isSelectedForPreview ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-100 hover:border-blue-200'
+                                                            }`}
+                                                        >
+                                                            <div 
+                                                                className="flex items-center gap-3 cursor-pointer min-w-0 flex-1 mr-2"
+                                                                onClick={() => {
+                                                                    setActiveAttachment(att);
+                                                                    setPreviewUrl(att.url);
+                                                                }}
+                                                                title="Seleccionar para previsualización"
+                                                            >
+                                                                <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                                                                    att.isExcel ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100' :
+                                                                    att.isImage ? 'bg-purple-50 text-purple-600 group-hover:bg-purple-100' :
+                                                                    'bg-blue-50 text-blue-600 group-hover:bg-blue-100'
+                                                                }`}>
+                                                                    {att.isExcel ? <FileSpreadsheet className="h-5 w-5" /> :
+                                                                     att.isImage ? <Eye className="h-5 w-5" /> :
+                                                                     <FileText className="h-5 w-5" />}
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <p className="text-sm font-bold text-[#254153] truncate" title={att.name}>
+                                                                        {att.name}
+                                                                    </p>
+                                                                    <p className="text-[10px] text-gray-400 font-medium mt-0.5 flex items-center gap-1.5">
+                                                                        <span>{att.isPrincipal ? "Documento Principal" : `Anexo ${att.anexoIndex !== undefined ? att.anexoIndex + 1 : idx}`}</span>
+                                                                        <span>•</span>
+                                                                        <span className="uppercase font-bold">{att.ext}</span>
+                                                                        {isSelectedForPreview && (
+                                                                            <span className="text-blue-500 font-bold ml-1">• En vista</span>
+                                                                        )}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDownloadOne(att);
+                                                                    }}
+                                                                    className="h-9 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold flex items-center gap-1.5 border border-blue-100/80 transition-all shadow-sm active:scale-95"
+                                                                    title={`Descargar ${att.name}`}
+                                                                >
+                                                                    <Download className="h-3.5 w-3.5" />
+                                                                    <span className="hidden sm:inline">Descargar</span>
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <p className="text-sm font-bold text-[#254153]">Documento_Principal_{selectedDoc.id}</p>
-                                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Ver Documento</p>
-                                                        </div>
-                                                    </div>
-                                                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500 transition-colors" />
-                                                </div>
-
-                                                {/* Anexos Adicionales */}
-                                                {(() => {
-                                                    try {
-                                                        const anexos = selectedDoc.adjunto ? JSON.parse(selectedDoc.adjunto) : null;
-                                                        if (Array.isArray(anexos)) {
-                                                            return anexos.map((anexo, idx) => (
-                                                                <div key={idx} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(`/api/externo/documento/${selectedDoc.id}/download?download=true&anexoIndex=${idx}`, '_blank')}>
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
-                                                                            <FileText className="h-5 w-5 text-emerald-500" />
-                                                                        </div>
-                                                                        <div className="overflow-hidden">
-                                                                            <p className="text-sm font-bold text-[#254153] truncate max-w-[150px]">{anexo.name || `Anexo_${idx + 1}`}</p>
-                                                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Ver Anexo</p>
-                                                                        </div>
-                                                                    </div>
-                                                                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-emerald-500 transition-colors" />
-                                                                </div>
-                                                            ));
-                                                        } else if (selectedDoc.adjunto && selectedDoc.adjunto !== selectedDoc.pdf_url) {
-                                                            // Legacy format where adjunto is just a single string URL and different from pdf_url
-                                                            return (
-                                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(`/api/externo/documento/${selectedDoc.id}/download?download=true&anexoIndex=0`, '_blank')}>
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
-                                                                            <FileText className="h-5 w-5 text-emerald-500" />
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="text-sm font-bold text-[#254153]">Anexo_Adicional</p>
-                                                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Ver Anexo</p>
-                                                                        </div>
-                                                                    </div>
-                                                                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-emerald-500 transition-colors" />
-                                                                </div>
-                                                            );
-                                                        }
-                                                    } catch (e) {
-                                                        // Ignore parsing errors, meaning it's a raw URL. If it's different from pdf_url, show it.
-                                                        if (selectedDoc.adjunto && selectedDoc.adjunto !== selectedDoc.pdf_url && selectedDoc.adjunto.startsWith('http')) {
-                                                            return (
-                                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between group cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => window.open(`/api/externo/documento/${selectedDoc.id}/download?download=true&anexoIndex=0`, '_blank')}>
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
-                                                                            <FileText className="h-5 w-5 text-emerald-500" />
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="text-sm font-bold text-[#254153]">Anexo_Adicional</p>
-                                                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Ver Anexo</p>
-                                                                        </div>
-                                                                    </div>
-                                                                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-emerald-500 transition-colors" />
-                                                                </div>
-                                                            );
-                                                        }
-                                                    }
-                                                    return null;
-                                                })()}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     </div>
@@ -1454,37 +1578,74 @@ export default function SupportDocumentsPage() {
                                             </Button>
                                         )}
 
-                                        <div className="grid grid-cols-2 gap-4 pt-2">
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                                             <Button 
                                                 variant="outline" 
                                                 onClick={() => handleManualSapSync(selectedDoc)}
                                                 disabled={syncingId === selectedDoc.id.toString()}
-                                                className="h-12 rounded-2xl border-gray-200 hover:bg-emerald-50 hover:text-emerald-600 text-[#254153] font-bold flex items-center justify-center gap-2 transition-all"
+                                                className="h-12 rounded-2xl border-gray-200 hover:bg-emerald-50 hover:text-emerald-600 text-[#254153] font-bold flex items-center justify-center gap-2 transition-all text-xs"
                                             >
                                                 {syncingId === selectedDoc.id.toString() ? (
-                                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
                                                 ) : (
-                                                    <CloudUpload className="h-5 w-5" />
+                                                    <CloudUpload className="h-4 w-4" />
                                                 )}
                                                 Cargar a SAP
                                             </Button>
-                                            <Button variant="outline" className="h-12 rounded-2xl border-gray-200 hover:bg-gray-50 text-[#254153] font-bold flex items-center justify-center gap-2" onClick={() => window.print()}>
-                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+
+                                            <Button 
+                                                type="button"
+                                                onClick={() => handleDownloadAll(currentDocAttachments)}
+                                                className="h-12 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200/60 font-bold flex items-center justify-center gap-2 transition-all shadow-sm text-xs group"
+                                                title={currentDocAttachments.length > 1 ? "Descargar todos los adjuntos a tu equipo" : "Descargar adjunto a tu equipo"}
+                                            >
+                                                <Download className="h-4 w-4 text-blue-600 group-hover:scale-110 transition-transform" />
+                                                <span className="truncate">
+                                                    {currentDocAttachments.length > 1 ? `Descargar Adjuntos (${currentDocAttachments.length})` : "Descargar Adjunto"}
+                                                </span>
+                                            </Button>
+
+                                            <Button 
+                                                variant="outline" 
+                                                className="h-12 rounded-2xl border-gray-200 hover:bg-gray-50 text-[#254153] font-bold flex items-center justify-center gap-2 text-xs" 
+                                                onClick={() => window.print()}
+                                            >
+                                                <Printer className="h-4 w-4" />
                                                 Imprimir
                                             </Button>
                                         </div>
 
                                         <div className="bg-gray-50/50 p-4 rounded-[24px] border border-gray-100 relative group h-[400px] flex flex-col mt-4">
                                              <div className="flex justify-between items-center mb-3 px-2">
-                                                 <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Previsualización</h4>
-                                                 <button 
-                                                     onClick={() => previewUrl && setExpandedPdfUrl(previewUrl)} 
-                                                     className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-2"
-                                                     disabled={!previewUrl}
-                                                 >
-                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
-                                                     Ampliar
-                                                 </button>
+                                                 <div className="flex items-center gap-2 min-w-0">
+                                                     <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Previsualización</h4>
+                                                     {activeAttachment && (
+                                                         <span className="text-[10px] font-bold text-gray-500 truncate max-w-[140px]" title={activeAttachment.name}>
+                                                             ({activeAttachment.name})
+                                                         </span>
+                                                     )}
+                                                 </div>
+                                                 <div className="flex items-center gap-2">
+                                                     <button 
+                                                         type="button"
+                                                         onClick={() => activeAttachment ? handleDownloadOne(activeAttachment) : handleDownloadAll(currentDocAttachments)} 
+                                                         className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5"
+                                                         title="Descargar archivo a tu equipo"
+                                                     >
+                                                         <Download className="h-3.5 w-3.5" />
+                                                         Descargar
+                                                     </button>
+                                                     <button 
+                                                         type="button"
+                                                         onClick={() => previewUrl && setExpandedPdfUrl(previewUrl)} 
+                                                         className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5"
+                                                         disabled={Boolean(!previewUrl || (activeAttachment && !activeAttachment.isPdf && !activeAttachment.isImage))}
+                                                         title="Ampliar vista"
+                                                     >
+                                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+                                                         Ampliar
+                                                     </button>
+                                                 </div>
                                              </div>
                                              <div className="flex-1 relative rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm flex items-center justify-center">
                                                 {previewLoading ? (
@@ -1498,12 +1659,50 @@ export default function SupportDocumentsPage() {
                                                             <X className="h-6 w-6 text-red-500" />
                                                         </div>
                                                         <p className="text-[11px] font-black text-red-900 mb-3 px-2">{previewError}</p>
+                                                        <div className="flex items-center gap-2">
+                                                            <Button 
+                                                                onClick={() => handlePreview(selectedDoc, activeAttachment || undefined)} 
+                                                                className="h-8 px-3 text-[10px] bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-all"
+                                                            >
+                                                                Reintentar
+                                                            </Button>
+                                                            <Button
+                                                                onClick={() => activeAttachment ? handleDownloadOne(activeAttachment) : handleDownloadAll(currentDocAttachments)}
+                                                                className="h-8 px-3 text-[10px] bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl flex items-center gap-1 transition-all"
+                                                            >
+                                                                <Download className="h-3 w-3 mr-1" />
+                                                                Descargar
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                ) : activeAttachment?.isExcel ? (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-emerald-50/30">
+                                                        <div className="h-16 w-16 bg-emerald-100/80 rounded-2xl flex items-center justify-center mb-3 shadow-sm border border-emerald-200/50">
+                                                            <FileSpreadsheet className="h-8 w-8 text-emerald-600" />
+                                                        </div>
+                                                        <p className="text-sm font-black text-[#254153] mb-1 px-4 truncate max-w-full" title={activeAttachment.name}>
+                                                            {activeAttachment.name}
+                                                        </p>
+                                                        <p className="text-[11px] text-gray-500 font-medium mb-4 max-w-xs">
+                                                            Hoja de cálculo Excel lista para descargar y revisar en tu equipo.
+                                                        </p>
                                                         <Button 
-                                                            onClick={() => handlePreview(selectedDoc)} 
-                                                            className="h-8 text-[10px] bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-all"
+                                                            onClick={() => handleDownloadOne(activeAttachment)} 
+                                                            className="h-9 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center gap-2 shadow-sm text-xs transition-all"
                                                         >
-                                                            Reintentar
+                                                            <Download className="h-3.5 w-3.5" />
+                                                            Descargar Archivo Excel
                                                         </Button>
+                                                    </div>
+                                                ) : activeAttachment?.isImage && previewUrl ? (
+                                                    <div className="w-full h-full p-2 flex items-center justify-center bg-gray-50/50 overflow-hidden">
+                                                        <img 
+                                                            src={previewUrl} 
+                                                            alt={activeAttachment.name} 
+                                                            className="max-w-full max-h-full object-contain rounded-lg shadow-sm cursor-pointer"
+                                                            onClick={() => setExpandedPdfUrl(previewUrl)}
+                                                            title="Clic para ampliar imagen"
+                                                        />
                                                     </div>
                                                 ) : previewUrl ? (
                                                     <>
@@ -1524,7 +1723,7 @@ export default function SupportDocumentsPage() {
                                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[2px]">Sin previsualización</p>
                                                     </div>
                                                 )}
-                                            </div>
+                                             </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1545,16 +1744,31 @@ export default function SupportDocumentsPage() {
                                 </div>
                                 <div>
                                     <h3 className="text-xl font-black text-white">Vista Completa del Documento</h3>
-                                    <p className="text-white/60 text-sm font-medium">Use los controles del visor para acercar, alejar o imprimir</p>
+                                    <p className="text-white/60 text-sm font-medium">
+                                        #{selectedDoc?.Nro_Factura || ''} • {selectedDoc?.Proveedor || ''}
+                                    </p>
                                 </div>
                             </div>
-                            <button onClick={() => setExpandedPdfUrl(null)} className="h-12 px-6 rounded-2xl bg-white/10 hover:bg-white/20 hover:text-white transition-all text-white/70 font-bold flex items-center gap-2">
-                                <X className="h-5 w-5" /> Cerrar Visor
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <Button 
+                                    onClick={() => activeAttachment ? handleDownloadOne(activeAttachment) : handleDownloadAll(currentDocAttachments)}
+                                    className="h-12 px-5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-2 shadow-lg transition-all text-xs"
+                                >
+                                    <Download className="h-4 w-4" />
+                                    Descargar Documento
+                                </Button>
+                                <button onClick={() => setExpandedPdfUrl(null)} className="h-12 px-6 rounded-2xl bg-white/10 hover:bg-white/20 hover:text-white transition-all text-white/70 font-bold flex items-center gap-2">
+                                    <X className="h-5 w-5" /> Cerrar Visor
+                                </button>
+                            </div>
                         </div>
                         <div className="flex-1 p-8">
-                            <div className="w-full h-full bg-white rounded-2xl overflow-hidden shadow-2xl">
-                                <iframe src={expandedPdfUrl} className="w-full h-full border-none" />
+                            <div className="w-full h-full bg-white rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center">
+                                {activeAttachment?.isImage ? (
+                                    <img src={expandedPdfUrl} alt="Vista previa" className="max-w-full max-h-full object-contain p-4" />
+                                ) : (
+                                    <iframe src={expandedPdfUrl} className="w-full h-full border-none" />
+                                )}
                             </div>
                         </div>
                     </div>

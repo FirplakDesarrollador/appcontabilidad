@@ -67,34 +67,58 @@ export async function GET(
 
         const fileBuffer = await fileResponse.arrayBuffer();
 
-        let finalFileName = requestFileName || `documento_${dbDoc.consecutivo || itemId}.pdf`;
-        
-        if (dbDoc.proveedor) {
-            const cleanProvider = dbDoc.proveedor.replace(/[<>:"/\\|?*]/g, '').trim();
-            if (anexoIndex !== null) {
-                finalFileName = `RAD ${cleanProvider} DOC SOPORTE - ${originalAnexoName}`;
-            } else {
-                finalFileName = `RAD ${cleanProvider} DOC SOPORTE.pdf`;
+        // Determine file extension
+        let fileExt = 'pdf';
+        const sourceForExt = (anexoIndex !== null && originalAnexoName && originalAnexoName.includes('.')) ? originalAnexoName : fileUrl;
+        try {
+            const cleanUrl = sourceForExt.split('?')[0].split('#')[0];
+            const parts = cleanUrl.split('.');
+            if (parts.length > 1) {
+                const extCandidate = parts.pop()?.toLowerCase();
+                if (extCandidate && extCandidate.length <= 6 && /^[a-z0-9]+$/.test(extCandidate)) {
+                    fileExt = extCandidate;
+                }
             }
-        } else if (anexoIndex !== null) {
-            finalFileName = `documento_${dbDoc.consecutivo || itemId} - ${originalAnexoName}`;
+        } catch {}
+
+        let finalFileName = requestFileName;
+        if (!finalFileName) {
+            const cleanProvider = dbDoc.proveedor ? dbDoc.proveedor.replace(/[<>:"/\\|?*]/g, '').trim() : '';
+            if (cleanProvider) {
+                if (anexoIndex !== null) {
+                    finalFileName = `RAD ${cleanProvider} DOC SOPORTE - ${originalAnexoName}`;
+                } else {
+                    finalFileName = `RAD ${cleanProvider} DOC SOPORTE.${fileExt}`;
+                }
+            } else if (anexoIndex !== null) {
+                finalFileName = `documento_${dbDoc.consecutivo || itemId} - ${originalAnexoName}`;
+            } else {
+                finalFileName = `documento_${dbDoc.consecutivo || itemId}.${fileExt}`;
+            }
         }
         
-        if (!finalFileName.toLowerCase().endsWith('.pdf') && !finalFileName.includes('.')) {
-            finalFileName = `${finalFileName}.pdf`;
+        if (!finalFileName.includes('.')) {
+            finalFileName = `${finalFileName}.${fileExt}`;
         }
 
         const isDownload = searchParams.get('download') === 'true';
         const encodedFileName = encodeURIComponent(finalFileName);
         const dispositionType = isDownload ? 'attachment' : 'inline';
         
-        let contentType = 'application/pdf';
+        let contentType = 'application/octet-stream';
         const ext = finalFileName.split('.').pop()?.toLowerCase();
-        if (ext === 'xml') contentType = 'application/xml';
+        if (ext === 'pdf') contentType = 'application/pdf';
+        else if (ext === 'xlsx') contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        else if (ext === 'xls') contentType = 'application/vnd.ms-excel';
+        else if (ext === 'csv') contentType = 'text/csv';
+        else if (ext === 'docx') contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        else if (ext === 'doc') contentType = 'application/msword';
+        else if (ext === 'xml') contentType = 'application/xml';
         else if (ext === 'zip') contentType = 'application/zip';
         else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
         else if (ext === 'png') contentType = 'image/png';
-        else if (ext === 'xlsx') contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        else if (ext === 'webp') contentType = 'image/webp';
+        else if (ext === 'txt') contentType = 'text/plain';
 
         return new NextResponse(fileBuffer, {
             headers: {
