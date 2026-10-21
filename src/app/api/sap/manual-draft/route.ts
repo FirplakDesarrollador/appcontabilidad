@@ -243,6 +243,35 @@ export async function POST(req: NextRequest) {
             }, { status: 400 });
         }
 
+        // Si las líneas de distribución tienen valor 0 o vacío pero la factura tiene valor total, distribuir el total
+        const totalInvoiceAmount = Number(String(invoice["Valor total"] || 0).replace(/[^0-9.-]/g, '')) || 0;
+        const currentTotalLines = distribuciones.reduce((acc: number, d: any) => acc + (Number(d.valor) || 0), 0);
+
+        if (currentTotalLines === 0 && totalInvoiceAmount > 0 && distribuciones.length > 0) {
+            console.log(`[Manual SAP Draft] Distribution lines had 0 values. Distributing totalInvoiceAmount (${totalInvoiceAmount}) across lines.`);
+            let remainingVal = totalInvoiceAmount;
+            distribuciones = distribuciones.map((d: any, idx: number) => {
+                let lineVal = 0;
+                if (distribuciones.length === 1) {
+                    lineVal = totalInvoiceAmount;
+                } else if (idx === distribuciones.length - 1) {
+                    lineVal = remainingVal;
+                } else {
+                    const pct = Number(d.porcentaje);
+                    if (pct > 0 && pct < 100) {
+                        lineVal = Math.round((pct / 100) * totalInvoiceAmount);
+                    } else {
+                        lineVal = Math.round(totalInvoiceAmount / distribuciones.length);
+                    }
+                    remainingVal -= lineVal;
+                }
+                return {
+                    ...d,
+                    valor: lineVal
+                };
+            });
+        }
+
         // 4. Trigger SAP Draft Creation
         let sapResult = null;
         try {

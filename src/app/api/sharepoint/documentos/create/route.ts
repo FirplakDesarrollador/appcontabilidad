@@ -156,22 +156,48 @@ export async function POST(req: NextRequest) {
                                         : rule.centro_costos;
                                         
                                     if (!Array.isArray(parsedLines)) {
-                                        parsedLines = [{ centro_costos: rule.centro_costos, cuenta: rule.cuenta }];
+                                        parsedLines = [{ centro_costos: rule.centro_costos, cuenta: rule.cuenta, valor: rule.valor }];
                                     }
                                 } catch (e) {
                                     // legacy fallback if it was a plain string
-                                    parsedLines = [{ centro_costos: rule.centro_costos, cuenta: rule.cuenta }];
+                                    parsedLines = [{ centro_costos: rule.centro_costos, cuenta: rule.cuenta, valor: rule.valor }];
                                 }
+
+                                const totalRuleLinesVal = parsedLines.reduce((acc: number, l: any) => acc + (Number(l.valor) || 0), 0);
+                                let remainingVal = val;
+
+                                const mappedDist = parsedLines.map((line: any, idx: number) => {
+                                    let lineVal = 0;
+                                    if (parsedLines.length === 1) {
+                                        lineVal = val;
+                                    } else if (idx === parsedLines.length - 1) {
+                                        lineVal = remainingVal;
+                                    } else {
+                                        if (totalRuleLinesVal > 0 && line.valor !== undefined && line.valor !== null) {
+                                            lineVal = Math.round((Number(line.valor) / totalRuleLinesVal) * val);
+                                        } else if (line.valor !== undefined && line.valor !== null) {
+                                            lineVal = Number(line.valor);
+                                        } else {
+                                            lineVal = Math.round(val / parsedLines.length);
+                                        }
+                                        remainingVal -= lineVal;
+                                    }
+
+                                    const pct = val > 0 ? Number(((lineVal / val) * 100).toFixed(2)) : 100;
+
+                                    return {
+                                        centroCosto: line.centro_costos || line.centroCosto || '',
+                                        cuenta: line.cuenta || '',
+                                        valor: String(lineVal),
+                                        porcentaje: pct
+                                    };
+                                });
                                 
-                                finalCentroCostos = JSON.stringify(parsedLines.map((line: any) => ({
-                                    centroCosto: line.centro_costos || '',
-                                    cuenta: line.cuenta || '',
-                                    porcentaje: 100
-                                })));
+                                finalCentroCostos = JSON.stringify(mappedDist);
                                 
                                 finalObservaciones = 'Aprobado automáticamente por regla de proveedor';
                                 isAutoApproved = true;
-                                console.log(`[Auto-Approve] Documento Soporte auto-approved! Rule matches val: ${val}`);
+                                console.log(`[Auto-Approve] Documento Soporte auto-approved with calculated line values! Rule matches val: ${val}`);
                                 break;
                             }
                         }
@@ -227,7 +253,10 @@ export async function POST(req: NextRequest) {
 
         if (finalCentroCostos) docData.centro_costos = finalCentroCostos;
         if (finalObservaciones) docData.observaciones = finalObservaciones;
-        if (isAutoApproved) docData.fecha_aprobacion = new Date().toISOString();
+        if (isAutoApproved) {
+            docData.fecha_aprobacion = new Date().toISOString();
+            docData.tiene_anticipo = 'Sin anticipo';
+        }
 
         console.log('[Supabase] Inserting Documento_Soporte into DB:', docData);
         const { error: supabaseError } = await supabaseAdmin

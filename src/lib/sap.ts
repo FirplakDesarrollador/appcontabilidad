@@ -12,6 +12,7 @@ export interface SapDistribution {
     centroCosto?: string;
     cuenta: string;
     valor: string | number;
+    porcentaje?: string | number;
 }
 
 export interface SapDraftPayload {
@@ -284,6 +285,26 @@ export async function createSapDraft(payload: SapDraftPayload) {
                 allCuentas = cuentasRes.data || [];
             } catch (fetchErr) {
                 console.error('Error fetching articles/cuentas from Supabase:', fetchErr);
+            }
+
+            // Si las líneas vienen con valor 0 o indefinido pero se pasó un total > 0, calcular/distribuir
+            const totalNumericValor = distribuciones.reduce((sum, d) => sum + (Number(d.valor) || 0), 0);
+            const numericTotal = Number(String(total).replace(/[^0-9.-]/g, '')) || 0;
+            if (totalNumericValor === 0 && numericTotal > 0 && distribuciones.length > 0) {
+                console.warn(`SAP Draft [${nroFactura}]: Distribuciones had 0 values! Distributing total (${numericTotal}) across ${distribuciones.length} line(s).`);
+                let remaining = numericTotal;
+                distribuciones.forEach((d, idx) => {
+                    if (distribuciones.length === 1) {
+                        d.valor = numericTotal;
+                    } else if (idx === distribuciones.length - 1) {
+                        d.valor = remaining;
+                    } else {
+                        const pct = Number(d.porcentaje);
+                        const lineVal = (pct > 0 && pct < 100) ? Math.round((pct / 100) * numericTotal) : Math.round(numericTotal / distribuciones.length);
+                        d.valor = lineVal;
+                        remaining -= lineVal;
+                    }
+                });
             }
 
             for (const dist of distribuciones) {
