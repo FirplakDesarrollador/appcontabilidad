@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, ChevronDown, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle, Plus, Trash2, RotateCcw } from "lucide-react";
+import { Search, Bell, RefreshCw, Paperclip, ChevronLeft, ChevronRight, ChevronDown, Loader2, FileText, Edit2, User, X, Check, Copy, ShieldCheck, DollarSign, CloudUpload, Landmark, Calendar, Hash, ArrowLeft, ArrowUpDown, AlertCircle, Plus, Trash2, RotateCcw, FileSpreadsheet } from "lucide-react";
 import { ProviderRuleManager } from '@/components/ProviderRuleManager';
 import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
@@ -632,11 +632,26 @@ export default function InvoicesPage() {
 
     const normalizeInvoices = (items: any[]) => items.map((item: any) => {
         let documentInfo = null;
-        if (item.documentos || item.fp) {
+        const docUrl = item.documentos || item.fp;
+        if (docUrl && typeof docUrl === 'string') {
+            const cleanUrl = docUrl.split('?')[0];
+            const urlExtMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
+            const ext = urlExtMatch ? urlExtMatch[1].toLowerCase() : 'pdf';
+            const rawFileName = cleanUrl.split('/').pop();
+            let parsedName = `${item.Nro_Factura || 'Factura'}.${ext}`;
+            if (rawFileName) {
+                try {
+                    parsedName = decodeURIComponent(rawFileName);
+                } catch {
+                    parsedName = rawFileName;
+                }
+            }
             documentInfo = {
-                fileName: "Factura.pdf",
-                serverRelativeUrl: item.documentos || item.fp
+                fileName: parsedName,
+                serverRelativeUrl: docUrl
             };
+        } else if (item.documentInfo) {
+            documentInfo = item.documentInfo;
         }
         return {
             ...item,
@@ -655,9 +670,48 @@ export default function InvoicesPage() {
         };
     });
 
+    const selectedDocInfo = useMemo(() => {
+        if (!selectedInvoice) return null;
+        const docUrl = selectedInvoice.documentInfo?.serverRelativeUrl || selectedInvoice.documentos || selectedInvoice.fp || '';
+        const cleanDocUrl = typeof docUrl === 'string' ? docUrl.split('?')[0] : '';
+        const detectedExt = (
+            cleanDocUrl.match(/\.([a-zA-Z0-9]+)$/)?.[1] || 
+            selectedInvoice.documentInfo?.fileName?.match(/\.([a-zA-Z0-9]+)$/)?.[1] || 
+            'pdf'
+        ).toLowerCase();
+        const isExcel = ['xlsx', 'xls', 'csv'].includes(detectedExt);
+        const isImage = ['png', 'jpg', 'jpeg', 'webp'].includes(detectedExt);
+        const fileName = selectedInvoice.documentInfo?.fileName || `Factura_${selectedInvoice.Nro_Factura || 'Adjunta'}.${detectedExt}`;
+        const downloadUrl = `/api/externo/factura/${selectedInvoice.id}/download?download=true&file=${encodeURIComponent(fileName)}`;
+
+        return {
+            docUrl,
+            ext: detectedExt,
+            isExcel,
+            isImage,
+            fileName,
+            downloadUrl
+        };
+    }, [selectedInvoice]);
+
     useEffect(() => {
         if (selectedInvoice) {
-            handlePreview(selectedInvoice);
+            const docUrl = selectedInvoice.documentInfo?.serverRelativeUrl || selectedInvoice.documentos || selectedInvoice.fp || '';
+            const cleanDocUrl = typeof docUrl === 'string' ? docUrl.split('?')[0] : '';
+            const detectedExt = (
+                cleanDocUrl.match(/\.([a-zA-Z0-9]+)$/)?.[1] || 
+                selectedInvoice.documentInfo?.fileName?.match(/\.([a-zA-Z0-9]+)$/)?.[1] || 
+                'pdf'
+            ).toLowerCase();
+            const isExcel = ['xlsx', 'xls', 'csv'].includes(detectedExt);
+
+            if (isExcel) {
+                setPreviewUrl(null);
+                setPreviewError(null);
+                setPreviewLoading(false);
+            } else {
+                handlePreview(selectedInvoice);
+            }
         } else {
             setPreviewUrl(null);
             setPreviewError(null);
@@ -2462,39 +2516,53 @@ export default function InvoicesPage() {
 
                                         {/* Documento Adjunto */}
                                         {(selectedInvoice.documentInfo || selectedInvoice.Attachments || selectedInvoice.fp || selectedInvoice.documentos) && (
-                                            <div className="bg-[#254153]/5 p-6 rounded-[24px] border border-[#254153]/10 space-y-4">
+                                            <div className={`p-6 rounded-[24px] border space-y-4 ${
+                                                selectedDocInfo?.isExcel ? 'bg-emerald-50/40 border-emerald-100' : 'bg-[#254153]/5 border-[#254153]/10'
+                                            }`}>
                                                 <div className="flex items-center justify-between">
                                                     <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documento Adjunto</h4>
-                                                    <span className="px-2 py-0.5 rounded bg-blue-100 text-[10px] font-bold text-blue-600 uppercase">
-                                                        {selectedInvoice.documentInfo?.fileName?.split('.').pop() || "PDF"}
+                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                                        selectedDocInfo?.isExcel ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-600'
+                                                    }`}>
+                                                        {selectedDocInfo?.ext.toUpperCase() || "PDF"}
                                                     </span>
                                                 </div>
                                                 <div className="flex items-center gap-4">
                                                     <div className="h-12 w-12 bg-white rounded-xl flex items-center justify-center shadow-sm border border-gray-100">
-                                                        <FileText className="h-6 w-6 text-blue-500" />
+                                                        {selectedDocInfo?.isExcel ? (
+                                                            <FileSpreadsheet className="h-6 w-6 text-emerald-600" />
+                                                        ) : (
+                                                            <FileText className="h-6 w-6 text-blue-500" />
+                                                        )}
                                                     </div>
                                                     <div className="flex-1 overflow-hidden">
-                                                        <p className="text-sm font-bold text-[#254153] truncate">{selectedInvoice.documentInfo?.fileName || `Factura_${selectedInvoice.Nro_Factura || 'Adjunta'}.pdf`}</p>
-                                                        <p className="text-[10px] text-gray-400 font-medium italic">Archivo de SharePoint</p>
+                                                        <p className="text-sm font-bold text-[#254153] truncate">{selectedDocInfo?.fileName || `Factura_${selectedInvoice.Nro_Factura || 'Adjunta'}.pdf`}</p>
+                                                        <p className="text-[10px] text-gray-400 font-medium italic">
+                                                            {selectedDocInfo?.isExcel ? "Hoja de cálculo Excel" : "Archivo de SharePoint"}
+                                                        </p>
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <a
-                                                            href={`/api/externo/factura/${selectedInvoice.id}/download?download=true&file=${encodeURIComponent(selectedInvoice.documentInfo?.fileName || 'Factura.pdf')}`}
-                                                            className="h-10 px-4 flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm shadow-blue-500/20"
-                                                            title="Descargar factura directamente a tu equipo"
+                                                            href={selectedDocInfo?.downloadUrl || `/api/externo/factura/${selectedInvoice.id}/download?download=true`}
+                                                            className={`h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-white text-xs font-bold transition-all shadow-sm ${
+                                                                selectedDocInfo?.isExcel ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'
+                                                            }`}
+                                                            title={selectedDocInfo?.isExcel ? "Descargar archivo Excel a tu equipo" : "Descargar factura directamente a tu equipo"}
                                                         >
                                                             <Download className="h-4 w-4" />
-                                                            Descargar Factura
+                                                            {selectedDocInfo?.isExcel ? "Descargar Excel" : "Descargar Factura"}
                                                         </a>
-                                                        <a
-                                                            href={`/api/externo/factura/${selectedInvoice.id}/download?file=${encodeURIComponent(selectedInvoice.documentInfo?.fileName || 'Factura.pdf')}`}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="h-10 px-4 flex items-center justify-center rounded-xl bg-white border border-gray-200 text-xs font-bold text-[#254153] hover:bg-gray-50 transition-all shadow-sm"
-                                                            title="Ver en una pestaña nueva"
-                                                        >
-                                                            Ver PDF
-                                                        </a>
+                                                        {!selectedDocInfo?.isExcel && (
+                                                            <a
+                                                                href={`/api/externo/factura/${selectedInvoice.id}/download?file=${encodeURIComponent(selectedDocInfo?.fileName || 'Factura.pdf')}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="h-10 px-4 flex items-center justify-center rounded-xl bg-white border border-gray-200 text-xs font-bold text-[#254153] hover:bg-gray-50 transition-all shadow-sm"
+                                                                title="Ver en una pestaña nueva"
+                                                            >
+                                                                Ver PDF
+                                                            </a>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -2724,12 +2792,16 @@ export default function InvoicesPage() {
                                             </Button>
                                             )}
                                             <a
-                                                href={`/api/externo/factura/${selectedInvoice.id}/download?download=true&file=${encodeURIComponent(selectedInvoice.documentInfo?.fileName || 'Factura.pdf')}`}
-                                                className="h-14 rounded-2xl px-6 bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold border border-blue-100 transition-all flex items-center justify-center gap-2 text-sm"
-                                                title="Descargar factura directamente"
+                                                href={selectedDocInfo?.downloadUrl || `/api/externo/factura/${selectedInvoice.id}/download?download=true`}
+                                                className={`h-14 rounded-2xl px-6 ${
+                                                    selectedDocInfo?.isExcel 
+                                                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border-emerald-100' 
+                                                        : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-100'
+                                                } font-bold border transition-all flex items-center justify-center gap-2 text-sm shadow-sm`}
+                                                title={selectedDocInfo?.isExcel ? "Descargar archivo Excel a tu equipo" : "Descargar factura directamente"}
                                             >
-                                                <Download className="h-5 w-5" />
-                                                Descargar Factura
+                                                {selectedDocInfo?.isExcel ? <FileSpreadsheet className="h-5 w-5" /> : <Download className="h-5 w-5" />}
+                                                {selectedDocInfo?.isExcel ? "Descargar Excel" : "Descargar Factura"}
                                             </a>
                                             <Button 
                                                 variant="outline" 
@@ -2745,21 +2817,23 @@ export default function InvoicesPage() {
                                                  <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Previsualización</h4>
                                                  <div className="flex items-center gap-2">
                                                      <a 
-                                                         href={`/api/externo/factura/${selectedInvoice.id}/download?download=true&file=${encodeURIComponent(selectedInvoice.documentInfo?.fileName || 'Factura.pdf')}`}
+                                                         href={selectedDocInfo?.downloadUrl || `/api/externo/factura/${selectedInvoice.id}/download?download=true`}
                                                          className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5"
                                                          title="Descargar archivo de factura"
                                                      >
                                                          <Download className="h-3.5 w-3.5" />
                                                          Descargar
                                                      </a>
-                                                     <button 
-                                                         onClick={() => previewUrl && setExpandedPdfUrl(previewUrl)} 
-                                                         className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5"
-                                                         disabled={!previewUrl}
-                                                     >
-                                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
-                                                         Ampliar
-                                                     </button>
+                                                     {!selectedDocInfo?.isExcel && (
+                                                         <button 
+                                                             onClick={() => previewUrl && setExpandedPdfUrl(previewUrl)} 
+                                                             className="text-[#254153] hover:bg-[#254153]/10 px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5"
+                                                             disabled={!previewUrl}
+                                                         >
+                                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
+                                                             Ampliar
+                                                         </button>
+                                                     )}
                                                  </div>
                                              </div>
                                              <div className="flex-1 relative rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm flex items-center justify-center">
@@ -2775,6 +2849,25 @@ export default function InvoicesPage() {
                                                         >
                                                             Reintentar
                                                         </Button>
+                                                    </div>
+                                                ) : selectedDocInfo?.isExcel ? (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-emerald-50/40">
+                                                        <div className="h-16 w-16 bg-emerald-100/80 rounded-2xl flex items-center justify-center mb-3 shadow-sm border border-emerald-200/50">
+                                                            <FileSpreadsheet className="h-8 w-8 text-emerald-600" />
+                                                        </div>
+                                                        <p className="text-sm font-black text-[#254153] mb-1 px-4 truncate max-w-full" title={selectedDocInfo.fileName}>
+                                                            {selectedDocInfo.fileName}
+                                                        </p>
+                                                        <p className="text-[11px] text-gray-500 font-medium mb-4 max-w-xs">
+                                                            Hoja de cálculo Excel lista para descargar en su formato original y revisar en tu equipo.
+                                                        </p>
+                                                        <a 
+                                                            href={selectedDocInfo.downloadUrl}
+                                                            className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center gap-2 shadow-sm text-xs transition-all shadow-emerald-500/20"
+                                                        >
+                                                            <Download className="h-4 w-4" />
+                                                            Descargar Archivo Excel
+                                                        </a>
                                                     </div>
                                                 ) : previewUrl ? (
                                                     <>
@@ -2840,12 +2933,14 @@ export default function InvoicesPage() {
                                 <div className="flex items-center gap-2">
                                     {selectedInvoice && (
                                         <a
-                                            href={`/api/externo/factura/${selectedInvoice.id}/download?download=true&file=${encodeURIComponent(selectedInvoice.documentInfo?.fileName || 'Factura.pdf')}`}
-                                            className="h-10 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 text-xs font-bold transition-all shadow-sm"
+                                            href={selectedDocInfo?.downloadUrl || `/api/externo/factura/${selectedInvoice.id}/download?download=true`}
+                                            className={`h-10 px-4 rounded-xl text-white flex items-center gap-2 text-xs font-bold transition-all shadow-sm ${
+                                                selectedDocInfo?.isExcel ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
+                                            }`}
                                             title="Descargar factura"
                                         >
                                             <Download className="h-4 w-4" />
-                                            Descargar Factura
+                                            {selectedDocInfo?.isExcel ? "Descargar Excel" : "Descargar Factura"}
                                         </a>
                                     )}
                                     <button

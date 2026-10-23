@@ -228,10 +228,8 @@ export default function PublicApprovalPage() {
             const a = document.createElement('a');
             a.href = url;
             let downloadName = filename;
-            if (!downloadName.toLowerCase().endsWith('.pdf')) {
-                downloadName = downloadName.includes('.') 
-                    ? downloadName.replace(/\.[^/.]+$/, ".pdf")
-                    : `${downloadName}.pdf`;
+            if (!downloadName.includes('.')) {
+                downloadName = `${downloadName}.pdf`;
             }
             a.download = downloadName;
             document.body.appendChild(a);

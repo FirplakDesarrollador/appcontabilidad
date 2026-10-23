@@ -70,11 +70,23 @@ export async function GET(
 
         let documentInfo = null;
         
-        // 1. Check direct PDF URL from Supabase / direct storage
+        // 1. Check direct URL from Supabase / direct storage
         const directUrl = invoice.fp || invoice.documentos || supabaseInvoice?.fp || supabaseInvoice?.documentos;
         if (directUrl && typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl)) {
+            const cleanUrl = directUrl.split('?')[0];
+            const urlExtMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
+            const ext = urlExtMatch ? urlExtMatch[1].toLowerCase() : 'pdf';
+            const rawFileName = cleanUrl.split('/').pop();
+            let parsedName = `${invoice.Nro_Factura || 'Factura'}.${ext}`;
+            if (rawFileName) {
+                try {
+                    parsedName = decodeURIComponent(rawFileName);
+                } catch {
+                    parsedName = rawFileName;
+                }
+            }
             documentInfo = {
-                fileName: `${invoice.Nro_Factura || 'Factura'}.pdf`,
+                fileName: parsedName,
                 serverRelativeUrl: directUrl,
                 downloadUrl: directUrl,
                 isExternal: true
@@ -85,7 +97,10 @@ export async function GET(
                 if (invoice.Documento_x0020_PDF.startsWith('{')) {
                     documentInfo = JSON.parse(invoice.Documento_x0020_PDF);
                 } else {
-                    documentInfo = { fileName: "Factura", serverRelativeUrl: invoice.Documento_x0020_PDF };
+                    const cleanUrl = invoice.Documento_x0020_PDF.split('?')[0];
+                    const urlExtMatch = cleanUrl.match(/\.([a-zA-Z0-9]+)$/);
+                    const ext = urlExtMatch ? urlExtMatch[1].toLowerCase() : 'pdf';
+                    documentInfo = { fileName: `Factura.${ext}`, serverRelativeUrl: invoice.Documento_x0020_PDF };
                 }
             } catch (e) {
                 documentInfo = { fileName: "Factura", serverRelativeUrl: invoice.Documento_x0020_PDF };
