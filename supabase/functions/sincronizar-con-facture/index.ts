@@ -119,6 +119,31 @@ async function obtenerTokenFacture(): Promise<string> {
   return token
 }
 
+// Lee un monto del bloque <cac:LegalMonetaryTotal> del XML UBL (DIAN).
+function leerMontoUbl(xml: string, tag: string): number | null {
+  const block = xml.match(/<(?:\w+:)?LegalMonetaryTotal[\s\S]*?<\/(?:\w+:)?LegalMonetaryTotal>/i)?.[0] ?? xml
+  const m = block.match(new RegExp(`<(?:\\w+:)?${tag}[^>]*>\\s*([-0-9.,]+)\\s*</(?:\\w+:)?${tag}>`, 'i'))
+  if (!m) return null
+  const n = parseFloat(m[1].replace(/,/g, ''))
+  return isNaN(n) ? null : n
+}
+
+// Subtotal directo del XML: TaxExclusiveAmount = valor antes de IVA (ya descontados descuentos/cargos globales).
+// Fallback: LineExtensionAmount (suma de líneas).
+async function extraerSubtotalDeXml(ublUrl: string | null | undefined): Promise<number | null> {
+  if (!ublUrl) return null
+  try {
+    const res = await fetch(ublUrl)
+    if (!res.ok) return null
+    const xml = await res.text()
+    const v = leerMontoUbl(xml, 'TaxExclusiveAmount') ?? leerMontoUbl(xml, 'LineExtensionAmount')
+    return v != null && v > 0 ? v : null
+  } catch (e) {
+    console.warn('[sincronizar-con-facture] No se pudo leer el XML UBL:', e)
+    return null
+  }
+}
+
 function extraerSubtotal(docData: any, item: any): number {
   if (docData?.subTotal != null && !isNaN(Number(docData.subTotal)) && Number(docData.subTotal) > 0) {
     return Number(docData.subTotal)
@@ -233,10 +258,9 @@ Deno.serve(async (req: Request) => {
           const cufe = item.cufe || item.uuid || ''
           const createdDate = item.receptionDate || item.issueDate || new Date().toISOString()
 
-          // Obtener detalle de Facture si existe LDF para tener el subTotal exacto y URI
+          // Obtener detalle de Facture (necesario para la URL del XML UBL y la URI del PDF)
           let docData: any = null
-          const hasDirectSubtotal = (item.subTotal != null || item.subtotal != null || item.lineExtensionAmount != null || item.taxExclusiveAmount != null)
-          if (!hasDirectSubtotal && ldf && ldf.includes('(')) {
+          if (ldf && ldf.includes('(')) {
             try {
               if (!lazyToken) {
                 lazyToken = await obtenerTokenFacture()
@@ -252,7 +276,7 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          const subtotalNum = extraerSubtotal(docData, item)
+          const subtotalNum = (await extraerSubtotalDeXml(docData?.UBL)) ?? extraerSubtotal(docData, item)
           const amountValue = subtotalNum
 
           // Buscar responsable y su correo
@@ -501,7 +525,7 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        const subtotalNum = extraerSubtotal(docData, item)
+        const subtotalNum = (await extraerSubtotalDeXml(docData?.UBL)) ?? extraerSubtotal(docData, item)
         const amountValue = subtotalNum
 
         runningConsecutivo++

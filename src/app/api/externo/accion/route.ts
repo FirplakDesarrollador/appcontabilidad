@@ -24,8 +24,20 @@ export async function POST(req: NextRequest) {
         // Clean valor if present (Number field in SP)
         let cleanValor: number | null = null;
         if (valor) {
-            const numericValue = String(valor).replace(/[^0-9]/g, '');
-            cleanValor = numericValue ? Number(numericValue) : null;
+            // Interpreta "10880872.1", "1.234.567,89" y "1,234,567.89" sin perder el separador decimal
+            let s = String(valor).replace(/[^0-9.,-]/g, '');
+            const lastDot = s.lastIndexOf('.');
+            const lastComma = s.lastIndexOf(',');
+            if (lastDot !== -1 && lastComma !== -1) {
+                s = lastDot > lastComma ? s.replace(/,/g, '') : s.replace(/\./g, '').replace(',', '.');
+            } else if (lastComma !== -1) {
+                s = /,\d{1,2}$/.test(s) && s.indexOf(',') === lastComma ? s.replace(',', '.') : s.replace(/,/g, '');
+            } else if (lastDot !== -1) {
+                const multiDot = s.indexOf('.') !== lastDot;
+                if (multiDot || /\.\d{3}$/.test(s)) s = s.replace(/\./g, '');
+            }
+            const parsed = parseFloat(s);
+            cleanValor = !isNaN(parsed) && parsed > 0 ? Math.round(parsed) : null;
         }
 
         // Update the Item AND Fetch current fields for SAP
