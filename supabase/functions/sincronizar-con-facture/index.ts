@@ -65,19 +65,27 @@ async function notificarPowerAutomate(params: {
   proveedor: string
   valorTotal: string | number
   isNC?: boolean
+  isAutoApproved?: boolean
 }) {
   const url = `https://appcontabilidad.vercel.app/externo/factura/${params.facturaId}`
   const numVal = typeof params.valorTotal === 'number' ? params.valorTotal : parseFloat(String(params.valorTotal).replace(/[^0-9.-]+/g, '')) || 0
   const formattedVal = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(numVal)
   const tipoDoc = params.isNC ? 'la Nota Crédito' : 'la factura'
-  const mensaje = `Se ha recibido ${tipoDoc} <strong>${params.nroFactura}</strong> de <strong>${params.proveedor}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar ${tipoDoc}</strong></a><br><br>Enlace directo: ${url}`
+  const tipoLabel = params.isNC ? 'Nota Crédito' : 'Factura'
+  const mensaje = params.isAutoApproved
+    ? `Se ha recibido ${tipoDoc} <strong>${params.nroFactura}</strong> de <strong>${params.proveedor}</strong> por valor de <strong>${formattedVal}</strong> y se <strong>aprobó automáticamente</strong>.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para ver los detalles de ${tipoDoc}</strong></a><br><br>Enlace directo: ${url}`
+    : `Se ha recibido ${tipoDoc} <strong>${params.nroFactura}</strong> de <strong>${params.proveedor}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar ${tipoDoc}</strong></a><br><br>Enlace directo: ${url}`
 
   const payload = {
     responsable: params.responsableEmail,
     url: url,
     mensaje: mensaje,
-    link: `<a href="${url}">Haga clic aquí para revisar y aprobar ${tipoDoc}</a>`,
-    titulo: `${params.isNC ? 'Nota Crédito' : 'Factura'} pendiente por aprobar - ${params.nroFactura}`,
+    link: params.isAutoApproved
+      ? `<a href="${url}">Haga clic aquí para ver los detalles de ${tipoDoc}</a>`
+      : `<a href="${url}">Haga clic aquí para revisar y aprobar ${tipoDoc}</a>`,
+    titulo: params.isAutoApproved
+      ? `${tipoLabel} aprobada automáticamente - ${params.nroFactura}`
+      : `${tipoLabel} pendiente por aprobar - ${params.nroFactura}`,
     contenido: mensaje
   }
 
@@ -339,7 +347,20 @@ Deno.serve(async (req: Request) => {
             continue
           }
 
-          console.log(`[sincronizar-con-facture] ✅ ${isNC ? 'Nota Crédito' : 'Factura'} ${docNumberToSave} (${provider}) guardada con ID ${generatedId} por subtotal: ${amountValue}`)
+          // Verificar si fue auto-aprobada por el trigger de Supabase
+          let isAutoApproved = false
+          try {
+            const { data: checkData } = await supabase
+              .from('Registro_Facturas')
+              .select('Aprobacion_Doliente')
+              .eq('ID', generatedId)
+              .single()
+            if (checkData?.Aprobacion_Doliente === 'Aprobado') {
+              isAutoApproved = true
+            }
+          } catch (_cErr) {}
+
+          console.log(`[sincronizar-con-facture] ✅ ${isNC ? 'Nota Crédito' : 'Factura'} ${docNumberToSave} (${provider}) guardada con ID ${generatedId} por subtotal: ${amountValue}. Auto-aprobada: ${isAutoApproved}`)
 
           // Enviar notificación a Power Automate si tenemos correo del responsable
           if (responsableEmail) {
@@ -349,7 +370,8 @@ Deno.serve(async (req: Request) => {
               nroFactura: docNumberToSave,
               proveedor: provider,
               valorTotal: amountValue,
-              isNC
+              isNC,
+              isAutoApproved
             })
           }
 
@@ -560,7 +582,20 @@ Deno.serve(async (req: Request) => {
           continue
         }
 
-        console.log(`[sincronizar-con-facture] ✅ ${isNC ? 'Nota Crédito' : 'Factura'} ${docNumberToSave} (${provider}) guardada con ID ${generatedId} por subtotal: ${amountValue}`)
+        // Verificar si fue auto-aprobada por el trigger de Supabase
+        let isAutoApproved = false
+        try {
+          const { data: checkData } = await supabase
+            .from('Registro_Facturas')
+            .select('Aprobacion_Doliente')
+            .eq('ID', generatedId)
+            .single()
+          if (checkData?.Aprobacion_Doliente === 'Aprobado') {
+            isAutoApproved = true
+          }
+        } catch (_cErr) {}
+
+        console.log(`[sincronizar-con-facture] ✅ ${isNC ? 'Nota Crédito' : 'Factura'} ${docNumberToSave} (${provider}) guardada con ID ${generatedId} por subtotal: ${amountValue}. Auto-aprobada: ${isAutoApproved}`)
 
         // Enviar notificación a Power Automate si tenemos correo del responsable
         if (responsableEmail) {
@@ -570,7 +605,8 @@ Deno.serve(async (req: Request) => {
             nroFactura: docNumberToSave,
             proveedor: provider,
             valorTotal: amountValue,
-            isNC
+            isNC,
+            isAutoApproved
           })
         }
 

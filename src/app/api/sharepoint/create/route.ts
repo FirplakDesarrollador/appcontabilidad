@@ -206,34 +206,8 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // 7. Notificar a Power Automate (Teams) con el enlace de aprobación
-        if (responsableEmail) {
-            try {
-                const POWER_AUTOMATE_WEBHOOK = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/13/workflows/8dee7c5363ad40c9957ff2439f937723/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TuYk4u4aCqx_kWf4Ix5vS-MeNeUnvJqK6ikrRjyxiss";
-                const numVal = parseFloat(String(valorTotal).replace(/[^0-9.-]+/g, '')) || 0;
-                const formattedVal = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(numVal);
-                const url = `https://appcontabilidad.vercel.app/externo/factura/${generatedId}`;
-                const tipoDocText = isNC ? 'la Nota Crédito' : 'la factura';
-                const mensaje = `Se ha recibido ${tipoDocText} <strong>${nroFactura}</strong> de <strong>${proveedor}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar ${tipoDocText}</strong></a><br><br>Enlace directo: ${url}`;
-
-                await fetch(POWER_AUTOMATE_WEBHOOK, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        responsable: responsableEmail.toLowerCase(),
-                        url: url,
-                        mensaje: mensaje,
-                        link: `<a href="${url}">Haga clic aquí para revisar y aprobar ${tipoDocText}</a>`,
-                        titulo: `${tipoLabel} pendiente por aprobar - ${nroFactura}`,
-                        contenido: mensaje
-                    })
-                });
-            } catch (notifyErr) {
-                console.error("Error notificando a Power Automate:", notifyErr);
-            }
-        }
-
-        // 8. Auto-aprobación por regla de proveedor
+        // 7. Auto-aprobación por regla de proveedor (verificar si el trigger de base de datos la aprobó)
+        let isAutoApproved = false;
         try {
             const { data: checkData } = await supabaseAdmin
                 .from('Registro_Facturas')
@@ -242,6 +216,7 @@ export async function POST(req: NextRequest) {
                 .single();
 
             if (checkData && checkData.Aprobacion_Doliente === 'Aprobado') {
+                isAutoApproved = true;
                 try {
                     const { createSapDraft } = await import('@/lib/sap');
                     await createSapDraft({
@@ -268,6 +243,40 @@ export async function POST(req: NextRequest) {
                 }
             }
         } catch (_autoErr) {}
+
+        // 8. Notificar a Power Automate (Teams) con el enlace correspondiente
+        if (responsableEmail) {
+            try {
+                const POWER_AUTOMATE_WEBHOOK = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/13/workflows/8dee7c5363ad40c9957ff2439f937723/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TuYk4u4aCqx_kWf4Ix5vS-MeNeUnvJqK6ikrRjyxiss";
+                const numVal = parseFloat(String(valorTotal).replace(/[^0-9.-]+/g, '')) || 0;
+                const formattedVal = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(numVal);
+                const url = `https://appcontabilidad.vercel.app/externo/factura/${generatedId}`;
+                const tipoDocText = isNC ? 'la Nota Crédito' : 'la factura';
+                
+                const mensaje = isAutoApproved
+                    ? `Se ha recibido ${tipoDocText} <strong>${nroFactura}</strong> de <strong>${proveedor}</strong> por valor de <strong>${formattedVal}</strong> y se <strong>aprobó automáticamente</strong>.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para ver los detalles de ${tipoDocText}</strong></a><br><br>Enlace directo: ${url}`
+                    : `Se ha recibido ${tipoDocText} <strong>${nroFactura}</strong> de <strong>${proveedor}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar ${tipoDocText}</strong></a><br><br>Enlace directo: ${url}`;
+
+                await fetch(POWER_AUTOMATE_WEBHOOK, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        responsable: responsableEmail.toLowerCase(),
+                        url: url,
+                        mensaje: mensaje,
+                        link: isAutoApproved
+                            ? `<a href="${url}">Haga clic aquí para ver los detalles de ${tipoDocText}</a>`
+                            : `<a href="${url}">Haga clic aquí para revisar y aprobar ${tipoDocText}</a>`,
+                        titulo: isAutoApproved
+                            ? `${tipoLabel} aprobada automáticamente - ${nroFactura}`
+                            : `${tipoLabel} pendiente por aprobar - ${nroFactura}`,
+                        contenido: mensaje
+                    })
+                });
+            } catch (notifyErr) {
+                console.error("Error notificando a Power Automate:", notifyErr);
+            }
+        }
 
         return NextResponse.json({ 
             success: true, 

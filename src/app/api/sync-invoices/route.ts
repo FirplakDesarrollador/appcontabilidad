@@ -203,13 +203,28 @@ export async function POST() {
 
                 if (insertError) throw insertError;
 
+                // Verificar si fue auto-aprobada por el trigger de Supabase
+                let isAutoApproved = false;
+                try {
+                    const { data: checkData } = await supabase
+                        .from('Registro_Facturas')
+                        .select('Aprobacion_Doliente')
+                        .eq('ID', generatedId)
+                        .single();
+                    if (checkData?.Aprobacion_Doliente === 'Aprobado') {
+                        isAutoApproved = true;
+                    }
+                } catch (_cErr) {}
+
                 // Notificar Power Automate
                 if (responsableEmail) {
                     try {
                         const POWER_AUTOMATE_WEBHOOK = "https://8c18912a4169ec67aa9b39bdfb7cc3.10.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/13/workflows/8dee7c5363ad40c9957ff2439f937723/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=TuYk4u4aCqx_kWf4Ix5vS-MeNeUnvJqK6ikrRjyxiss";
                         const formattedVal = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(amountValue);
                         const url = `https://appcontabilidad.vercel.app/externo/factura/${generatedId}`;
-                        const mensaje = `Se ha recibido la factura <strong>${ldf}</strong> de <strong>${provider}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar la factura</strong></a><br><br>Enlace directo: ${url}`;
+                        const mensaje = isAutoApproved
+                            ? `Se ha recibido la factura <strong>${ldf}</strong> de <strong>${provider}</strong> por valor de <strong>${formattedVal}</strong> y se <strong>aprobó automáticamente</strong>.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para ver los detalles de la factura</strong></a><br><br>Enlace directo: ${url}`
+                            : `Se ha recibido la factura <strong>${ldf}</strong> de <strong>${provider}</strong> por valor de <strong>${formattedVal}</strong> para su aprobación.<br><br>👉 <a href="${url}"><strong>Haga clic aquí para revisar y aprobar la factura</strong></a><br><br>Enlace directo: ${url}`;
                         await fetch(POWER_AUTOMATE_WEBHOOK, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
@@ -217,8 +232,12 @@ export async function POST() {
                                 responsable: responsableEmail,
                                 url: url,
                                 mensaje: mensaje,
-                                link: `<a href="${url}">Haga clic aquí para revisar y aprobar la factura</a>`,
-                                titulo: `Factura pendiente por aprobar - ${ldf}`,
+                                link: isAutoApproved
+                                    ? `<a href="${url}">Haga clic aquí para ver los detalles de la factura</a>`
+                                    : `<a href="${url}">Haga clic aquí para revisar y aprobar la factura</a>`,
+                                titulo: isAutoApproved
+                                    ? `Factura aprobada automáticamente - ${ldf}`
+                                    : `Factura pendiente por aprobar - ${ldf}`,
                                 contenido: mensaje
                             })
                         });
