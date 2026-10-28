@@ -409,6 +409,11 @@ export default function PublicApprovalPage() {
                 
                 // La primera fila son los encabezados, empezamos desde la segunda
                 const nuevasDistribuciones = [];
+                const ccNoEncontrados: string[] = [];
+                if (!centrosCostosList || centrosCostosList.length === 0) {
+                    alert("El catálogo de centros de costos aún no ha cargado. Espera unos segundos e intenta de nuevo.");
+                    return;
+                }
                 for (let i = 1; i < data.length; i++) {
                     const row = data[i];
                     // Si la fila está completamente vacía, la ignoramos
@@ -416,7 +421,7 @@ export default function PublicApprovalPage() {
 
                     let ccInput = row[0] ? String(row[0]).trim() : "";
                     
-                    if (ccInput && centrosCostosList && centrosCostosList.length > 0) {
+                    if (ccInput) {
                         // Buscar si el texto ingresado coincide exactamente con un código o con el nombre
                         const matched = centrosCostosList.find(c => 
                             (c.codigo && String(c.codigo).trim() === ccInput) || 
@@ -427,6 +432,10 @@ export default function PublicApprovalPage() {
 
                         if (matched) {
                             ccInput = `${matched.codigo ? matched.codigo + ' - ' : ''}${matched.Título}`;
+                        } else {
+                            // No existe en el catálogo: no se carga, el usuario debe elegirlo del desplegable
+                            ccNoEncontrados.push(ccInput);
+                            ccInput = "";
                         }
                     }
 
@@ -439,7 +448,11 @@ export default function PublicApprovalPage() {
 
                 if (nuevasDistribuciones.length > 0) {
                     setDistribuciones(nuevasDistribuciones);
-                    alert(`Se cargaron ${nuevasDistribuciones.length} filas desde el Excel.`);
+                    if (ccNoEncontrados.length > 0) {
+                        alert(`Se cargaron ${nuevasDistribuciones.length} filas, pero estos centros de costos NO existen en el catálogo y quedaron vacíos (selecciónalos manualmente):\n\n- ${Array.from(new Set(ccNoEncontrados)).join('\n- ')}`);
+                    } else {
+                        alert(`Se cargaron ${nuevasDistribuciones.length} filas desde el Excel.`);
+                    }
                 } else {
                     alert("No se encontraron datos válidos en el archivo Excel.");
                 }
@@ -483,6 +496,14 @@ export default function PublicApprovalPage() {
                 const hasEmpty = distribuciones.some(d => !d.centroCostos || !d.cuenta || !d.valor);
                 if (hasEmpty) {
                     alert("Por favor, completa todos los campos de Centro de Costos, Cuenta y Valor para cada línea antes de aprobar.");
+                    return;
+                }
+
+                // Validar que cada centro de costos exista en el catálogo
+                const ccValidos = new Set(centrosCostosList.map((c: any) => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`.trim().toLowerCase()));
+                const ccInvalidos = distribuciones.filter(d => !ccValidos.has(String(d.centroCostos).trim().toLowerCase())).map(d => d.centroCostos);
+                if (ccInvalidos.length > 0) {
+                    alert(`Los siguientes centros de costos no existen en el catálogo. Selecciónalos del desplegable:\n\n- ${Array.from(new Set(ccInvalidos)).join('\n- ')}`);
                     return;
                 }
             }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSapDraft } from '@/lib/sap';
 import { createClient } from '@supabase/supabase-js';
+import { obtenerCentrosCostoInvalidos } from '@/lib/validarCentrosCosto';
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,6 +39,16 @@ export async function POST(req: NextRequest) {
             }
             const parsed = parseFloat(s);
             cleanValor = !isNaN(parsed) && parsed > 0 ? Math.round(parsed) : null;
+        }
+
+        // Validar que los centros de costos existan en el catálogo antes de aprobar
+        if (action === 'Aprobado' && Array.isArray(distribuciones) && distribuciones.length > 0) {
+            const invalidos = await obtenerCentrosCostoInvalidos(distribuciones);
+            if (invalidos.length > 0) {
+                return NextResponse.json({
+                    error: `Los siguientes centros de costos no existen en el catálogo: ${invalidos.join(', ')}. Corrígelos y vuelve a intentar.`
+                }, { status: 400 });
+            }
         }
 
         // Update the Item AND Fetch current fields for SAP

@@ -287,6 +287,13 @@ export default function PublicDocumentApprovalPage() {
                     alert("Por favor, completa todos los campos de distribución antes de aprobar.");
                     return;
                 }
+                // Validar que cada centro de costos exista en el catálogo
+                const ccValidos = new Set(centrosCostosList.map((c: any) => `${c.codigo ? c.codigo + ' - ' : ''}${c.Título}`.trim().toLowerCase()));
+                const ccInvalidos = distribuciones.filter(d => !ccValidos.has(String(d.centroCostos).trim().toLowerCase())).map(d => d.centroCostos);
+                if (ccInvalidos.length > 0) {
+                    alert(`Los siguientes centros de costos no existen en el catálogo. Selecciónalos del desplegable:\n\n- ${Array.from(new Set(ccInvalidos)).join('\n- ')}`);
+                    return;
+                }
             }
 
             setActionLoading(action);

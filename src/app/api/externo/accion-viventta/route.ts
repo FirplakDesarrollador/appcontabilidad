@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
+import { obtenerCentrosCostoInvalidos } from '@/lib/validarCentrosCosto';
 
 export async function POST(req: NextRequest) {
     try {
@@ -18,6 +19,16 @@ export async function POST(req: NextRequest) {
 
         if (action !== 'Aprobado' && action !== 'Rechazado') {
             return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+        }
+
+        // Validar que los centros de costos existan en el catálogo antes de aprobar
+        if (action === 'Aprobado' && Array.isArray(distribuciones) && distribuciones.length > 0) {
+            const invalidos = await obtenerCentrosCostoInvalidos(distribuciones);
+            if (invalidos.length > 0) {
+                return NextResponse.json({
+                    error: `Los siguientes centros de costos no existen en el catálogo: ${invalidos.join(', ')}. Corrígelos y vuelve a intentar.`
+                }, { status: 400 });
+            }
         }
 
         // Build distribution JSON if present
