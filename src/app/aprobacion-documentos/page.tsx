@@ -108,11 +108,15 @@ const renderAnticipoBadge = (val: any) => {
         return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-100 text-gray-600 border border-gray-200">{str}</span>;
     }
     if (str === "Compra con tarjeta") {
-        return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">{str}</span>;
+        return (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-600 text-white border border-purple-700 shadow-sm">
+                💳 {str}
+            </span>
+        );
     }
     return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
-            {str}
+        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-400 text-amber-950 border border-amber-500 shadow-sm">
+            ⚠️ {str}
         </span>
     );
 };
@@ -1423,22 +1427,80 @@ export default function SupportDocumentsPage() {
                                                     </p>
                                                 </div>
                                                 <div>
-                                                    <p className="text-[11px] font-bold text-gray-400 uppercase mb-1">Anticipo / Tarjeta</p>
-                                                    {role !== 'viewer' ? (
-                                                        <select
-                                                            value={formatAnticipo(selectedDoc.Anticipo || selectedDoc.tiene_anticipo)}
-                                                            onChange={(e) => handleUpdateStatus('Anticipo', e.target.value)}
-                                                            disabled={isUpdatingStatus}
-                                                            className="w-full text-xs font-bold text-[#254153] bg-white border border-gray-200 rounded-xl px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer disabled:opacity-50"
-                                                        >
-                                                            <option value="Sin anticipo">Sin anticipo</option>
-                                                            <option value="Con anticipo">Con anticipo</option>
-                                                            <option value="Compra con tarjeta">Compra con tarjeta</option>
-                                                        </select>
-                                                    ) : (
-                                                        <div className="mt-1">{renderAnticipoBadge(selectedDoc.Anticipo || selectedDoc.tiene_anticipo)}</div>
-                                                    )}
+                                                    {(() => {
+                                                        const anticipoActual = formatAnticipo(selectedDoc.Anticipo || selectedDoc.tiene_anticipo);
+                                                        const isConAnticipo = anticipoActual === 'Con anticipo';
+                                                        const isCompraTarjeta = anticipoActual === 'Compra con tarjeta';
+
+                                                        return (
+                                                            <>
+                                                                <p className="text-[11px] font-bold uppercase mb-1 flex items-center gap-1.5">
+                                                                    <span className={
+                                                                        isConAnticipo
+                                                                            ? 'text-amber-800 font-black'
+                                                                            : isCompraTarjeta
+                                                                            ? 'text-purple-800 font-black'
+                                                                            : 'text-gray-400'
+                                                                    }>
+                                                                        Anticipo / Tarjeta
+                                                                    </span>
+                                                                    {isConAnticipo && (
+                                                                        <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                                                    )}
+                                                                    {isCompraTarjeta && (
+                                                                        <span className="inline-block w-2 h-2 rounded-full bg-purple-600 animate-pulse" />
+                                                                    )}
+                                                                </p>
+                                                                {role !== 'viewer' ? (
+                                                                    <div className="relative">
+                                                                        <select
+                                                                            value={anticipoActual}
+                                                                            onChange={(e) => handleUpdateStatus('Anticipo', e.target.value)}
+                                                                            disabled={isUpdatingStatus}
+                                                                            className={`w-full text-xs font-black rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-2 cursor-pointer transition-all disabled:opacity-50 ${
+                                                                                isConAnticipo
+                                                                                    ? 'bg-amber-400 text-amber-950 border-2 border-amber-500 shadow-sm shadow-amber-400/30 ring-2 ring-amber-300/50'
+                                                                                    : isCompraTarjeta
+                                                                                    ? 'bg-purple-600 text-white border-2 border-purple-700 shadow-sm shadow-purple-600/30 ring-2 ring-purple-400/50'
+                                                                                    : 'bg-white text-[#254153] border border-gray-200 font-bold focus:ring-blue-500/20'
+                                                                            }`}
+                                                                        >
+                                                                            <option value="Sin anticipo" className="bg-white text-[#254153] font-medium">Sin anticipo</option>
+                                                                            <option value="Con anticipo" className="bg-amber-50 text-amber-950 font-bold">⚠️ Con anticipo</option>
+                                                                            <option value="Compra con tarjeta" className="bg-purple-50 text-purple-950 font-bold">💳 Compra con tarjeta</option>
+                                                                        </select>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="mt-1">{renderAnticipoBadge(selectedDoc.Anticipo || selectedDoc.tiene_anticipo)}</div>
+                                                                )}
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </div>
+
+                                                {/* Banner llamativo de alerta si tiene anticipo o compra con tarjeta */}
+                                                {formatAnticipo(selectedDoc.Anticipo || selectedDoc.tiene_anticipo) === 'Con anticipo' && (
+                                                    <div className="col-span-2 p-3.5 bg-amber-50 border-2 border-amber-400 rounded-2xl flex items-center gap-3 text-amber-950 shadow-sm animate-in fade-in duration-200">
+                                                        <div className="h-9 w-9 rounded-xl bg-amber-400 text-amber-950 flex items-center justify-center font-black text-base shrink-0 shadow-sm border border-amber-500">
+                                                            ⚠️
+                                                        </div>
+                                                        <div className="text-xs">
+                                                            <p className="font-black uppercase tracking-wider text-amber-950">¡Atención: Documento con anticipo!</p>
+                                                            <p className="font-semibold text-amber-900 leading-tight mt-0.5">Verifica las observaciones y descuenta el valor del anticipo antes de procesar el pago.</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {formatAnticipo(selectedDoc.Anticipo || selectedDoc.tiene_anticipo) === 'Compra con tarjeta' && (
+                                                    <div className="col-span-2 p-3.5 bg-purple-50 border-2 border-purple-400 rounded-2xl flex items-center gap-3 text-purple-950 shadow-sm animate-in fade-in duration-200">
+                                                        <div className="h-9 w-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-base shrink-0 shadow-sm border border-purple-700">
+                                                            💳
+                                                        </div>
+                                                        <div className="text-xs">
+                                                            <p className="font-black uppercase tracking-wider text-purple-950">¡Atención: Compra con tarjeta corporativa!</p>
+                                                            <p className="font-semibold text-purple-900 leading-tight mt-0.5">Este documento soporte fue pagado con tarjeta de crédito corporativa.</p>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
 
