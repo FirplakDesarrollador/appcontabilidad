@@ -682,7 +682,7 @@ export default function InvoicesPage() {
         const isExcel = ['xlsx', 'xls', 'csv'].includes(detectedExt);
         const isImage = ['png', 'jpg', 'jpeg', 'webp'].includes(detectedExt);
         const fileName = selectedInvoice.documentInfo?.fileName || `Factura_${selectedInvoice.Nro_Factura || 'Adjunta'}.${detectedExt}`;
-        const downloadUrl = `/api/externo/factura/${selectedInvoice.id}/download?download=true&file=${encodeURIComponent(fileName)}`;
+        const downloadUrl = `/api/externo/factura/${selectedInvoice.id}/download/${encodeURIComponent(`${`RAD ${selectedInvoice.Consecutivo || selectedInvoice.id || ''} ${(selectedInvoice.Proveedor || '').replace(/[<>:"/\\|?*]/g, '').trim()} ${(selectedInvoice.Nro_Factura || '').replace(/[<>:"/\\|?*]/g, '').trim()}`.replace(/\s+/g, ' ').trim()}.${detectedExt}`)}?download=true&file=${encodeURIComponent(fileName)}`;
 
         return {
             docUrl,
@@ -723,7 +723,7 @@ export default function InvoicesPage() {
         setPreviewError(null);
         setPreviewLoading(true);
         const fileName = invoice?.documentInfo?.fileName || 'Factura.pdf';
-        const apiUrl = `/api/externo/factura/${invoice.id}/download?file=${encodeURIComponent(fileName)}`;
+        const apiUrl = `/api/externo/factura/${invoice.id}/download/${encodeURIComponent(`${`RAD ${invoice?.Consecutivo || invoice?.id || ''} ${(invoice?.Proveedor || '').replace(/[<>:"/\\|?*]/g, '').trim()} ${(invoice?.Nro_Factura || '').replace(/[<>:"/\\|?*]/g, '').trim()}`.replace(/\s+/g, ' ').trim()}.pdf`)}?file=${encodeURIComponent(fileName)}`;
         setPreviewUrl(apiUrl);
     };
 
@@ -2554,7 +2554,7 @@ export default function InvoicesPage() {
                                                         </a>
                                                         {!selectedDocInfo?.isExcel && (
                                                             <a
-                                                                href={`/api/externo/factura/${selectedInvoice.id}/download?file=${encodeURIComponent(selectedDocInfo?.fileName || 'Factura.pdf')}`}
+                                                                href={previewUrl || `/api/externo/factura/${selectedInvoice.id}/download?file=${encodeURIComponent(selectedDocInfo?.fileName || 'Factura.pdf')}`}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 className="h-10 px-4 flex items-center justify-center rounded-xl bg-white border border-gray-200 text-xs font-bold text-[#254153] hover:bg-gray-50 transition-all shadow-sm"

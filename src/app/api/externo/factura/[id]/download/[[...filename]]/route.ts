@@ -130,8 +130,8 @@ export async function GET(
         const nitValue = invoiceDetails.Nit || invoiceDetails.Title || invoiceDetails.Nit_x0020_ || invoiceDetails["Nit "] || "N/A";
         const nroFactura = invoiceDetails.Nro_Factura;
         const consecutivo = invoiceDetails.Consecutivo || "";
-        const proveedor = invoiceDetails.Proveedor || "";
-        const nroFacturaStr = invoiceDetails.Nro_Factura || "";
+        const proveedor = (invoiceDetails.Proveedor || "").replace(/[<>:"/\\|?*]/g, '').trim();
+        const nroFacturaStr = (invoiceDetails.Nro_Factura || "").replace(/[<>:"/\\|?*]/g, '').trim();
         
         let customFileName = `RAD ${consecutivo} ${proveedor} ${nroFacturaStr}`.replace(/\s+/g, ' ').trim();
         let fileBuffer: ArrayBuffer | null = null;
@@ -225,7 +225,7 @@ export async function GET(
 
         // Detect dynamic file type and MIME type
         const detected = detectFileTypeAndMime(fileBuffer, [requestFileName, directUrl, externalFileName]);
-        const baseName = customFileName.includes('.') ? customFileName.replace(/\.[^/.]+$/, '') : customFileName;
+        const baseName = customFileName.replace(/\.(pdf|xlsx|xls|csv|docx|doc|png|jpg|jpeg)$/i, '').trim();
         const finalFileName = `${baseName || 'Factura'}.${detected.ext}`;
 
         // Store in memory cache (cleanup if cache grows large)
