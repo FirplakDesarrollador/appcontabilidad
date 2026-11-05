@@ -279,6 +279,56 @@ export async function triggerFactureEventForInvoice(
   action: 'Aprobado' | 'Rechazado' | string = 'Aprobado',
   extraDetails?: { responsableName?: string; observaciones?: string; spItemData?: any }
 ): Promise<FactureResponse> {
+  const result = await runFactureEventForInvoice(invoiceId, action, extraDetails);
+  await recordFactureEventResult(invoiceId, action, result);
+  return result;
+}
+
+/**
+ * Guarda el resultado del evento Facture en Registro_Facturas para poder detectar y reintentar fallos.
+ * Requiere las columnas de la migración 20261105110000_facture_event_status.sql; si aún no existen,
+ * el error se ignora para no afectar la aprobación.
+ */
+async function recordFactureEventResult(
+  invoiceId: number | string,
+  action: string,
+  result: FactureResponse
+): Promise<void> {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://zohdtksgxhbheaftgmsi.supabase.co";
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseKey || isNaN(Number(invoiceId))) return;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const { data: current } = await supabase
+      .from('Registro_Facturas')
+      .select('evento_facture_intentos')
+      .eq('ID', Number(invoiceId))
+      .maybeSingle();
+
+    const { error } = await supabase
+      .from('Registro_Facturas')
+      .update({
+        evento_facture_estado: result.success ? 'ok' : 'error',
+        evento_facture_accion: action,
+        evento_facture_error: result.success ? null : String(result.error || 'Error desconocido').slice(0, 500),
+        evento_facture_intentos: ((current as any)?.evento_facture_intentos || 0) + 1,
+        evento_facture_fecha: new Date().toISOString()
+      })
+      .eq('ID', Number(invoiceId));
+    if (error) {
+      console.warn(`[Facture] No se pudo registrar el resultado del evento (¿falta la migración?): ${error.message}`);
+    }
+  } catch (err: any) {
+    console.warn('[Facture] Error registrando resultado del evento:', err?.message);
+  }
+}
+
+async function runFactureEventForInvoice(
+  invoiceId: number | string,
+  action: 'Aprobado' | 'Rechazado' | string = 'Aprobado',
+  extraDetails?: { responsableName?: string; observaciones?: string; spItemData?: any }
+): Promise<FactureResponse> {
   console.log(`[Facture] Iniciando flujo automático Facture (${action}) para factura ID ${invoiceId}...`);
 
   try {
@@ -426,7 +476,13 @@ export async function triggerFactureEventForInvoice(
               const num = (i.number || i.documentCode || i.ldf || "").toUpperCase();
               const targetClean = cleanNroFactura.toUpperCase();
               const targetRaw = rawNroFactura.toUpperCase();
-              return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num);
+              const itemNit = String(i.supplierIdentification || "").split('-')[0].trim().replace(/\D/g, '');
+              if (cleanNit && itemNit && itemNit !== cleanNit) return false;
+              const itemNum = String(i.number || "").trim().toUpperCase();
+              const itemCode = String(i.documentCode || "").trim().toUpperCase().replace(/^(FAC|FE|NC)[-_]?/i, '');
+              const itemClean = itemNum.replace(/^(FAC|FE|NC)[-_]?/i, '');
+              const targetSinNC = targetRaw.replace(/^NC[-_]?/i, '');
+              return itemNum === targetRaw || itemNum === targetClean || itemNum === targetSinNC || itemClean === targetClean || itemCode === targetClean;
             });
 
             if (match && match.ldf) {

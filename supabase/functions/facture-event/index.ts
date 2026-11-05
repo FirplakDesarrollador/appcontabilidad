@@ -209,7 +209,13 @@ Deno.serve(async (req: Request) => {
               const num = (i.number || i.documentCode || i.ldf || '').toUpperCase()
               const targetClean = cleanNroFactura.toUpperCase()
               const targetRaw = rawNroFactura.toUpperCase()
-              return (targetClean && num.includes(targetClean)) || num.includes(targetRaw) || targetRaw.includes(num)
+              const itemNit = String(i.supplierIdentification || '').split('-')[0].trim().replace(/\D/g, '')
+              if (cleanNit && itemNit && itemNit !== cleanNit) return false
+              const itemNum = String(i.number || '').trim().toUpperCase()
+              const itemCode = String(i.documentCode || '').trim().toUpperCase().replace(/^(FAC|FE|NC)[-_]?/i, '')
+              const itemClean = itemNum.replace(/^(FAC|FE|NC)[-_]?/i, '')
+              const targetSinNC = targetRaw.replace(/^NC[-_]?/i, '')
+              return itemNum === targetRaw || itemNum === targetClean || itemNum === targetSinNC || itemClean === targetClean || itemCode === targetClean
             })
 
             if (match && match.ldf) {

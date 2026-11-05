@@ -1869,8 +1869,29 @@ export default function InvoicesPage() {
                     </div>
 
                     {/* Tabs de Vistas y Acciones de Grid */}
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-2 bg-gray-100/50 p-1.5 rounded-2xl w-fit border border-gray-100">
+                    <div className="flex flex-wrap items-center gap-3">
+                        {activeTab === 'processed' && (
+                            <div className="order-2 flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
+                                <span className="text-xs text-gray-500 font-bold">Cargar:</span>
+                                <select
+                                    value={loadLimit}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        const newLimit = val === 'all' ? 'all' : Number(val);
+                                        setLoadLimit(newLimit);
+                                        fetchHistory(true, newLimit);
+                                    }}
+                                    className="h-7 px-2 rounded-lg bg-gray-50 border border-gray-100 text-xs focus:outline-none focus:ring-2 focus:ring-[#254153]/10 focus:border-[#254153] transition-all text-[#254153] font-bold cursor-pointer"
+                                >
+                                    <option value={100}>100 registros</option>
+                                    <option value={200}>200 registros</option>
+                                    <option value={500}>500 registros</option>
+                                    <option value={1000}>1000 registros</option>
+                                    <option value="all">Todas las facturas</option>
+                                </select>
+                            </div>
+                        )}
+                        <div className="order-1 mr-auto flex items-center gap-2 bg-gray-100/50 p-1.5 rounded-2xl w-fit border border-gray-100">
                             <button
                                 onClick={() => setActiveTab('pending')}
                                 className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2 ${activeTab === 'pending'
@@ -1917,7 +1938,7 @@ export default function InvoicesPage() {
 
                         <button
                             onClick={handleResetColumns}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-gray-500 hover:text-[#254153] bg-white hover:bg-gray-50 border border-gray-200 shadow-sm transition-all"
+                            className="order-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-gray-500 hover:text-[#254153] bg-white hover:bg-gray-50 border border-gray-200 shadow-sm transition-all"
                             title="Restablecer el orden y ancho predeterminado de las columnas"
                         >
                             <RotateCcw className="h-3.5 w-3.5 text-gray-400" />
@@ -1984,7 +2005,7 @@ export default function InvoicesPage() {
                         </div>
                     </div>
                     {/* Paginación - Eliminada para carga completa */}
-                    {!loading && filteredInvoices.length > 0 && (
+                    {!loading && (
                         <div className="flex items-center justify-between pt-2">
                             <div className="text-sm text-gray-400 font-medium italic">
                                 Mostrando <span className="text-[#254153] font-bold">{displayedRowCount}</span> de <span className="text-gray-600 font-bold">{filteredInvoices.length}</span> registros cargados (Total servidor: {activeTab === 'pending' ? `${pendingCount} pendientes` : activeTab === 'to_process' ? `${toProcessCount} por procesar` : `${processedCount} procesados`})

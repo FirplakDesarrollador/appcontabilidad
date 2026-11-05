@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+export const maxDuration = 120; // Los eventos Facture (token + LDF + RECEIVEGOODS + ACCEPT) pueden tardar más que el límite por defecto
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

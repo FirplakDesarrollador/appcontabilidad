@@ -550,6 +550,17 @@ Deno.serve(async (req: Request) => {
         const subtotalNum = (await extraerSubtotalDeXml(docData?.UBL)) ?? extraerSubtotal(docData, item)
         const amountValue = subtotalNum
 
+        // Re-verificar justo antes de insertar para evitar duplicados por ejecuciones simultáneas mientras se descargaba el PDF/XML
+        const { data: existingAfterDownload } = await supabase
+          .from('Registro_Facturas')
+          .select('ID')
+          .or(`Nro_Factura.eq.${ldf},Nro_Factura.eq.${rawNumber},Nro_Factura.eq.${cleanNroFactura},Nro_Factura.eq.${docNumberToSave}`)
+          .maybeSingle()
+        if (existingAfterDownload) {
+          summary.skipped++
+          continue
+        }
+
         runningConsecutivo++
         const generatedId = Number(BigInt(Date.now()) * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000)))
 
