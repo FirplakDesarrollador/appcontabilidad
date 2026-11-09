@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabaseAdmin as supabase } from '@/lib/supabaseAdmin';
 
 export async function PATCH(req: NextRequest) {
     try {
@@ -26,7 +21,11 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        return NextResponse.json({ success: true, item: data?.[0] || null });
+        if (!data || data.length === 0) {
+            return NextResponse.json({ error: 'No se encontró ni actualizó la factura en Facturas_Viventta' }, { status: 404 });
+        }
+
+        return NextResponse.json({ success: true, item: data[0] });
 
     } catch (error: any) {
         console.error('Error in Viventta update API:', error);

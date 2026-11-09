@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabaseAdmin as supabase } from '@/lib/supabaseAdmin';
 
 export async function POST(req: NextRequest) {
     try {
@@ -45,7 +40,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Error al subir archivo adjunto' }, { status: 500 });
         }
 
-        const { data, error } = await supabase
+        const { data } = supabase
             .storage
             .from('adjuntos_facturas')
             .getPublicUrl(filePath);
@@ -113,23 +108,20 @@ export async function POST(req: NextRequest) {
         }
 
         // Auto-registrar proveedor si no existe en Viventta
-        if (responsableEmail && responsable) {
+        if (responsable) {
             try {
                 const baseNit = nit.includes('-') ? nit.split('-')[0] : nit;
                 const { data: existingProvider, error: lookupError } = await supabase
                     .from("Proveedores_Viventta")
-                    .select('"Nit"')
-                    .like("Nit", `${baseNit}%`)
+                    .select('"BP Code"')
+                    .like("BP Code", `${baseNit}%`)
                     .limit(1);
 
                 if (!lookupError && (!existingProvider || existingProvider.length === 0)) {
                     await supabase.from("Proveedores_Viventta").insert({
-                        "Nit": nit,
-                        "Nombre de socio de negocios": proveedor,
-                        "Responsable": responsable,
-                        "Autorizador": responsable,
-                        "Correo": responsableEmail,
-                        "Creado": new Date().toISOString()
+                        "BP Code": nit,
+                        "BP Name": proveedor,
+                        "Responsables": responsable
                     });
                     console.log(`[Supabase Viventta] Registrado nuevo proveedor con responsable: ${nit} - ${responsable}`);
                 }
