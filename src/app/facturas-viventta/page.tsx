@@ -243,6 +243,10 @@ export default function ViventtaInvoicesPage() {
                     Created: row.created_at || row.Creado || '',
                     Creado: row.Creado || row.created_at || '',
                     FechaAprobacion: row.FechaAprobacion || null,
+                    FechaProcesado: row.FechaProcesado || null,
+                    ProcesadoPor: row.ProcesadoPor || row.DigitadoPor || null,
+                    DigitadoPor: row.DigitadoPor || row.ProcesadoPor || null,
+                    Procesado: row.Procesado ?? false,
                     centro_costos: row.centro_costos || '[]',
                     Attachments: !!(row.fp || row.documentos),
                     documentInfo: row.fp ? { fileName: row.Nro_Factura + '.pdf', serverRelativeUrl: row.fp } : { fileName: '', serverRelativeUrl: '#' },
@@ -599,6 +603,7 @@ export default function ViventtaInvoicesPage() {
                 updateData.Gestion_Contabilidad = action;
                 if (action === 'Procesado') {
                     updateData.FechaProcesado = new Date().toISOString();
+                    updateData.Procesado = true;
                     if (procesadoPor) {
                         updateData.ProcesadoPor = procesadoPor;
                         updateData.DigitadoPor = procesadoPor;
