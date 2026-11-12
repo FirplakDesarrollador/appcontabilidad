@@ -405,6 +405,113 @@ export async function getSharePointInvoiceById(itemId: string) {
     return getSharePointItemById(itemId, 'Registro_de_Facturas');
 }
 
+/**
+ * Descarga un archivo directamente desde una URL de SharePoint (por ejemplo:
+ * https://firplaksa.sharepoint.com/sites/ITPowerApps/Documentos%20compartidos/Reenvio%20facture/...)
+ * resolviendo la ruta exacta en el Drive de Microsoft Graph (~300ms) sin depender de búsquedas globales.
+ */
+export async function fetchSharePointFileByDirectUrl(
+    directUrl: string
+): Promise<{ buffer: ArrayBuffer; fileName: string } | null> {
+    if (!directUrl || typeof directUrl !== 'string' || !directUrl.includes('sharepoint.com')) {
+        return null;
+    }
+
+    try {
+        const client = await getGraphClient();
+
+        // 1. URLs de bibliotecas de documentos (/sites/<siteSlug>/Documentos compartidos/<relPath>)
+        const driveMatch = directUrl.match(
+            /\/sites\/([^/]+)\/(?:Documentos(?:%20| )compartidos|Shared(?:%20| )Documents)\/(.+)$/i
+        );
+        if (driveMatch) {
+            const siteSlug = decodeURIComponent(driveMatch[1]);
+            const rawRelPath = driveMatch[2].split('?')[0].split('#')[0];
+            let relPath = rawRelPath;
+            try {
+                relPath = decodeURIComponent(rawRelPath);
+            } catch {}
+
+            const siteId = await getCachedSiteId(client, siteSlug);
+            const item = await client.api(`/sites/${siteId}/drive/root:/${encodeURI(relPath)}`).get();
+
+            if (item) {
+                // Si la URL apunta a una carpeta, buscar el PDF (o primer archivo) dentro de ella
+                if (item.folder) {
+                    const children = await client
+                        .api(`/drives/${item.parentReference.driveId}/items/${item.id}/children`)
+                        .get();
+                    const files = (children?.value || []).filter((c: any) => !c.folder);
+                    const targetFile =
+                        files.find((c: any) => c.name?.toLowerCase().endsWith('.pdf')) || files[0];
+                    if (targetFile) {
+                        const dlUrl = targetFile['@microsoft.graph.downloadUrl'];
+                        if (dlUrl) {
+                            const dlRes = await fetch(dlUrl);
+                            if (dlRes.ok) {
+                                return {
+                                    buffer: await dlRes.arrayBuffer(),
+                                    fileName: targetFile.name || 'Factura.pdf',
+                                };
+                            }
+                        }
+                        const content = await client
+                            .api(`/drives/${targetFile.parentReference.driveId}/items/${targetFile.id}/content`)
+                            .get();
+                        if (content) {
+                            return { buffer: content, fileName: targetFile.name || 'Factura.pdf' };
+                        }
+                    }
+                } else {
+                    const dlUrl = item['@microsoft.graph.downloadUrl'];
+                    if (dlUrl) {
+                        const dlRes = await fetch(dlUrl);
+                        if (dlRes.ok) {
+                            return {
+                                buffer: await dlRes.arrayBuffer(),
+                                fileName: item.name || 'Factura.pdf',
+                            };
+                        }
+                    }
+                    const content = await client
+                        .api(`/drives/${item.parentReference.driveId}/items/${item.id}/content`)
+                        .get();
+                    if (content) {
+                        return { buffer: content, fileName: item.name || 'Factura.pdf' };
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback por REST de SharePoint (para adjuntos de listas u otras rutas directas)
+        const restToken = await getSharePointRESTToken();
+        if (restToken) {
+            const spRes = await fetch(directUrl, {
+                headers: { Authorization: `Bearer ${restToken}` },
+            });
+            if (spRes.ok) {
+                const rawName = directUrl.split('?')[0].split('/').pop() || 'Factura.pdf';
+                let decodedName = rawName;
+                try {
+                    decodedName = decodeURIComponent(rawName);
+                } catch {}
+                return {
+                    buffer: await spRes.arrayBuffer(),
+                    fileName: decodedName,
+                };
+            }
+        }
+    } catch (err: any) {
+        console.warn('[SharePoint Direct URL] No se pudo obtener por ruta directa:', err?.message || err);
+    }
+
+    return null;
+}
+
+export async function getSharePointInvoiceById_unused(itemId: string) {
+    return getSharePointItemById(itemId, 'Registro_de_Facturas');
+}
+
 export async function findExternalInvoiceDocument(nit: string, nroFactura: string, dateStr: string) {
     try {
         const caGraph = await cca.acquireTokenByClientCredential({
@@ -424,6 +531,45 @@ export async function findExternalInvoiceDocument(nit: string, nroFactura: strin
         const cleanNitFull = nit.replace(/[^0-9]/g, '');
         const nitParts = nit.split('-');
         const nitWithoutDV = nitParts[0].replace(/[^0-9]/g, '');
+
+        // 1. Intento rápido por ruta directa en "Reenvio facture" si tenemos fecha de creación (~300ms vs búsqueda global)
+        if (dateStr && nitWithoutDV && nroFactura) {
+            const parsedDate = new Date(dateStr);
+            if (!isNaN(parsedDate.getTime())) {
+                const candidateDates: string[] = [];
+                for (const offsetDays of [0, -1, 1]) {
+                    const d = new Date(parsedDate);
+                    d.setUTCDate(d.getUTCDate() + offsetDays);
+                    const ymd = d.toISOString().split('T')[0];
+                    if (!candidateDates.includes(ymd)) candidateDates.push(ymd);
+                }
+                const docTypes = nroFactura.toUpperCase().startsWith('NC')
+                    ? ['NC-UBL', 'FACTURA-UBL']
+                    : ['FACTURA-UBL', 'NC-UBL'];
+                for (const dt of docTypes) {
+                    for (const ymd of candidateDates) {
+                        const folderRelPath = `Reenvio facture/${dt}(${nitWithoutDV};${nroFactura};${ymd})`;
+                        try {
+                            const children = await client
+                                .api(`/sites/${siteId}/drive/root:/${encodeURI(folderRelPath)}:/children`)
+                                .get();
+                            const pdf = (children?.value || []).find((c: any) =>
+                                c.name?.toLowerCase().endsWith('.pdf')
+                            );
+                            if (pdf) {
+                                return {
+                                    id: pdf.id,
+                                    driveId: pdf.parentReference.driveId,
+                                    fileName: pdf.name,
+                                    webUrl: pdf.webUrl,
+                                    downloadUrl: pdf['@microsoft.graph.downloadUrl'],
+                                };
+                            }
+                        } catch {}
+                    }
+                }
+            }
+        }
 
         const query = `${nroFactura}`;
         console.log(`[SharePoint Search] Searching for "${query}" in ITPowerApps (NIT: ${nitWithoutDV})...`);

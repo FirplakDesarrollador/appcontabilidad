@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGraphClient, findExternalInvoiceDocument, getSharePointInvoiceById } from '@/lib/sharepoint';
-import { createClient } from '@supabase/supabase-js';
+import {
+    getGraphClient,
+    findExternalInvoiceDocument,
+    getSharePointInvoiceById,
+    fetchSharePointFileByDirectUrl,
+    getSharePointRESTToken,
+} from '@/lib/sharepoint';
+import { supabaseAdmin as supabase } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
-
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    (serviceKey && serviceKey !== 'REEMPLAZAR_CON_TU_SERVICE_ROLE_KEY') ? serviceKey : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 // In-memory cache for recent downloads (5 min TTL) to avoid repeated SharePoint / Graph API calls
 interface CachedFile {
@@ -111,7 +111,7 @@ export async function GET(
         try {
             const { data: dbInvoice } = await supabase
                 .from('Registro_Facturas')
-                .select('ID, Nit, Proveedor, Nro_Factura, Consecutivo, fp, documentos, adjuntos_url')
+                .select('ID, sharepoint_id, Nit, Proveedor, Nro_Factura, Consecutivo, Creado, fp, documentos, adjuntos_url')
                 .or(`ID.eq.${isNaN(Number(itemId)) ? 0 : itemId},sharepoint_id.eq.${itemId}`)
                 .maybeSingle();
             
@@ -135,8 +135,9 @@ export async function GET(
         
         let customFileName = `RAD ${consecutivo} ${proveedor} ${nroFacturaStr}`.replace(/\s+/g, ' ').trim();
         let fileBuffer: ArrayBuffer | null = null;
+        let externalFileName = '';
 
-        // 2. Direct storage URL (Supabase Storage) - Super fast (~30ms)
+        // 2. Direct URL (Supabase Storage o ruta directa de SharePoint guardada en fp / documentos)
         let directUrl = invoiceDetails.fp || invoiceDetails.documentos;
         if (!directUrl && invoiceDetails.adjuntos_url) {
             try {
@@ -149,24 +150,37 @@ export async function GET(
             } catch {}
         }
 
-        if (typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl) && !directUrl.includes('sharepoint.com')) {
-            console.log(`[Direct Download] Fetching from direct storage URL for item ${itemId}...`);
-            try {
-                const directRes = await fetch(directUrl);
-                if (directRes.ok) {
-                    fileBuffer = await directRes.arrayBuffer();
-                    console.log(`[Direct Download] Successfully fetched file from direct storage URL`);
+        if (typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl)) {
+            if (!directUrl.includes('sharepoint.com')) {
+                console.log(`[Direct Download] Fetching from direct storage URL for item ${itemId}...`);
+                try {
+                    const directRes = await fetch(directUrl);
+                    if (directRes.ok) {
+                        fileBuffer = await directRes.arrayBuffer();
+                        console.log(`[Direct Download] Successfully fetched file from direct storage URL`);
+                    }
+                } catch (directErr) {
+                    console.error(`[Direct Download] Failed to fetch from direct storage URL:`, directErr);
                 }
-            } catch (directErr) {
-                console.error(`[Direct Download] Failed to fetch from direct storage URL:`, directErr);
+            } else {
+                console.log(`[Direct Download] Fetching from SharePoint direct URL for item ${itemId}...`);
+                const spDirect = await fetchSharePointFileByDirectUrl(directUrl);
+                if (spDirect) {
+                    fileBuffer = spDirect.buffer;
+                    externalFileName = spDirect.fileName;
+                    console.log(`[Direct Download] Successfully fetched ${externalFileName} via SharePoint direct URL`);
+                }
             }
         }
 
         // 3. Try ITPowerApps / Graph API if not already fetched
-        let externalFileName = '';
         if (!fileBuffer && nroFactura && nitValue !== 'N/A') {
             console.log(`[Direct Download] Searching for ${nroFactura} in ITPowerApps...`);
-            const externalDoc = await findExternalInvoiceDocument(nitValue, nroFactura, "");
+            const externalDoc = await findExternalInvoiceDocument(
+                nitValue,
+                nroFactura,
+                invoiceDetails.Creado || invoiceDetails.Created || ""
+            );
             
             if (externalDoc) {
                 externalFileName = externalDoc.fileName || '';
@@ -196,25 +210,47 @@ export async function GET(
             }
         }
 
-        // 4. Fallback to FPKContabilidad Attachments
-        if (!fileBuffer && requestFileName && requestFileName !== 'Ver en SharePoint') {
-            console.log(`[Direct Download] Falling back to FPKContabilidad attachments for ${requestFileName}...`);
-            try {
-                const client = await getGraphClient();
-                const siteResponse = await client.api('/sites/firplaksa.sharepoint.com:/sites/FPKContabilidad').get();
-                const siteId = siteResponse.id;
-                const listsResponse = await client.api(`/sites/${siteId}/lists`).get();
-                const list = listsResponse.value.find((l: any) => l.name === 'Registro_de_Facturas' || l.displayName === 'Registro_de_Facturas');
-                
-                if (list) {
-                    const attResponse = await client.api(`/sites/${siteId}/lists/${list.id}/items/${itemId}/attachments/${requestFileName}/$value`).get();
-                    if (attResponse) {
-                        fileBuffer = attResponse;
-                        console.log(`[Direct Download] Successfully fetched attachment from FPKContabilidad`);
+        // 4. Fallback to FPKContabilidad Attachments via SharePoint REST API
+        if (!fileBuffer) {
+            const spItemId = invoiceDetails.sharepoint_id || itemId;
+            if (Number(spItemId) < 1000000) {
+                console.log(`[Direct Download] Falling back to FPKContabilidad REST attachments for item ${spItemId}...`);
+                try {
+                    const restToken = await getSharePointRESTToken();
+                    if (restToken) {
+                        const spBase = 'https://firplaksa.sharepoint.com/sites/FPKContabilidad';
+                        const attachUrl = `${spBase}/_api/web/lists/getbytitle('Registro_de_Facturas')/items(${spItemId})/AttachmentFiles`;
+                        const attachRes = await fetch(attachUrl, {
+                            headers: {
+                                Authorization: `Bearer ${restToken}`,
+                                Accept: 'application/json;odata=nometadata',
+                            },
+                        });
+                        if (attachRes.ok) {
+                            const attachData = await attachRes.json();
+                            const attachments = attachData.value || [];
+                            if (attachments.length > 0) {
+                                const chosen =
+                                    attachments.find((a: any) =>
+                                        requestFileName && a.FileName?.toLowerCase() === requestFileName.toLowerCase()
+                                    ) || attachments[0];
+                                if (chosen?.ServerRelativeUrl) {
+                                    const fileRes = await fetch(
+                                        `https://firplaksa.sharepoint.com${chosen.ServerRelativeUrl}`,
+                                        { headers: { Authorization: `Bearer ${restToken}` } }
+                                    );
+                                    if (fileRes.ok) {
+                                        fileBuffer = await fileRes.arrayBuffer();
+                                        externalFileName = chosen.FileName || '';
+                                        console.log(`[Direct Download] Successfully fetched attachment ${externalFileName} from FPKContabilidad`);
+                                    }
+                                }
+                            }
+                        }
                     }
+                } catch (attErr) {
+                    console.warn(`[Direct Download] Failed to fetch attachment from FPKContabilidad:`, attErr);
                 }
-            } catch (attErr) {
-                console.warn(`[Direct Download] Failed to fetch attachment from FPKContabilidad:`, attErr);
             }
         }
 

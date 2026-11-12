@@ -182,7 +182,7 @@ export default function PublicApprovalPage() {
 
     const fetchPdfBlob = async () => {
         const directUrl = invoice?.documentos || invoice?.fp;
-        if (directUrl && (directUrl.startsWith('http://') || directUrl.startsWith('https://'))) {
+        if (directUrl && (directUrl.startsWith('http://') || directUrl.startsWith('https://')) && !directUrl.includes('sharepoint.com')) {
             try {
                 const res = await fetch(directUrl);
                 if (res.ok) {

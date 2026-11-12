@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findExternalInvoiceDocument, getGraphClient } from '@/lib/sharepoint';
+import { findExternalInvoiceDocument, getGraphClient, fetchSharePointFileByDirectUrl, getSharePointInvoiceById } from '@/lib/sharepoint';
 import { supabase } from '@/lib/supabaseClient';
 import { PdfReader } from 'pdfreader';
 
@@ -54,7 +54,13 @@ export async function POST(
 
         // 0. Try direct Supabase storage URL first
         const directUrl = invoiceDetails.fp || invoiceDetails.documentos;
-        if (directUrl && typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl)) {
+        if (directUrl && typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl) && directUrl.includes('sharepoint.com')) {
+            const spDirect = await fetchSharePointFileByDirectUrl(directUrl);
+            if (spDirect) {
+                fileBuffer = spDirect.buffer;
+                finalFileName = spDirect.fileName;
+            }
+        } else if (directUrl && typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl)) {
             try {
                 const directRes = await fetch(directUrl);
                 if (directRes.ok) {
