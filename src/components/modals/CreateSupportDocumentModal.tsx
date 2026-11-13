@@ -605,6 +605,18 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider ml-1">Archivos Adjuntos</label>
                                 <div 
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const dropped = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : [];
+                                        if (dropped.length > 0) {
+                                            setFiles(prev => [...prev, ...dropped]);
+                                        }
+                                    }}
                                     className={`relative border-2 border-dashed rounded-2xl p-4 flex flex-col items-center text-center space-y-2 transition-all
                                         ${files.length > 0 ? "border-blue-400 bg-blue-50/30" : "border-gray-100 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-200"}`}
                                 >
@@ -615,7 +627,10 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                             multiple
                                             onChange={(e) => {
                                                 if (e.target.files) {
-                                                    setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                                                const selected = e.target.files ? Array.from(e.target.files) : [];
+                                                if (selected.length > 0) {
+                                                    setFiles(prev => [...prev, ...selected]);
+                                                }
                                                 }
                                                 e.target.value = '';
                                             }}
@@ -674,7 +689,10 @@ export function CreateSupportDocumentModal({ isOpen, onClose, onSuccess }: Creat
                                                         multiple
                                                         onChange={(e) => {
                                                             if (e.target.files) {
-                                                                setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                                                            const selected = e.target.files ? Array.from(e.target.files) : [];
+                                                if (selected.length > 0) {
+                                                    setFiles(prev => [...prev, ...selected]);
+                                                }
                                                             }
                                                             e.target.value = '';
                                                         }}

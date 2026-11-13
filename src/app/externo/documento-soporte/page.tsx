@@ -697,7 +697,8 @@ export default function DocumentoSoporteExternoPage() {
                                         multiple
                                         onChange={(e) => {
                                             if (e.target.files) {
-                                                setAttachments(prev => [...prev, ...Array.from(e.target.files as FileList)]);
+                                                const selected = Array.from(e.target.files as FileList);
+                                                setAttachments(prev => [...prev, ...selected]);
                                             }
                                         }}
                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
