@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { supabaseAdmin as supabase } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +27,13 @@ export async function GET(
         const nitValue = dbDoc.nit || "N/A";
         const valorTotal = dbDoc.valor_total || 0;
 
-        const pdfUrl = dbDoc.pdf_url || dbDoc.adjunto || null;
+        const isPrincipalStringAdjunto =
+            dbDoc.adjunto &&
+            typeof dbDoc.adjunto === 'string' &&
+            dbDoc.adjunto.startsWith('http') &&
+            !dbDoc.adjunto.trim().startsWith('[');
+
+        const pdfUrl = dbDoc.pdf_url || (isPrincipalStringAdjunto ? dbDoc.adjunto : null);
 
         let documentInfo = null;
         if (pdfUrl) {
@@ -58,6 +64,8 @@ export async function GET(
             gestionContabilidad: dbDoc.gestion_contabilidad || "Pendiente",
             responsableActual: dbDoc.responsable_nombre || "No asignado",
             documentInfo,
+            pdf_url: dbDoc.pdf_url || null,
+            adjunto: dbDoc.adjunto || null,
             distribuciones: dbDoc.centro_costos || null,
             anticipo: dbDoc.tiene_anticipo || null,
             tiene_anticipo: dbDoc.tiene_anticipo || null,

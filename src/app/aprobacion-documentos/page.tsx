@@ -153,7 +153,7 @@ const getAttachmentsForDoc = (doc: any): DocAttachment[] => {
     const buildAttachment = (name: string, rawUrl: string, isPrincipal: boolean, anexoIndex?: number): DocAttachment => {
         const ext = getExt(name) || getExt(rawUrl);
         const downloadUrl = `/api/externo/documento/${doc.id}/download?download=true${anexoIndex !== undefined ? `&anexoIndex=${anexoIndex}` : ''}`;
-        const previewUrl = `/api/externo/documento/${doc.id}/download${anexoIndex !== undefined ? `&anexoIndex=${anexoIndex}` : ''}`;
+        const previewUrl = `/api/externo/documento/${doc.id}/download${anexoIndex !== undefined ? `?anexoIndex=${anexoIndex}` : ''}`;
         const isPdf = ext === 'pdf';
         const isExcel = ['xlsx', 'xls', 'csv'].includes(ext);
         const isImage = ['png', 'jpg', 'jpeg', 'webp', 'svg'].includes(ext);

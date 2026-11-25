@@ -1,21 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     CheckCircle2,
     XCircle,
     FileText,
+    FileSpreadsheet,
+    Eye,
     User,
     Calendar,
     DollarSign,
     AlertCircle,
     Building2,
     Hash,
-    ChevronLeft,
-    ChevronRight,
     Loader2,
     Plus,
     Trash2,
@@ -40,8 +40,108 @@ interface DocumentData {
     gestionContabilidad: string;
     responsableActual?: string;
     documentInfo?: any;
+    pdf_url?: string | null;
+    adjunto?: any;
     observaciones?: string;
 }
+
+interface DocAttachment {
+    id: string;
+    name: string;
+    url: string;
+    downloadUrl: string;
+    rawUrl: string;
+    isPrincipal: boolean;
+    anexoIndex?: number;
+    ext: string;
+    isPdf: boolean;
+    isExcel: boolean;
+    isImage: boolean;
+}
+
+const getAttachmentsForDoc = (doc: DocumentData | null): DocAttachment[] => {
+    if (!doc) return [];
+    const items: DocAttachment[] = [];
+
+    const getExt = (nameOrUrl: string) => {
+        try {
+            const clean = (nameOrUrl || '').split('?')[0].split('#')[0];
+            const parts = clean.split('.');
+            if (parts.length > 1) {
+                const ext = parts.pop()?.toLowerCase();
+                if (ext && ext.length <= 6 && /^[a-z0-9]+$/.test(ext)) return ext;
+            }
+        } catch {}
+        return 'pdf';
+    };
+
+    const buildAttachment = (name: string, rawUrl: string, isPrincipal: boolean, anexoIndex?: number): DocAttachment => {
+        const ext = (name.includes('.') ? getExt(name) : '') || getExt(rawUrl) || 'pdf';
+        const downloadUrl = `/api/externo/documento/${doc.id}/download?download=true${anexoIndex !== undefined ? `&anexoIndex=${anexoIndex}` : ''}`;
+        const previewUrl = `/api/externo/documento/${doc.id}/download${anexoIndex !== undefined ? `?anexoIndex=${anexoIndex}` : ''}`;
+        const isPdf = ext === 'pdf';
+        const isExcel = ['xlsx', 'xls', 'csv', 'xlsm', 'xlsb'].includes(ext);
+        const isImage = ['png', 'jpg', 'jpeg', 'webp', 'svg'].includes(ext);
+
+        return {
+            id: isPrincipal ? `principal_${doc.id}` : `anexo_${anexoIndex}`,
+            name,
+            url: previewUrl,
+            downloadUrl,
+            rawUrl,
+            isPrincipal,
+            anexoIndex,
+            ext,
+            isPdf,
+            isExcel,
+            isImage
+        };
+    };
+
+    // 1. Documento principal
+    const principalUrl =
+        doc.pdf_url ||
+        doc.documentInfo?.pdfUrl ||
+        (doc.adjunto && typeof doc.adjunto === 'string' && doc.adjunto.startsWith('http') && !doc.adjunto.trim().startsWith('[')
+            ? doc.adjunto
+            : null);
+
+    if (principalUrl) {
+        const ext = getExt(principalUrl);
+        const providerClean = (doc.proveedor || '').replace(/[<>:"/\\|?*]/g, '').trim();
+        const consecutivo = doc.nroFactura || doc.consecutivo || doc.id;
+        const name = providerClean ? `RAD ${providerClean} DOC SOPORTE.${ext}` : `Documento_Principal_${consecutivo}.${ext}`;
+        items.push(buildAttachment(name, principalUrl, true));
+    }
+
+    // 2. Anexos adicionales en doc.adjunto
+    if (doc.adjunto) {
+        try {
+            const parsed = typeof doc.adjunto === 'string' ? JSON.parse(doc.adjunto) : doc.adjunto;
+            if (Array.isArray(parsed)) {
+                parsed.forEach((anexo: any, idx: number) => {
+                    const anexoName = anexo?.name || `Anexo_${idx + 1}`;
+                    items.push(buildAttachment(anexoName, anexo?.url || '', false, idx));
+                });
+            } else if (typeof doc.adjunto === 'string' && doc.adjunto !== principalUrl && doc.adjunto.startsWith('http')) {
+                const ext = getExt(doc.adjunto);
+                items.push(buildAttachment(`Anexo_Adicional.${ext}`, doc.adjunto, false, 0));
+            }
+        } catch {
+            if (typeof doc.adjunto === 'string' && doc.adjunto !== principalUrl && doc.adjunto.startsWith('http')) {
+                const ext = getExt(doc.adjunto);
+                items.push(buildAttachment(`Anexo_Adicional.${ext}`, doc.adjunto, false, 0));
+            }
+        }
+    }
+
+    if (items.length === 0) {
+        const consecutivo = doc.nroFactura || doc.consecutivo || doc.id;
+        items.push(buildAttachment(`Documento_${consecutivo}.pdf`, `/api/externo/documento/${doc.id}/download`, true));
+    }
+
+    return items;
+};
 
 const parseSafeFloat = (val: any): number => {
     if (!val) return 0;
@@ -80,6 +180,7 @@ export default function PublicDocumentApprovalPage() {
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewError, setPreviewError] = useState<string | null>(null);
+    const [activeAttachment, setActiveAttachment] = useState<DocAttachment | null>(null);
 
     // Reasignment States
     const [isEditingResponsible, setIsEditingResponsible] = useState(false);
@@ -88,6 +189,8 @@ export default function PublicDocumentApprovalPage() {
     const [isSearchingUsers, setIsSearchingUsers] = useState(false);
     const [isUpdatingResponsible, setIsUpdatingResponsible] = useState(false);
     const [pendingResponsibleUser, setPendingResponsibleUser] = useState<any>(null);
+
+    const currentDocAttachments = useMemo(() => getAttachmentsForDoc(document), [document]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -99,10 +202,10 @@ export default function PublicDocumentApprovalPage() {
     }, [itemId]);
 
     useEffect(() => {
-        if (document && document.documentInfo && !previewUrl && !previewLoading && !previewError) {
-            handlePreview();
+        if (document && currentDocAttachments.length > 0 && !activeAttachment) {
+            handleSelectAttachment(currentDocAttachments[0]);
         }
-    }, [document]);
+    }, [document, currentDocAttachments]);
 
     useEffect(() => {
         const searchUsers = async () => {
@@ -125,53 +228,46 @@ export default function PublicDocumentApprovalPage() {
         return () => clearTimeout(timer);
     }, [userSearchQuery]);
 
-    const fetchPdfBlob = async () => {
-        const fileName = document?.documentInfo?.fileName || 'Documento';
-        const consecutivo = document?.consecutivo || document?.id || "";
-        const proveedor = document?.proveedor ? document.proveedor.replace(/[<>:"/\\|?*]/g, '').trim() : "";
-        const desiredFileName = proveedor ? `RAD ${proveedor} DOC SOPORTE.pdf` : `documento_${consecutivo}.pdf`;
+    const handleSelectAttachment = (att: DocAttachment) => {
+        setPreviewError(null);
+        setActiveAttachment(att);
+        setPreviewUrl(att.url);
+    };
 
-        const res = await fetch(`/api/externo/documento/${itemId}/download/${encodeURIComponent(desiredFileName)}?rawFile=${encodeURIComponent(fileName)}`);
-        
-        if (!res.ok) {
-            const data = await res.json();
-            throw new Error(data.error || "No se ha encontrado documento soporte en PDF");
-        }
+    const handleDownloadOne = (att: DocAttachment) => {
+        const a = window.document.createElement('a');
+        a.href = att.downloadUrl;
+        a.download = att.name;
+        a.target = '_blank';
+        window.document.body.appendChild(a);
+        a.click();
+        window.document.body.removeChild(a);
+    };
 
-        const contentDisposition = res.headers.get('Content-Disposition');
-        let serverFileName = fileName;
-        if (contentDisposition) {
-            const filenameMatch = contentDisposition.match(/filename\*?=['"]?(?:UTF-\d['"]*)?([^;\r\n"']*)['"]?/i);
-            if (filenameMatch && filenameMatch[1]) {
-                serverFileName = decodeURIComponent(filenameMatch[1]);
-            }
+    const handleDownloadAll = (attachments: DocAttachment[]) => {
+        if (!attachments || attachments.length === 0) return;
+        if (attachments.length === 1) {
+            handleDownloadOne(attachments[0]);
+            return;
         }
-        
-        return { blob: await res.blob(), filename: serverFileName };
+        attachments.forEach((att, idx) => {
+            setTimeout(() => {
+                handleDownloadOne(att);
+            }, idx * 350);
+        });
     };
 
     const handleDownload = async () => {
         try {
             setDownloadLoading(true);
-            if (document?.documentInfo?.pdfUrl) {
-                const a = window.document.createElement('a');
-                a.href = document.documentInfo.pdfUrl;
-                a.download = document.documentInfo.fileName || 'Documento.pdf';
-                a.target = '_blank';
-                window.document.body.appendChild(a);
-                a.click();
-                window.document.body.removeChild(a);
+            if (activeAttachment) {
+                handleDownloadOne(activeAttachment);
                 return;
             }
-            const { blob, filename } = await fetchPdfBlob();
-            const url = window.URL.createObjectURL(blob);
-            const a = window.document.createElement('a');
-            a.href = url;
-            a.download = filename.toLowerCase().endsWith('.pdf') ? filename : `${filename}.pdf`;
-            window.document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            window.document.body.removeChild(a);
+            if (currentDocAttachments.length > 0) {
+                handleDownloadOne(currentDocAttachments[0]);
+                return;
+            }
         } catch (err: any) {
             alert(err.message || "Error al intentar descargar el documento");
         } finally {
@@ -183,18 +279,11 @@ export default function PublicDocumentApprovalPage() {
         try {
             setPreviewError(null);
             setPreviewLoading(true);
-            if (document?.documentInfo?.pdfUrl) {
-                setPreviewUrl(document.documentInfo.pdfUrl);
-                return;
+            const target = activeAttachment || currentDocAttachments[0];
+            if (target) {
+                setActiveAttachment(target);
+                setPreviewUrl(target.url);
             }
-            const fileName = document?.documentInfo?.fileName || 'Documento';
-            const consecutivo = document?.consecutivo || document?.id || "";
-            const proveedor = document?.proveedor ? document.proveedor.replace(/[<>:"/\\|?*]/g, '').trim() : "";
-            const desiredFileName = proveedor ? `RAD ${proveedor} DOC SOPORTE.pdf` : `documento_${consecutivo}.pdf`;
-
-            const apiUrl = `/api/externo/documento/${itemId}/download/${encodeURIComponent(desiredFileName)}?rawFile=${encodeURIComponent(fileName)}`;
-            
-            setPreviewUrl(apiUrl);
         } catch (err: any) {
             setPreviewError(err.message || "No se pudo cargar la vista previa");
         } finally {
@@ -437,7 +526,7 @@ export default function PublicDocumentApprovalPage() {
                                     Inicio
                                 </Button>
                                 <Button
-                                    onClick={handleDownload}
+                                    onClick={() => currentDocAttachments.length > 1 ? handleDownloadAll(currentDocAttachments) : handleDownload()}
                                     disabled={downloadLoading}
                                     className="flex items-center justify-center gap-2 px-6 py-3 bg-[#254153]/5 border-2 border-[#254153]/10 rounded-2xl text-[#254153] text-sm font-bold hover:bg-[#254153] hover:text-white transition-all shadow-sm group"
                                 >
@@ -446,7 +535,11 @@ export default function PublicDocumentApprovalPage() {
                                     ) : (
                                         <Download className="h-4 w-4" />
                                     )}
-                                    {downloadLoading ? "Buscando..." : `Descargar Documento ${document?.nroFactura ? `#${document.nroFactura}` : ""}`}
+                                    {downloadLoading
+                                        ? "Buscando..."
+                                        : currentDocAttachments.length > 1
+                                            ? `Descargar Todos (${currentDocAttachments.length})`
+                                            : `Descargar Documento ${document?.nroFactura ? `#${document.nroFactura}` : ""}`}
                                 </Button>
                             </div>
                         </div>
@@ -582,7 +675,7 @@ export default function PublicDocumentApprovalPage() {
                                         )}
                                     </AnimatePresence>
 
-                                    <div className="p-8 space-y-10">
+                                    <div className="p-8 space-y-8">
                                         {/* Info Grid */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                             <div className="space-y-1.5">
@@ -643,6 +736,99 @@ export default function PublicDocumentApprovalPage() {
                                                 </p>
                                             </div>
                                         </div>
+
+                                        {/* Documentos Adjuntos (Principal + Anexos) */}
+                                        {currentDocAttachments.length > 0 && (
+                                            <div className="bg-gray-50/70 p-5 rounded-2xl border border-gray-100 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[2px]">Documentos Adjuntos</h4>
+                                                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black">
+                                                            {currentDocAttachments.length}
+                                                        </span>
+                                                    </div>
+                                                    {currentDocAttachments.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDownloadAll(currentDocAttachments)}
+                                                            className="text-xs font-black text-blue-600 hover:text-blue-700 flex items-center gap-1 hover:underline transition-colors"
+                                                        >
+                                                            <Download className="h-3.5 w-3.5" />
+                                                            Descargar todos
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="space-y-2.5">
+                                                    {currentDocAttachments.map((att, idx) => {
+                                                        const isSelected = activeAttachment?.id === att.id;
+                                                        return (
+                                                            <div
+                                                                key={att.id || idx}
+                                                                className={`bg-white p-3.5 rounded-xl border shadow-sm flex items-center justify-between group transition-all ${
+                                                                    isSelected ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-100 hover:border-blue-200'
+                                                                }`}
+                                                            >
+                                                                <div
+                                                                    className="flex items-center gap-3 cursor-pointer min-w-0 flex-1 mr-2"
+                                                                    onClick={() => handleSelectAttachment(att)}
+                                                                    title="Haz clic para ver este archivo en el visor"
+                                                                >
+                                                                    <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                                                                        att.isExcel ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100' :
+                                                                        att.isImage ? 'bg-purple-50 text-purple-600 group-hover:bg-purple-100' :
+                                                                        'bg-blue-50 text-blue-600 group-hover:bg-blue-100'
+                                                                    }`}>
+                                                                        {att.isExcel ? <FileSpreadsheet className="h-5 w-5" /> :
+                                                                         att.isImage ? <Eye className="h-5 w-5" /> :
+                                                                         <FileText className="h-5 w-5" />}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-sm font-bold text-[#254153] truncate" title={att.name}>
+                                                                            {att.name}
+                                                                        </p>
+                                                                        <p className="text-[10px] text-gray-400 font-medium mt-0.5 flex items-center gap-1.5">
+                                                                            <span>{att.isPrincipal ? "Documento Principal" : `Anexo ${att.anexoIndex !== undefined ? att.anexoIndex + 1 : idx}`}</span>
+                                                                            <span>•</span>
+                                                                            <span className="uppercase font-bold">{att.ext}</span>
+                                                                            {isSelected && (
+                                                                                <span className="text-blue-600 font-bold ml-1">• En vista</span>
+                                                                            )}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleSelectAttachment(att)}
+                                                                        className={`h-9 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${
+                                                                            isSelected
+                                                                                ? 'bg-[#254153] text-white border-[#254153]'
+                                                                                : 'bg-gray-50 hover:bg-gray-100 text-[#254153] border-gray-200'
+                                                                        }`}
+                                                                        title={`Ver ${att.name}`}
+                                                                    >
+                                                                        <Eye className="h-3.5 w-3.5" />
+                                                                        <span className="hidden sm:inline">Ver</span>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleDownloadOne(att);
+                                                                        }}
+                                                                        className="h-9 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold flex items-center gap-1.5 border border-blue-100/80 transition-all shadow-sm active:scale-95"
+                                                                        title={`Descargar ${att.name}`}
+                                                                    >
+                                                                        <Download className="h-3.5 w-3.5" />
+                                                                        <span className="hidden sm:inline">Descargar</span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
@@ -756,7 +942,6 @@ export default function PublicDocumentApprovalPage() {
                                                                                 const isNoAplica = distribucion.centroCostos?.toLowerCase().includes("no aplica");
                                                                                 
                                                                                 if (isNoAplica) {
-                                                                                    // Mostrar cuentas permitidas para No aplica
                                                                                     return cuentasList
                                                                                         .filter((c: any) => 
                                                                                             c.Título?.startsWith("0") || 
@@ -900,20 +1085,112 @@ export default function PublicDocumentApprovalPage() {
                                 </div>
                             </div>
 
-                            {/* Right Column: PDF Preview (Sticky) */}
+                            {/* Right Column: PDF / Attachment Preview (Sticky) */}
                             <div className="lg:col-span-7 h-full">
                                 <div className="lg:sticky lg:top-8 space-y-4">
+                                    {currentDocAttachments.length > 1 && (
+                                        <div className="bg-white p-3 rounded-2xl shadow-md border border-gray-100 flex items-center gap-2 overflow-x-auto">
+                                            {currentDocAttachments.map((att, idx) => {
+                                                const isSelected = activeAttachment?.id === att.id;
+                                                return (
+                                                    <button
+                                                        key={att.id || idx}
+                                                        type="button"
+                                                        onClick={() => handleSelectAttachment(att)}
+                                                        className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shrink-0 transition-all ${
+                                                            isSelected
+                                                                ? 'bg-[#254153] text-white shadow-sm'
+                                                                : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                                                        }`}
+                                                    >
+                                                        {att.isExcel ? <FileSpreadsheet className="h-4 w-4" /> :
+                                                         att.isImage ? <Eye className="h-4 w-4" /> :
+                                                         <FileText className="h-4 w-4" />}
+                                                        <span className="max-w-[180px] truncate">
+                                                            {att.isPrincipal ? 'Documento Principal' : att.name}
+                                                        </span>
+                                                        <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${
+                                                            isSelected ? 'bg-white/20 text-white' : 'bg-gray-200/70 text-gray-500'
+                                                        }`}>
+                                                            {att.ext}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
                                     <div className="bg-white p-4 sm:p-6 rounded-[32px] shadow-2xl border border-gray-100 overflow-hidden h-fit">
-                                        <PdfViewerWithZoom
-                                            url={previewUrl}
-                                            title="Vista del Documento"
-                                            fileName={document?.documentInfo?.fileName || "Visualización Directa"}
-                                            isLoading={previewLoading}
-                                            error={previewError}
-                                            onRetry={handlePreview}
-                                            isNativeSharePoint={!!document?.documentInfo?.isNative}
-                                            onDownload={handleDownload}
-                                        />
+                                        {activeAttachment && !activeAttachment.isPdf && activeAttachment.isImage && previewUrl ? (
+                                            <div className="space-y-4">
+                                                <div className="flex items-center justify-between px-2">
+                                                    <div>
+                                                        <h3 className="text-sm font-black text-[#254153] uppercase tracking-wider">Vista de Imagen</h3>
+                                                        <p className="text-xs text-gray-500 font-medium truncate max-w-md">{activeAttachment.name}</p>
+                                                    </div>
+                                                    <Button
+                                                        type="button"
+                                                        onClick={() => handleDownloadOne(activeAttachment)}
+                                                        className="h-9 px-4 bg-[#254153] hover:bg-[#1a2e3b] text-white font-bold rounded-xl text-xs flex items-center gap-2"
+                                                    >
+                                                        <Download className="h-3.5 w-3.5" />
+                                                        Descargar
+                                                    </Button>
+                                                </div>
+                                                <div className="min-h-[500px] max-h-[75vh] bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-center p-4 overflow-auto">
+                                                    <img
+                                                        src={previewUrl}
+                                                        alt={activeAttachment.name}
+                                                        className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-sm"
+                                                    />
+                                                </div>
+                                            </div>
+                                        ) : activeAttachment && !activeAttachment.isPdf ? (
+                                            <div className="min-h-[450px] flex flex-col items-center justify-center p-8 text-center bg-gray-50/60 rounded-2xl border border-gray-100">
+                                                <div className={`h-20 w-20 rounded-2xl flex items-center justify-center mb-4 shadow-sm border ${
+                                                    activeAttachment.isExcel
+                                                        ? 'bg-emerald-100/80 border-emerald-200/50 text-emerald-600'
+                                                        : 'bg-blue-100/80 border-blue-200/50 text-blue-600'
+                                                }`}>
+                                                    {activeAttachment.isExcel ? (
+                                                        <FileSpreadsheet className="h-10 w-10" />
+                                                    ) : (
+                                                        <FileText className="h-10 w-10" />
+                                                    )}
+                                                </div>
+                                                <p className="text-base font-black text-[#254153] mb-1 px-4 truncate max-w-full" title={activeAttachment.name}>
+                                                    {activeAttachment.name}
+                                                </p>
+                                                <p className="text-xs text-gray-500 font-medium mb-6 max-w-sm">
+                                                    {activeAttachment.isExcel
+                                                        ? "Hoja de cálculo Excel lista para descargar y revisar en tu equipo."
+                                                        : `Archivo (${activeAttachment.ext.toUpperCase()}) listo para descargar y revisar en tu equipo.`}
+                                                </p>
+                                                <Button
+                                                    type="button"
+                                                    onClick={() => handleDownloadOne(activeAttachment)}
+                                                    className={`h-11 px-6 text-white font-bold rounded-xl flex items-center gap-2 shadow-md text-sm transition-all ${
+                                                        activeAttachment.isExcel
+                                                            ? 'bg-emerald-600 hover:bg-emerald-700'
+                                                            : 'bg-[#254153] hover:bg-[#1a2e3b]'
+                                                    }`}
+                                                >
+                                                    <Download className="h-4 w-4" />
+                                                    Descargar {activeAttachment.name}
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <PdfViewerWithZoom
+                                                url={previewUrl}
+                                                title={activeAttachment?.isPrincipal ? "Vista del Documento Principal" : `Vista de Anexo`}
+                                                fileName={activeAttachment?.name || document?.documentInfo?.fileName || "Visualización Directa"}
+                                                isLoading={previewLoading}
+                                                error={previewError}
+                                                onRetry={handlePreview}
+                                                isNativeSharePoint={false}
+                                                onDownload={handleDownload}
+                                            />
+                                        )}
                                     </div>
 
                                     {/* Quick Tips or Footer for Right Column */}
