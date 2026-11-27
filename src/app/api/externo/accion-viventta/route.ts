@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin as supabase } from '@/lib/supabaseAdmin';
 import { obtenerCentrosCostoInvalidos } from '@/lib/validarCentrosCosto';
+import { validarObservacionRechazo } from '@/lib/validarObservacionRechazo';
 
 export async function POST(req: NextRequest) {
     try {
@@ -19,6 +20,19 @@ export async function POST(req: NextRequest) {
 
         if (action !== 'Aprobado' && action !== 'Rechazado') {
             return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+        }
+
+        if (action === 'Rechazado') {
+            const { data: currentRow } = await supabase
+                .from('Facturas_Viventta')
+                .select('Observaciones')
+                .eq('id', itemId)
+                .maybeSingle();
+
+            const obsCheck = validarObservacionRechazo(observaciones, currentRow?.Observaciones);
+            if (!obsCheck.valid) {
+                return NextResponse.json({ error: obsCheck.error }, { status: 400 });
+            }
         }
 
         // Validar que los centros de costos existan en el catálogo antes de aprobar

@@ -28,6 +28,7 @@ export interface SapDraftPayload {
     seriesName?: string; // Optional Series Name for SAP auto-numbering
     consecutivo?: string | number; // Manual Consecutivo
     docCurrency?: string; // e.g. 'USD' or 'COP'
+    cardCode?: string; // Optional explicit SAP CardCode
 }
 
 interface SapBusinessPartner {
@@ -110,6 +111,105 @@ async function sapRequestWithRetry(url: string, options: { method?: string; head
     throw new Error(`SAP request failed after ${retries} retries`);
 }
 
+/**
+ * Calcula el dígito de verificación DIAN (Colombia) para un NIT base.
+ */
+export function calcularDigitoVerificacionDIAN(nitBase: string): number {
+    const primes = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71];
+    const digits = nitBase.replace(/\D/g, '');
+    let sum = 0;
+    for (let i = 0; i < digits.length && i < primes.length; i++) {
+        sum += Number(digits[digits.length - 1 - i]) * primes[i];
+    }
+    const rem = sum % 11;
+    return rem > 1 ? 11 - rem : rem;
+}
+
+/**
+ * Construye variantes de FederalTaxID / CardCode (con y sin dígito de verificación DIAN)
+ * y el filtro OData correspondiente para SAP Service Layer.
+ */
+export function construirVariantesNit(nit: string) {
+    const rawNit = String(nit || '').trim();
+    const cleanNit = rawNit.replace(/[^0-9]/g, '');
+    const dashParts = rawNit.split('-');
+    const baseNit = dashParts[0].replace(/[^0-9]/g, '');
+
+    const taxIdCandidates = new Set<string>();
+    const codeBases = new Set<string>();
+    const allowedNumericNits = new Set<string>();
+
+    if (rawNit) taxIdCandidates.add(rawNit);
+    if (cleanNit) {
+        taxIdCandidates.add(cleanNit);
+        codeBases.add(cleanNit);
+        allowedNumericNits.add(cleanNit);
+    }
+    if (baseNit) {
+        taxIdCandidates.add(baseNit);
+        codeBases.add(baseNit);
+        allowedNumericNits.add(baseNit);
+    }
+
+    if (rawNit.includes('-') && dashParts.length > 1) {
+        const dvFromRaw = dashParts[1].replace(/[^0-9]/g, '');
+        if (baseNit && dvFromRaw) {
+            taxIdCandidates.add(`${baseNit}${dvFromRaw}`);
+            taxIdCandidates.add(`${baseNit}-${dvFromRaw}`);
+            codeBases.add(`${baseNit}${dvFromRaw}`);
+            allowedNumericNits.add(`${baseNit}${dvFromRaw}`);
+        }
+    }
+
+    if (baseNit.length >= 7 && baseNit.length <= 9) {
+        const dv = calcularDigitoVerificacionDIAN(baseNit);
+        taxIdCandidates.add(`${baseNit}${dv}`);
+        taxIdCandidates.add(`${baseNit}-${dv}`);
+        codeBases.add(`${baseNit}${dv}`);
+        allowedNumericNits.add(`${baseNit}${dv}`);
+
+        if (!rawNit.includes('-') && cleanNit.length === 9) {
+            taxIdCandidates.add(`${cleanNit.substring(0, 8)}-${cleanNit.substring(8)}`);
+        }
+    }
+
+    if (!rawNit.includes('-') && cleanNit.length === 10) {
+        const base9 = cleanNit.substring(0, 9);
+        const dv10 = cleanNit.substring(9);
+        if (calcularDigitoVerificacionDIAN(base9) === Number(dv10)) {
+            taxIdCandidates.add(base9);
+            taxIdCandidates.add(`${base9}-${dv10}`);
+            codeBases.add(base9);
+            allowedNumericNits.add(base9);
+        }
+    }
+
+    const filterClauses: string[] = [];
+    for (const candidate of taxIdCandidates) {
+        const escaped = candidate.replace(/'/g, "''");
+        if (escaped) filterClauses.push(`FederalTaxID eq '${escaped}'`);
+    }
+    for (const codeBase of codeBases) {
+        if (!codeBase) continue;
+        for (const prefix of ['', 'P', 'AC', 'PN', 'PE']) {
+            filterClauses.push(`CardCode eq '${prefix}${codeBase}'`);
+            if (prefix) {
+                filterClauses.push(`CardCode eq '${prefix}${codeBase}-01'`);
+            }
+        }
+    }
+
+    return {
+        rawNit,
+        cleanNit,
+        baseNit,
+        taxIdCandidates: Array.from(taxIdCandidates),
+        codeBases: Array.from(codeBases),
+        allowedNumericNits,
+        nitFilter: `(${filterClauses.join(' or ')})`,
+    };
+}
+
 export async function createSapDraft(payload: SapDraftPayload) {
     const { 
         nit, 
@@ -168,30 +268,45 @@ export async function createSapDraft(payload: SapDraftPayload) {
     console.log(`SAP Draft [${nroFactura}]: Login successful (Session: ${sessionId})`);
 
     try {
-        // 2. SEARCH BUSINESS PARTNER BY NIT (Búsqueda flexible: exacta, parcial o por CardCode)
+        // 2. SEARCH BUSINESS PARTNER BY NIT (Búsqueda flexible: exacta, con/sin DV DIAN o por CardCode)
         console.log(`SAP Draft [${nroFactura}]: Buscando Socio de Negocio para NIT ${nit}...`);
-        
-        const rawNit = nit;
-        const cleanNit = nit.replace(/[^0-9]/g, '');
-        const baseNit = nit.split('-')[0].replace(/[^0-9]/g, '');
-        
-        // Si el NIT tiene 9 dígitos y no tiene guion, intentar buscarlo con guion antes del último dígito
-        let nitWithDash = rawNit;
-        if (!rawNit.includes('-') && cleanNit.length === 9) {
-            nitWithDash = `${cleanNit.substring(0, 8)}-${cleanNit.substring(8)}`;
-        }
 
-        const nitFilter = `(FederalTaxID eq '${rawNit}' or FederalTaxID eq '${nitWithDash}' or FederalTaxID eq '${cleanNit}' or FederalTaxID eq '${baseNit}' or CardCode eq '${baseNit}' or CardCode eq 'P${baseNit}' or CardCode eq 'AC${baseNit}' or CardCode eq 'PN${baseNit}' or CardCode eq 'PE${baseNit}' or CardCode eq 'AC${baseNit}-01' or CardCode eq 'PN${baseNit}-01' or CardCode eq 'PE${baseNit}-01')`;
-        
-        // 1. Intentar buscar directamente como Proveedor (CardType eq 'S') para evitar que la paginación
+        const { rawNit, cleanNit, baseNit, codeBases, allowedNumericNits, nitFilter } = construirVariantesNit(nit);
+
+        // 1. Intentar buscar directamente como Proveedor (CardType eq 'cSupplier') para evitar que la paginación
         // de SAP (20 registros máx) devuelva solo clientes (cCustomer) cuando un mismo NIT tiene decenas de sucursales de venta (ej: Sodimac).
-        let bpUrl = `${baseUrl}/BusinessPartners?$filter=(${nitFilter}) and CardType eq 'S'&$select=CardCode,CardName,FederalTaxID,CardType`;
+        let bpUrl = `${baseUrl}/BusinessPartners?$filter=${encodeURIComponent(`${nitFilter} and CardType eq 'cSupplier'`)}&$select=CardCode,CardName,FederalTaxID,CardType`;
         let bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
 
         if (bpRes.status !== 200 || !bpRes.data.value || bpRes.data.value.length === 0) {
-            // Fallback: consultar sin filtro de tipo para obtener candidatos o error descriptivo
-            bpUrl = `${baseUrl}/BusinessPartners?$filter=${nitFilter}&$select=CardCode,CardName,FederalTaxID,CardType`;
+            // Fallback 1: consultar sin filtro de tipo para obtener candidatos o error descriptivo
+            bpUrl = `${baseUrl}/BusinessPartners?$filter=${encodeURIComponent(nitFilter)}&$select=CardCode,CardName,FederalTaxID,CardType`;
             bpRes = await sapRequestWithRetry(bpUrl, { headers: authHeaders });
+        }
+
+        if ((bpRes.status !== 200 || !bpRes.data.value || bpRes.data.value.length === 0) && baseNit.length >= 7) {
+            // Fallback 2: búsqueda por prefijo de NIT en FederalTaxID (cubre espacios, puntos o CardCodes como -02/-03)
+            const prefixFilter = `startswith(FederalTaxID,'${baseNit}') and CardType eq 'cSupplier'`;
+            let flexRes = await sapRequestWithRetry(
+                `${baseUrl}/BusinessPartners?$filter=${encodeURIComponent(prefixFilter)}&$select=CardCode,CardName,FederalTaxID,CardType`,
+                { headers: authHeaders }
+            );
+            if (flexRes.status !== 200 || !flexRes.data.value || flexRes.data.value.length === 0) {
+                flexRes = await sapRequestWithRetry(
+                    `${baseUrl}/BusinessPartners?$filter=${encodeURIComponent(`startswith(FederalTaxID,'${baseNit}')`)}&$select=CardCode,CardName,FederalTaxID,CardType`,
+                    { headers: authHeaders }
+                );
+            }
+            if (flexRes.status === 200 && Array.isArray(flexRes.data?.value)) {
+                const filteredFlex = (flexRes.data.value as SapBusinessPartner[]).filter((bp) => {
+                    const taxDigits = String(bp.FederalTaxID || '').replace(/[^0-9]/g, '');
+                    const codeUpper = String(bp.CardCode || '').toUpperCase().replace(/\s+/g, '');
+                    return allowedNumericNits.has(taxDigits) || codeBases.some((cb) => codeUpper.includes(cb));
+                });
+                if (filteredFlex.length > 0) {
+                    bpRes = { ...flexRes, data: { ...flexRes.data, value: filteredFlex } };
+                }
+            }
         }
 
         if (bpRes.status !== 200) {
@@ -199,7 +314,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
         }
 
         if (!bpRes.data.value || bpRes.data.value.length === 0) {
-            throw new Error(`Supplier with NIT ${nit} not found in SAP. Verifique que el proveedor exista y el NIT sea correcto.`);
+            throw new Error(`Supplier with NIT ${nit} not found in SAP. Verifique que el proveedor exista y el NIT sea correcto (buscado también con dígito de verificación DIAN).`);
         }
 
         // Aceptar proveedores con prefijo SAP permitido: AC o cualquier prefijo que empiece con P (P, PN, PE, etc.)
@@ -262,7 +377,7 @@ export async function createSapDraft(payload: SapDraftPayload) {
         
         console.log(`SAP Draft [${nroFactura}]: Found BP ${cardCode} (${cardName}) type [${cardType}] for NIT ${nit}`);
         
-        if (cardType !== 'sSupplier' && cardType !== 'S') {
+        if (cardType !== 'sSupplier' && cardType !== 'cSupplier' && cardType !== 'S') {
             console.warn(`SAP Draft [${nroFactura}]: ADVERTENCIA - El Socio de Negocio encontrado no es de tipo Proveedor (Tipo: ${cardType}). SAP podría rechazar el documento.`);
         }
 

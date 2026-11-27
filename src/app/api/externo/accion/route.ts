@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSapDraft } from '@/lib/sap';
 import { createClient } from '@supabase/supabase-js';
 import { obtenerCentrosCostoInvalidos } from '@/lib/validarCentrosCosto';
+import { validarObservacionRechazo } from '@/lib/validarObservacionRechazo';
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,6 +21,30 @@ export async function POST(req: NextRequest) {
 
         if (action !== 'Aprobado' && action !== 'Rechazado') {
             return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+        }
+
+        const isDocSoporteEarly = listName === 'Documento_Soporte';
+        if (action === 'Rechazado') {
+            let currentObs: string | null = null;
+            if (isDocSoporteEarly) {
+                const { data: docRow } = await supabase
+                    .from('Documento_Soporte')
+                    .select('observaciones')
+                    .eq('id', Number(itemId))
+                    .maybeSingle();
+                currentObs = docRow?.observaciones ?? null;
+            } else {
+                const { data: invRow } = await supabase
+                    .from('Registro_Facturas')
+                    .select('Observaciones')
+                    .eq('ID', Number(itemId))
+                    .maybeSingle();
+                currentObs = invRow?.Observaciones ?? null;
+            }
+            const obsCheck = validarObservacionRechazo(observaciones, currentObs);
+            if (!obsCheck.valid) {
+                return NextResponse.json({ error: obsCheck.error }, { status: 400 });
+            }
         }
 
         // Clean valor if present (Number field in SP)

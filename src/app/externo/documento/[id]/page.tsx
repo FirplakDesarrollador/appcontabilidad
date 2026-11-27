@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -26,6 +26,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { PdfViewerWithZoom } from "@/components/ui/PdfViewerWithZoom";
+import { validarObservacionRechazo, esObservacionPorDefecto } from "@/lib/validarObservacionRechazo";
 
 interface DocumentData {
     id: string;
@@ -170,6 +171,9 @@ export default function PublicDocumentApprovalPage() {
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
     const [observaciones, setObservaciones] = useState<string>("");
+    const [initialObservaciones, setInitialObservaciones] = useState<string>("");
+    const [observacionesError, setObservacionesError] = useState<string | null>(null);
+    const observacionesRef = useRef<HTMLTextAreaElement>(null);
     const [distribuciones, setDistribuciones] = useState<{ centroCostos: string; cuenta: string; valor: string }[]>([{ centroCostos: "", cuenta: "", valor: "" }]);
     const [anticipo, setAnticipo] = useState<string>("");
     const [editableTotal, setEditableTotal] = useState<string>("");
@@ -344,19 +348,35 @@ export default function PublicDocumentApprovalPage() {
             if (data.anticipo) {
                 setAnticipo(data.anticipo);
             }
-            if (data.observaciones) {
-                setObservaciones(data.observaciones);
-            }
+            setObservaciones(data.observaciones || "");
+            setInitialObservaciones(data.observaciones || "");
         } catch (err: any) {
             setError(err.message || "No se pudo cargar la información del documento soporte");
         }
     };
 
+    const validateRejectionReason = (): string | null => {
+        const validation = validarObservacionRechazo(observaciones, initialObservaciones);
+        if (!validation.valid) {
+            const msg = validation.error || "Debes ingresar el motivo del rechazo.";
+            setObservacionesError(msg);
+            setTimeout(() => {
+                observacionesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                observacionesRef.current?.focus();
+                observacionesRef.current?.select();
+            }, 50);
+            return msg;
+        }
+        setObservacionesError(null);
+        return null;
+    };
+
     const handleAction = async (action: 'Aprobado' | 'Rechazado') => {
         try {
             if (action === 'Rechazado') {
-                if (!observaciones || observaciones.trim() === "") {
-                    alert("Por favor, ingresa una observación para poder rechazar el documento.");
+                const errorMsg = validateRejectionReason();
+                if (errorMsg) {
+                    alert(errorMsg);
                     return;
                 }
             }
@@ -867,14 +887,47 @@ export default function PublicDocumentApprovalPage() {
                                             </div>
 
                                             <div className="space-y-3">
-                                                <label className="text-sm font-bold text-[#254153]">Observaciones</label>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <label className="text-sm font-bold text-[#254153]">Observaciones</label>
+                                                    {observaciones.trim() !== "" && esObservacionPorDefecto(observaciones, initialObservaciones) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setObservaciones("");
+                                                                setObservacionesError(null);
+                                                                observacionesRef.current?.focus();
+                                                            }}
+                                                            className="text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-lg transition-colors"
+                                                        >
+                                                            Limpiar texto por defecto
+                                                        </button>
+                                                    )}
+                                                </div>
                                                 <textarea
+                                                    ref={observacionesRef}
                                                     value={observaciones}
-                                                    onChange={(e) => setObservaciones(e.target.value)}
-                                                    className="w-full rounded-2xl border border-gray-200 p-5 focus:ring-4 focus:ring-[#254153]/10 focus:border-[#254153] outline-none transition-all resize-none h-28 text-sm text-gray-700 placeholder-gray-400"
-                                                    placeholder="Añade observaciones (obligatorio para rechazar)..."
+                                                    onChange={(e) => {
+                                                        setObservaciones(e.target.value);
+                                                        if (observacionesError) setObservacionesError(null);
+                                                    }}
+                                                    className={`w-full rounded-2xl border p-5 focus:ring-4 outline-none transition-all resize-none h-28 text-sm text-gray-700 placeholder-gray-400 ${
+                                                        observacionesError
+                                                            ? 'border-red-400 bg-red-50/30 focus:ring-red-500/15 focus:border-red-500'
+                                                            : 'border-gray-200 focus:ring-[#254153]/10 focus:border-[#254153]'
+                                                    }`}
+                                                    placeholder="Añade observaciones (obligatorio cambiar el texto por defecto y explicar el motivo si vas a rechazar)..."
                                                     disabled={!!actionLoading}
                                                 />
+                                                {observacionesError ? (
+                                                    <p className="text-xs font-bold text-red-600 flex items-center gap-1.5">
+                                                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                                                        {observacionesError}
+                                                    </p>
+                                                ) : (observaciones.trim() !== "" && esObservacionPorDefecto(observaciones, initialObservaciones) && (
+                                                    <p className="text-[11px] font-medium text-amber-700">
+                                                        Nota: Para rechazar debes borrar este mensaje automático y escribir el motivo del rechazo.
+                                                    </p>
+                                                ))}
                                             </div>
 
                                             <div className="space-y-5">
@@ -1057,6 +1110,11 @@ export default function PublicDocumentApprovalPage() {
                                                     className="h-16 rounded-3xl border-2 border-red-50 text-red-500 hover:bg-red-50 hover:border-red-100 hover:text-red-700 text-base font-black transition-all hover:scale-[1.02] active:scale-[0.98] order-1 sm:order-2"
                                                     disabled={!!actionLoading}
                                                     onClick={() => {
+                                                        const errorMsg = validateRejectionReason();
+                                                        if (errorMsg) {
+                                                            alert(errorMsg);
+                                                            return;
+                                                        }
                                                         if (confirm("¿Estás seguro que deseas rechazar este documento soporte?")) {
                                                             handleAction('Rechazado');
                                                         }
